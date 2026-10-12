@@ -14,9 +14,13 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "tests" / "lib"))
+
+from astraos_testlib import SkipTest  # noqa: E402
 
 DESCRIPTION = "shell scripts are syntactically valid and follow the project's rules"
 
@@ -184,11 +188,71 @@ def test_destructive_commands_are_guarded() -> None:
     )
 
 
+def test_files_with_a_shebang_are_executable_in_git() -> None:
+    """Every file with a shebang must be mode 100755 *in git*, not only on disk.
+
+    Windows cannot store the executable bit, so a checkout made there marks every script
+    100644 and nothing complains locally: the file still runs in Git Bash. The failure only
+    appears on Linux, and it appears twice — `sudo ./scripts/bootstrap-build-environment.sh`
+    fails with "command not found", and live-build refuses to execute the hooks inside the
+    chroot because they are not executable there either.
+
+    The git index is the only place the bit survives, so it is the only thing worth
+    checking.
+    """
+    if not shutil.which("git"):
+        raise SkipTest("git is not available to report index modes")
+
+    result = subprocess.run(
+        ["git", "ls-files", "-s"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        raise SkipTest(f"cannot read git index modes: {result.stderr.strip()}")
+
+    offenders: list[str] = []
+    seen = 0
+    for line in result.stdout.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) != 4:
+            continue
+        mode, _object, _stage, path = parts
+        path = path.strip()
+        target = REPO_ROOT / path
+        if not target.is_file():
+            continue
+        try:
+            if target.open("rb").read(2) != b"#!":
+                continue
+        except OSError:
+            continue
+        seen += 1
+        if mode != "100755":
+            offenders.append(f"{path} is mode {mode}")
+
+    assert seen >= 10, (
+        f"only {seen} shebang files were found through git, so this test is not seeing the "
+        "repository it thinks it is"
+    )
+    assert not offenders, (
+        "these files have a shebang but are not executable in git, so they will fail to run "
+        "on any Linux machine that checks them out. Fix with:\n"
+        "  git update-index --chmod=+x <path>\n  " + "\n  ".join(offenders)
+    )
+
+
 def test_shellcheck_when_available() -> None:
-    """Run ShellCheck if it is installed. Skipped silently otherwise."""
+    """Run ShellCheck if it is installed, and report a skip if it is not.
+
+    This used to print a note and return, which counted as a PASS. The project's rule is
+    that an unperformed check is never a pass (plan §18, §28), and ShellCheck is the check
+    that found the real defects in this tree, so claiming it passed while absent is exactly
+    the kind of claim that must not appear in a test summary.
+    """
     if not shutil.which("shellcheck"):
-        print("  shellcheck is not installed; deep linting was skipped")
-        return
+        raise SkipTest(
+            "shellcheck is not installed, so deep linting did not run; install it (see "
+            "scripts/bootstrap-build-environment.sh) or CI will be the first to find out"
+        )
 
     failures: list[str] = []
     for path in _scripts():

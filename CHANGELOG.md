@@ -19,6 +19,16 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- Every script was committed without the executable bit, because it was first committed
+  from Windows, which cannot store one. Nothing noticed locally — the files still run in
+  Git Bash — and it broke the first real build on Linux, where
+  `sudo ./scripts/bootstrap-build-environment.sh` failed with "command not found". Worse,
+  live-build executes the chroot hooks from the checkout, so an unset bit would have failed
+  the build rather than any check. The bit is now set for all 29 shebang files, and
+  `tests/static/test_scripts.py` asserts the mode recorded in the git index, which is the
+  only place it survives a Windows checkout.
+- An absent ShellCheck was reported as a passing test. It is now reported as a skip with a
+  reason, per the rule that an unperformed check is never a pass.
 - `astraos-info` reported an inactive firewall as `active`. The `case` patterns were
   `*active*` and `*inactive*`, and `*active*` also matches `Status: inactive`, so the first
   match won and a fresh install — where ufw is shipped disabled by design — printed
