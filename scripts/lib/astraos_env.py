@@ -91,9 +91,18 @@ def all_packages() -> dict[str, list[str]]:
 CONTROL_DEPENDENCY_FIELDS = ("Depends", "Recommends", "Pre-Depends")
 
 
+def control_files() -> list[Path]:
+    """The control templates of the packages this repository builds.
+
+    These are the paragraphs dpkg-deb compiles into the real `.deb` control files, so they
+    have to be valid Debian control paragraphs, not a file with comments in it.
+    """
+    return sorted((REPO_ROOT / "packages").glob("*/control.in"))
+
+
 def own_packages() -> set[str]:
     """Names of the packages this repository builds, one per packages/*/control.in."""
-    return {path.parent.name for path in (REPO_ROOT / "packages").glob("*/control.in")}
+    return {path.parent.name for path in control_files()}
 
 
 def control_dependencies() -> list[tuple[tuple[str, ...], str]]:
@@ -107,7 +116,7 @@ def control_dependencies() -> list[tuple[tuple[str, ...], str]]:
     """
     groups: list[tuple[tuple[str, ...], str]] = []
 
-    for control in sorted((REPO_ROOT / "packages").glob("*/control.in")):
+    for control in control_files():
         source_file = control.relative_to(REPO_ROOT).as_posix()
         # Unfold continuation lines: a dependency list may be wrapped.
         text = control.read_text(encoding="utf-8").replace("\n ", " ").replace("\n\t", " ")

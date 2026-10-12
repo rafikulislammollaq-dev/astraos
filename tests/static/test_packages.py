@@ -22,6 +22,9 @@ import astraos_env  # noqa: E402
 
 DESCRIPTION = "package lists are well formed and internally consistent"
 
+# A control field: a name, then a colon. dpkg-deb accepts nothing else at the start of a line.
+FIELD_LINE = re.compile(r"^[A-Za-z][A-Za-z0-9-]*:")
+
 # A Debian package name: lowercase letters, digits, plus, minus and dots; must start
 # with an alphanumeric.
 VALID_NAME = re.compile(r"^[a-z0-9][a-z0-9+.-]*$")
@@ -115,6 +118,39 @@ def test_control_files_declare_parseable_dependencies() -> None:
     assert "astraos-base" in names, (
         "no AstraOS package declares a dependency on astraos-base, so the parser is not "
         "reading the fields it should"
+    )
+
+
+def test_control_files_are_valid_control_paragraphs() -> None:
+    """A Debian control paragraph has no comment syntax, and dpkg-deb stops the build over it.
+
+    A `#` at the start of a line is not a comment: dpkg-deb reads it as a field name and
+    fails with "field name '#' must be followed by colon", after every AstraOS package has
+    already been assembled. That is exactly what a block of comments explaining the
+    Conflicts/Replaces fields did. Explanation belongs in the changelog, in
+    docs/KNOWN_LIMITATIONS.md or in the package list; the control paragraph holds fields.
+
+    A line is therefore only valid as a field (`Name: value`), as an indented continuation of
+    the previous field (which is how the Description body is written) or as blank.
+    """
+    controls = astraos_env.control_files()
+    assert len(controls) >= 5, (
+        f"only {len(controls)} control template(s) were found; the check is not looking at "
+        "the packages this repository builds"
+    )
+
+    offenders: list[str] = []
+    for control in controls:
+        label = control.relative_to(astraos_env.REPO_ROOT).as_posix()
+        for number, line in enumerate(control.read_text(encoding="utf-8").splitlines(), 1):
+            if not line or line.startswith((" ", "\t")) or FIELD_LINE.match(line):
+                continue
+            looks_like_comment = " (comment: control files have no comment syntax)" if line.startswith("#") else ""
+            offenders.append(f"{label}:{number}: {line.rstrip()}{looks_like_comment}")
+
+    assert not offenders, (
+        "dpkg-deb cannot parse these control-file lines, so the package build would fail:\n  "
+        + "\n  ".join(offenders)
     )
 
 

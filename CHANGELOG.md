@@ -58,6 +58,14 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   `Conflicts: time-daemon`, which `systemd-timesyncd` provides, so apt could not resolve the
   package set and failed after downloading all of it. `systemd-timesyncd` is the one AstraOS
   ships; a test now rejects any second time daemon.
+- The `astraos-installer` control paragraph carried a comment block explaining its
+  `Conflicts` and `Replaces` fields. A Debian control file has no comment syntax: dpkg-deb
+  read the `#` as a field name and stopped the package build with "field name '#' must be
+  followed by colon", after all five AstraOS packages had been assembled. The fields stay
+  where they are; the explanation moved here and into `config/package-lists/60-installer.list.chroot`,
+  which already documents why Debian's settings package is not wanted. A static test now
+  checks every control template against the grammar dpkg-deb accepts — a field, an indented
+  continuation, or a blank line — instead of finding out on a runner.
 - The image build ran with the option set of whichever live-build happened to be installed.
   The pinned release (live-build 20250505 for Debian 13) renamed `--binary-images` to
   `--binary-image` and `--binary-compression` to `--chroot-squashfs-compression-type`, and
