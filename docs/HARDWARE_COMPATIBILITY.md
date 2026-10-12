@@ -20,12 +20,18 @@ the categories below cover:
 
 | Category | Packages |
 |---|---|
-| Wi-Fi | `firmware-iwlwifi`, `firmware-atheros`, `firmware-realtek`, `firmware-brcm80211`, `firmware-mediatek`, `firmware-ti-connectivity`, `firmware-libertas`, `firmware-ipw2x00`, `firmware-zd1211`, `firmware-siano`, `firmware-qcom-soc`, `firmware-qcom-media`, `firmware-samsung`, `wireless-regdb` |
+| Wi-Fi | `firmware-iwlwifi`, `firmware-atheros`, `firmware-realtek`, `firmware-brcm80211`, `firmware-mediatek`, `firmware-ti-connectivity`, `firmware-libertas`, `firmware-zd1211`, `firmware-siano`, `firmware-qcom-soc`, `firmware-qcom-media`, `firmware-samsung`, `wireless-regdb` |
 | Wired | `firmware-bnx2`, `firmware-bnx2x`, `firmware-cavium`, `firmware-marvell-prestera`, `firmware-myricom`, `firmware-netronome`, `firmware-netxen`, `firmware-qlogic` |
 | Graphics | `firmware-amd-graphics`, `firmware-intel-graphics`, `firmware-nvidia-graphics`, `firmware-nvidia-gsp`, `firmware-nvidia-tesla-535-gsp`, `firmware-cirrus` |
 | Generic | `firmware-linux-free`, `firmware-linux-nonfree`, `firmware-misc-nonfree` |
-| Audio | `firmware-sof-signed`, `firmware-intel-sound`, `firmware-intel-misc`, `firmware-ivtv`, `alsa-firmware-loaders` |
+| Audio | `firmware-sof-signed`, `firmware-intel-sound`, `firmware-intel-misc`, `alsa-firmware-loaders` |
 | CPU | `intel-microcode`, `amd64-microcode` |
+
+Two packages with very old hardware coverage are also deliberately absent,
+`firmware-ipw2x00` (Intel PRO/Wireless 2100/2200) and `firmware-ivtv` (Conexant capture
+cards): their post-install scripts wait for debconf to accept a licence, which nothing can
+do in a non-interactive build, so listing them fails the installation of the entire package
+set. Install them on the installed system if you have that hardware.
 
 One category is deliberately **absent**: Broadcom's older chips driven by `b43`, whose
 firmware Debian does not redistribute. Debian ships `firmware-b43-installer` from

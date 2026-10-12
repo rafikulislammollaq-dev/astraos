@@ -73,6 +73,29 @@ def test_no_firmware_installer_packages_are_listed() -> None:
     )
 
 
+def test_firmware_needing_licence_acceptance_is_not_listed() -> None:
+    """Firmware that waits for debconf to accept a licence cannot be installed unattended.
+
+    firmware-ipw2x00 and firmware-ivtv ask for licence acceptance in their post-install
+    script. In a non-interactive build nothing answers, dpkg fails, and apt rolls the whole
+    installation back — after every package has been downloaded. These are the two packages
+    live-build's own firmware stage specially preseeds, which is the only reason they ever
+    appeared to install; AstraOS does not accept a licence on a user's behalf instead.
+    """
+    needing_prompts = {"firmware-ipw2x00", "firmware-ivtv"}
+
+    offenders: list[str] = []
+    for filename, packages in astraos_env.package_lists().items():
+        for package in packages:
+            if package in needing_prompts:
+                offenders.append(f"{filename}: {package}")
+
+    assert not offenders, (
+        "these packages need a licence accepted interactively, so the build cannot install "
+        "them and apt will roll back the whole package set:\n  " + "\n  ".join(offenders)
+    )
+
+
 def test_only_one_time_synchronisation_daemon() -> None:
     """Two time daemons cannot coexist, and apt proves it by refusing to install both.
 

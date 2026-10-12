@@ -35,7 +35,6 @@ firmware-brcm80211
 firmware-mediatek
 firmware-ti-connectivity
 firmware-libertas
-firmware-ipw2x00
 firmware-zd1211
 firmware-siano
 firmware-qcom-soc
@@ -73,5 +72,16 @@ firmware-cirrus
 firmware-sof-signed
 firmware-intel-sound
 firmware-intel-misc
-firmware-ivtv
 alsa-firmware-loaders
+
+# EXCLUDED ON PURPOSE: firmware-ipw2x00 and firmware-ivtv.
+#
+# Both are non-free firmware whose post-install script asks debconf to accept a licence.
+# Nothing accepts it in a non-interactive build, so dpkg fails and the whole package set is
+# rolled back — the sweep that used to install them also preseeds those two answers, which
+# is the only reason they appeared to work. Dropping them is better than carrying a
+# pre-seeded blanket acceptance of a licence the project has not read.
+#
+# The hardware they cover is old: ipw2x00 is Intel PRO/Wireless 2100/2200 (2003-era), ivtv
+# is Conexant video capture cards. A user with either can install the package on the
+# installed system, where they can answer the prompt themselves.
