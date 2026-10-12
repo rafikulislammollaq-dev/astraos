@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=AstraOS Recovery Guide
+Comment=Step-by-step recovery for a desktop, login, boot, package or disk failure
+Comment[en]=Step-by-step recovery for a desktop, login, boot, package or disk failure
+Exec=xfce4-terminal --title="AstraOS Recovery Guide" --geometry=110x42 --hold --command="astraos-recovery-guide"
+Icon=astraos-logo
+Terminal=false
+Categories=System;Utility;
+Keywords=AstraOS;recovery;repair;boot;troubleshoot;rescue;
+StartupNotify=true

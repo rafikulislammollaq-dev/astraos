@@ -1,0 +1,82 @@
+#!/bin/sh
+# AstraOS cleanup hook (chroot stage).
+#
+# Removes what must never ship: the builder's identity, package caches, logs from the
+# build, and the staged asset tree. Keeps the parts of the build that are useful for
+# provenance (the manifest and the service policy). Failing here is a build failure.
+
+set -eu
+
+STAGE=/usr/share/astraos/staged
+PREFIX='[astraos:cleanup]'
+
+log() { printf '%s %s\n' "$PREFIX" "$*"; }
+
+# --- Preserve the build provenance before deleting anything -------------------
+log "preserving build provenance"
+mkdir -p /usr/share/astraos/build-info
+for f in /etc/astraos-release; do
+    [ -f "$f" ] && cp -f "$f" /usr/share/astraos/build-info/
+done
+if [ -f /usr/share/astraos/SERVICE-POLICY.txt ]; then
+    cp -f /usr/share/astraos/SERVICE-POLICY.txt /usr/share/astraos/build-info/
+fi
+if [ -f "$STAGE/build-manifest.env" ]; then
+    cp -f "$STAGE/build-manifest.env" /usr/share/astraos/build-info/
+fi
+if [ -f "$STAGE/package-manifest.txt" ]; then
+    cp -f "$STAGE/package-manifest.txt" /usr/share/astraos/build-info/
+fi
+
+# --- Remove the staged source tree --------------------------------------------
+# The staged tree is a build input, not a runtime asset. Leaving it behind would both
+# bloat the image and leave a copy of the build configuration on every installed system.
+if [ -d "$STAGE" ]; then
+    log "removing the staged asset tree"
+    rm -rf "$STAGE"
+fi
+
+# --- Remove package manager residue ------------------------------------------
+log "cleaning package caches"
+if command -v apt-get >/dev/null 2>&1; then
+    apt-get clean || log "WARNING: apt-get clean failed"
+fi
+rm -rf /var/lib/apt/lists/* /var/lib/apt/lists/partial 2>/dev/null || true
+rm -rf /var/cache/apt/archives/*.deb 2>/dev/null || true
+rm -rf /var/cache/apt/pkgcache.bin /var/cache/apt/srcpkgcache.bin 2>/dev/null || true
+
+# --- Remove the build logs ----------------------------------------------------
+# The full build log stays in the repository (logs/), not in the image.
+rm -rf /var/log/astraos-build* 2>/dev/null || true
+
+# --- Remove machine identity --------------------------------------------------
+# A cloned machine-id makes every AstraOS installation claim to be the same machine
+# and breaks DHCP client identity. live-config regenerates it on first boot.
+log "resetting machine identity"
+rm -f /etc/machine-id 2>/dev/null || true
+: > /etc/machine-id
+rm -f /var/lib/dbus/machine-id 2>/dev/null || true
+ln -sf /etc/machine-id /var/lib/dbus/machine-id 2>/dev/null || true
+
+# SSH host keys must not be pre-generated and shared between installations.
+rm -f /etc/ssh/ssh_host_* 2>/dev/null || true
+
+# --- Trim logs -----------------------------------------------------------------
+log "trimming logs"
+find /var/log -type f -name '*.log' -delete 2>/dev/null || true
+find /var/log -type f -name '*.gz' -delete 2>/dev/null || true
+: > /var/log/lastlog 2>/dev/null || true
+: > /var/log/wtmp 2>/dev/null || true
+: > /var/log/btmp 2>/dev/null || true
+
+# --- Remove builder residue in /root -----------------------------------------
+rm -rf /root/.bash_history /root/.cache /root/.wget-hsts 2>/dev/null || true
+rm -f /root/.sudo_as_admin_successful 2>/dev/null || true
+
+# --- Remove temporary files ---------------------------------------------------
+log "removing temporary files"
+rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+
+# --- Report what is left ------------------------------------------------------
+log "remaining size of the chroot: $(du -sh / 2>/dev/null | cut -f1)"
+log "cleanup finished"

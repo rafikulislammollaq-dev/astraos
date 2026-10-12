@@ -1,0 +1,115 @@
+#!/bin/sh
+# AstraOS service policy hook (chroot stage).
+#
+# Enables only the services the desktop release needs, disables the ones it does not,
+# and records the resulting decision so it can be audited (plan §13.2: "audit the
+# enabled service list. Explain any unusual service.").
+#
+# The rationale for each enable/disable is written to
+# /usr/share/astraos/SERVICE-POLICY.txt inside the image.
+
+set -eu
+
+STAGE=/usr/share/astraos/staged
+PREFIX='[astraos:services]'
+
+log() { printf '%s %s\n' "$PREFIX" "$*"; }
+
+POLICY=/usr/share/astraos/SERVICE-POLICY.txt
+mkdir -p /usr/share/astraos
+
+enable_unit() {
+    unit="$1"
+    reason="$2"
+    if systemctl is-enabled "$unit" >/dev/null 2>&1; then
+        action="already-enabled"
+    elif systemctl enable "$unit" >/dev/null 2>&1; then
+        action="enabled"
+    else
+        # Recorded honestly: a missing or masked unit is not a silent success.
+        action="NOT-ENABLED"
+    fi
+    printf '%s|enable|%s|%s\n' "$unit" "$action" "$reason" >> "$POLICY"
+    log "enable: ${unit} -> ${action}"
+}
+
+disable_unit() {
+    unit="$1"
+    reason="$2"
+    if systemctl is-enabled "$unit" >/dev/null 2>&1; then
+        systemctl disable "$unit" >/dev/null 2>&1 || true
+        action="disabled"
+    else
+        action="not-present"
+    fi
+    printf '%s|disable|%s|%s\n' "$unit" "$action" "$reason" >> "$POLICY"
+    log "disable: ${unit} -> ${action}"
+}
+
+{
+    printf '# AstraOS service policy\n'
+    printf '# Generated during the build by 0400-services.hook.chroot.\n'
+    printf '# Format: unit|intent|result|reason\n'
+    printf '# Regenerate the audit with:  systemctl list-unit-files --state=enabled\n'
+} > "$POLICY"
+
+# --- Required for the desktop release -----------------------------------------
+enable_unit NetworkManager.service        "the only networking authority for the desktop session (plan §12)"
+enable_unit NetworkManager-wait-online.service "waits for an address before the session reports offline"
+enable_unit lightdm.service               "graphical login; no autologin and no root login (plan §7.3)"
+enable_unit bluetooth.service             "Bluetooth is a user-facing desktop feature"
+enable_unit cups.service                  "printing support; listening on localhost only"
+enable_unit thermald.service              "CPU thermal management on Intel hardware"
+enable_unit systemd-timesyncd.service     "time synchronisation (plan §5.1)"
+enable_unit udisks2.service               "removable media and mounting for Thunar"
+enable_unit upower.service                "battery reporting on laptops (plan §7.2)"
+enable_unit accounts-daemon.service       "user session information for the greeter"
+enable_unit rsyslog.service               "persistent logging for diagnostics (plan §14)"
+enable_unit cron.service                  "scheduled maintenance including unattended-upgrades"
+enable_unit avahi-daemon.service          "mDNS local service discovery"
+enable_unit lm-sensors.service            "hardware sensor readings for the panel plugin"
+enable_unit ufw.service                   "host firewall policy engine; rules are documented in docs/SECURITY.md"
+
+# --- Deliberately not enabled -------------------------------------------------
+# Each of these is installed or present, but enabling it would widen the attack
+# surface or slow boot without a user-facing benefit (plan §13.2).
+disable_unit ssh.service                  "no remote administration daemon in this release"
+disable_unit sshd.service                 "no remote administration daemon in this release"
+disable_unit cups-browsed.service         "remote printer discovery is not needed by default"
+
+# --- Live-session-only behaviour ----------------------------------------------
+# The live session must clearly identify itself and must not pretend changes survive
+# a reboot (plan §6.1).
+if [ -d "$STAGE/system/live-session" ]; then
+    cp -a "$STAGE/system/live-session/." /usr/share/astraos/ 2>/dev/null || true
+fi
+
+# --- sysctl / kernel defaults (plan §13) --------------------------------------
+log "installing sysctl defaults"
+mkdir -p /etc/sysctl.d
+if [ -f "$STAGE/system/sysctl/60-astraos.conf" ]; then
+    cp -f "$STAGE/system/sysctl/60-astraos.conf" /etc/sysctl.d/60-astraos.conf
+else
+    log "WARNING: staged sysctl defaults not found; no AstraOS sysctl tuning applied"
+fi
+
+# --- Modules, hostname, timezone ----------------------------------------------
+if [ -f "$STAGE/system/default-hostname" ]; then
+    cp -f "$STAGE/system/default-hostname" /etc/hostname
+fi
+printf '127.0.0.1\tlocalhost\n127.0.1.1\tastra-live\n::1\t\tlocalhost ip6-localhost ip6-loopback\n' > /etc/hosts
+
+if [ -f /etc/localtime ]; then
+    : # Calamares configures the real timezone on the installed system
+fi
+
+# --- Locale and keymap --------------------------------------------------------
+log "configuring default locale"
+printf 'en_US.UTF-8 UTF-8\n' > /etc/locale.gen
+if command -v locale-gen >/dev/null 2>&1; then
+    locale-gen >/dev/null 2>&1 || log "WARNING: locale-gen failed; the image may fall back to C.UTF-8"
+else
+    log "WARNING: locale-gen is not installed"
+fi
+
+log "service policy written to ${POLICY}"

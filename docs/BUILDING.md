@@ -1,0 +1,175 @@
+# Building AstraOS
+
+## 1. Supported build environments
+
+AstraOS image building requires **Linux**. The image is assembled with `debootstrap`,
+`live-build`, `mksquashfs` and `xorriso`; none of these exist on Windows or macOS, and
+plan §3 explicitly forbids running Linux-only build commands from a Windows shell.
+
+In order of preference:
+
+1. **A Linux host** (Debian 12/13 or Ubuntu 22.04/24.04 recommended).
+2. **A Linux virtual machine** on any host.
+3. **WSL2** on Windows — works well, but requires the Virtual Machine Platform feature.
+4. **CI** — `.github/workflows/build-iso.yml` runs on GitHub Actions.
+
+> **This project was started on a Windows host where WSL2 could not start.** The exact
+> measurements, the blocker and the two commands that fix it are in
+> [`ENVIRONMENT.md`](ENVIRONMENT.md). Read that first if `make validate` fails.
+
+## 2. Quick start
+
+```bash
+# 1. Can this machine build AstraOS?
+./scripts/validate-environment.sh
+
+# 2. Install the build dependencies (the only step that elevates privileges)
+./scripts/bootstrap-build-environment.sh
+
+# 3. Build
+./scripts/build-iso.sh
+```
+
+Or with make:
+
+```bash
+make validate      # can this host build?
+make bootstrap     # install the build dependencies
+make build         # build the image
+```
+
+## 3. Requirements
+
+| Resource | Minimum | Notes |
+|---|---|---|
+| Disk | 15 GB free | Build tree (~6 GB), package cache (~2 GB), ISO (~1.5–2 GB) |
+| RAM | 2 GB | More makes squashfs compression faster |
+| CPU | 2 cores | `mksquashfs` and `xz` are the slow parts |
+| Network | Required | Several GB of packages are downloaded |
+
+## 4. What the build does
+
+| Stage | Script | Result |
+|---|---|---|
+| 1 | `validate-environment.sh` | Refuses to continue on a host that cannot build |
+| 2 | `configure-live-build.sh` | Staged build tree, rendered templates, built packages |
+| 3 | `build-packages.sh` | Five `.deb` files, staged for live-build |
+| 4 | `lb build` | Squashfs + hybrid ISO, with the chroot hooks running inside |
+| 5 | `validate-iso.sh` | Structural validation, including live-filesystem contents |
+| 6 | `generate-checksums.sh` | `.sha256`, verified against the image |
+| 7 | `generate-manifest.sh` | `.manifest` recording exactly what was built |
+
+**Every stage is fatal on failure.** The build never reports success because a file
+exists; the scripts check exit statuses and inspect the artifacts (plan §16.2).
+
+## 5. Build outputs
+
+```
+dist/
+├── astraos-0.1.0-alpha-amd64.iso             the bootable image
+├── astraos-0.1.0-alpha-amd64.iso.sha256      its SHA-256, already verified
+└── astraos-0.1.0-alpha-amd64.iso.manifest    what was built, and what was NOT tested
+
+logs/
+└── build-20261012T213000Z.log                the full build log
+
+build/                                        ignored by git
+├── packages/                                 the built .deb files and their manifest
+└── live-build/                               the live-build working tree
+```
+
+The manifest is the honest record. Read the `[validation]` section: it distinguishes
+`structural=PASS` from `boot_in_virtualbox=UNTESTED`.
+
+## 6. Useful options
+
+```bash
+./scripts/build-iso.sh --no-cache        # force a clean live-build (slower, safer)
+./scripts/validate-environment.sh        # dry-run the host checks
+./scripts/build-packages.sh --clean      # rebuild the packages from scratch
+
+make clean                               # logs + live-build tree (keeps dist/)
+make distclean                           # everything generated, including dist/
+```
+
+`make clean` deliberately does **not** delete your built ISO. `make distclean` does, and
+says so before it runs.
+
+## 7. Common errors
+
+### "this host CANNOT build an AstraOS image"
+
+Read the failed lines from `validate-environment.sh`. The usual causes: not Linux;
+`live-build` not installed; less than 15 GB free; the mirror unreachable.
+
+### `lb build` fails during debootstrap
+
+Almost always the network or the mirror. Check:
+
+```bash
+curl -I http://deb.debian.org/debian/dists/trixie/Release
+```
+
+If the host is behind a proxy, set `http_proxy`/`https_proxy` for the build.
+
+### "the package lists reference packages that do not exist"
+
+Run the verifier; it names the offending package and which list requested it:
+
+```bash
+python3 scripts/verify-package-availability.py
+```
+
+Fix the list, or deliberately change the pinned release in `config/distribution.env`.
+
+### The build stops at `0700-verify.hook.chroot`
+
+That hook found something the release depends on missing in the image. The failure names
+the exact path. Investigate; do not delete the assertion. It exists because shipping an
+image without its installer or its branding is worse than failing the build.
+
+### The build stops at `0300-installer.hook.chroot`
+
+Calamares' module names have changed between versions. The hook prints which module is
+missing. Remove it from the sequence in `installer/calamares/settings.conf` if the
+functionality genuinely does not exist in the pinned release, or add the package that
+provides it to `config/package-lists/60-installer.list.chroot`.
+
+### "another build appears to be in progress"
+
+Two builds sharing one working directory corrupt each other. If no build is running:
+
+```bash
+rm build/live-build/.astraos-build-in-progress
+```
+
+### Rerunning a failed build
+
+The build reuses the existing tree so a failure late in the process does not cost the
+whole download. To start clean:
+
+```bash
+./scripts/configure-live-build.sh --force
+```
+
+## 8. Building in CI
+
+`.github/workflows/build-iso.yml` is manually triggered. It validates the repository
+first, installs dependencies, builds, validates, computes checksums, writes the manifest
+and uploads the ISO plus the manifest as an artifact.
+
+CI-specific notes:
+
+- The runner used is `ubuntu-24.04`, which is a valid Linux build host.
+- The artifact is retained for 14 days. Builds are not archived permanently.
+- The workflow summary ends with an explicit statement of what it did **not** test:
+  booting, installing and everything that follows.
+
+## 9. After a successful build
+
+A structurally valid ISO is **not** a working operating system. Boot it:
+
+→ [`INSTALLATION_VIRTUALBOX.md`](INSTALLATION_VIRTUALBOX.md)
+
+Do not install it on physical hardware until the virtual machine acceptance procedure has
+passed. → [`INSTALLATION_PHYSICAL_PC.md`](INSTALLATION_PHYSICAL_PC.md)

@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Install AstraOS
+Name[en]=Install AstraOS
+GenericName=System installer
+Comment=Install AstraOS to a disk. The target disk is shown and confirmed before anything is written.
+Comment[en]=Install AstraOS to a disk. The target disk is shown and confirmed before anything is written.
+# pkexec is used so the user authenticates through the normal polkit path. The
+# installer is never launched as a passwordless root process (plan §10.4, §13.1).
+Exec=pkexec calamares
+TryExec=calamares
+Icon=astraos-installer
+Terminal=false
+Categories=System;Settings;
+OnlyShowIn=XFCE;
+Keywords=AstraOS;install;installer;setup;disk;calamares;
+StartupNotify=true

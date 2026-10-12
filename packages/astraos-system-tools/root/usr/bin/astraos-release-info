@@ -1,0 +1,88 @@
+#!/bin/bash
+# astraos-release-info - AstraOS release identity, provenance and licence pointers.
+#
+# Prints only what is recorded on the system. Fields that were never recorded are shown
+# as "unknown" rather than guessed (plan §24, §28 Rule 4).
+
+set -uo pipefail
+
+release_field() {
+    local key="$1"
+    if [ -r /etc/astraos-release ]; then
+        # shellcheck disable=SC1091
+        ( . /etc/astraos-release; printf '%s' "${!key:-unknown}" )
+    else
+        printf 'unknown'
+    fi
+}
+
+os_field() {
+    local key="$1"
+    if [ -r /etc/os-release ]; then
+        # shellcheck disable=SC1091
+        ( . /etc/os-release; printf '%s' "${!key:-unknown}" )
+    else
+        printf 'unknown'
+    fi
+}
+
+field()   { printf '  %-22s %s\n' "$1" "$2"; }
+
+printf '\n  ASTRA OS  release information\n'
+printf '  ==================================================\n\n'
+
+printf '  Release\n'
+field "name"          "$(release_field NAME)"
+field "version"       "$(release_field VERSION)"
+field "codename"      "$(release_field CODENAME)"
+field "stage"         "$(release_field RELEASE_STAGE)"
+field "architecture"  "$(release_field ARCHITECTURE)"
+printf '\n'
+
+printf '  Upstream base\n'
+field "distribution"  "$(release_field BASE_DISTRIBUTION)"
+field "release"       "$(release_field BASE_RELEASE)"
+field "codename"      "$(release_field BASE_CODENAME)"
+field "suite"         "$(release_field BASE_SUITE)"
+printf '\n'
+
+printf '  Components\n'
+field "desktop"       "$(release_field DESKTOP)"
+field "display server" "$(release_field DISPLAY_SERVER)"
+field "display manager" "$(release_field DISPLAY_MANAGER)"
+field "init system"   "$(release_field INIT_SYSTEM)"
+field "installer"     "$(release_field INSTALLER)"
+field "bootloader"    "$(release_field BOOTLOADER)"
+field "root filesystem" "$(release_field ROOT_FILESYSTEM)"
+printf '\n'
+
+printf '  Build provenance\n'
+for info in /usr/share/astraos/build-info/*; do
+    [ -e "$info" ] || continue
+    printf '    %s\n' "$(basename "$info")"
+done
+field "built from"    "$(release_field BUILT_FROM)"
+printf '\n'
+
+printf '  Upstream provenance\n'
+printf '    %s\n' "$(release_field UPSTREAM_PROVENANCE)"
+printf '    %s\n' "$(os_field PRETTY_NAME)"
+printf '\n'
+
+printf '  Licensing\n'
+printf '    AstraOS is distributed under the GNU General Public License, version 3\n'
+printf '    or later. The full text is available at:\n'
+printf '      /usr/share/common-licenses/GPL-3\n'
+printf '      https://www.gnu.org/licenses/gpl-3.0.html\n\n'
+printf '    AstraOS includes software from Debian GNU/Linux, the Linux kernel, Xfce,\n'
+printf '    LightDM, Plymouth, GRUB, Calamares and many other projects. Each retains\n'
+printf '    its own copyright and licence. Package-specific notices are under\n'
+printf '      /usr/share/doc/<package>/copyright\n\n'
+printf '    AstraOS ships no proprietary assets and uses no third-party logos or\n'
+printf '    trademarks. See %s/README.md for attribution notes.\n' "/usr/share/doc/astraos"
+printf '\n'
+
+printf '  Support and documentation\n'
+field "support"       "$(release_field SUPPORT_URL)"
+field "documentation" "$(release_field DOCUMENTATION_URL)"
+printf '\n'

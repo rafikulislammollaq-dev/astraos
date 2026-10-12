@@ -1,0 +1,203 @@
+#!/bin/bash
+# astraos-recovery-guide - recovery steps for common AstraOS failures.
+#
+# This command only PRINTS guidance. It never modifies the system, never mounts or
+# formats anything, and never claims a failure can always be recovered automatically
+# (plan §14).
+
+set -uo pipefail
+
+topic="${1:-}"
+
+usage() {
+    printf '\n  astraos-recovery-guide [topic]\n\n'
+    printf '  Topics:\n'
+    printf '    desktop        the desktop does not appear\n'
+    printf '    login          the graphical login fails or loops\n'
+    printf '    boot           the system does not boot at all\n'
+    printf '    packages       package management is broken\n'
+    printf '    kernel         a kernel update left the system unbootable\n'
+    printf '    bootloader     GRUB is missing or misconfigured\n'
+    printf '    disk           the disk is full\n'
+    printf '    network        networking does not work\n'
+    printf '    diagnostics    what to collect before asking for help\n\n'
+    printf '  Run with no topic for an overview.\n\n'
+}
+
+section() {
+    printf '\n  --- %s %s\n\n' "$1" "$(printf '%.0s-' $(seq 1 $((60 - ${#1}))))"
+}
+
+steps() {
+    local n=1
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        printf '    %d. %s\n' "$n" "$line"
+        n=$((n + 1))
+    done
+}
+
+overview() {
+    printf '\n  ASTRA OS  recovery guide\n'
+    printf '  ============================================================\n'
+    printf '\n  AstraOS 0.1.0 Alpha is an early release. Some failures cannot be fixed\n'
+    printf '  from inside the running system. This guide tells you what to try and, where\n'
+    printf '  recovery is not possible, says so plainly instead of pretending otherwise.\n'
+    printf '\n  Always start here:\n\n'
+    steps <<'EOF'
+Check whether the problem is the desktop or the whole system: switch to a text console with Ctrl+Alt+F3 and log in.
+If a text console works, the system booted and the problem is graphical - see "desktop" or "login".
+Collect evidence before changing anything: astraos-recovery-guide diagnostics
+EOF
+    printf '\n  If the system does not boot at all, you need the installation medium:\n\n'
+    steps <<'EOF'
+Boot the AstraOS live image and choose the failsafe boot entry (it disables graphics and ACPI workarounds).
+Select "Live system" and let it start the desktop, or use a text console.
+Your installed system is untouched by booting the live image.
+EOF
+    printf '\n  Then pick the topic that matches your problem.\n'
+    usage
+}
+
+desktop() {
+    section "The desktop does not appear"
+    steps <<'EOF'
+Switch to a text console: Ctrl+Alt+F3, then log in with your own account.
+Check whether the session failed to start: systemctl --failed
+Look at the session log: journalctl -b -u lightdm --no-pager | tail -60
+Check Xorg's own log, which is more specific than the journal for graphics faults: less /var/log/Xorg.0.log
+Look for lines beginning (EE) - these are errors.
+If the failure mentions a graphics driver, boot with the failsafe entry from GRUB and install the appropriate firmware package.
+If the failure mentions "no screens found", the driver or the display configuration is at fault; see the Hardware Compatibility document.
+EOF
+    printf '\n  Documentation: %s/TROUBLESHOOTING.md\n' "/usr/share/doc/astraos"
+}
+
+login() {
+    section "The graphical login fails or loops"
+    steps <<'EOF'
+Confirm the credentials work in a text console (Ctrl+Alt+F3). If they do, the password is fine and the session is failing.
+Check that the session file exists: ls /usr/share/xsessions/
+Confirm LightDM is running: systemctl status lightdm
+If the screen returns to the greeter immediately, the session is crashing on start. Check: journalctl -b | grep -i xfce
+Empty or unwritable home directory is a common cause: ls -ld "$HOME"
+A home directory owned by another user makes Xfce fail to start. Fix the ownership, not the permissions: sudo chown -R user:user "$HOME"
+If you cannot log in at all, boot the live image and reset the password from there.
+EOF
+}
+
+boot() {
+    section "The system does not boot at all"
+    steps <<'EOF'
+Try the failsafe boot entry in the GRUB menu. It disables splash, power management and kernel modesetting.
+If GRUB itself does not appear, see the "bootloader" topic.
+If the kernel starts but never reaches the login screen, boot with the failsafe entry and read the messages on screen.
+Boot the live image and inspect the installed system read-only. Do not run fsck on a mounted filesystem.
+Identify the root partition from the installer notes, then check it: sudo fsck -n /dev/<partition>
+The -n flag is deliberate: it reports without changing anything. Only run without -n on an UNMOUNTED filesystem.
+If the root filesystem is damaged, back up what you can with the live image before attempting repair.
+EOF
+    printf '\n  A damaged filesystem is not always recoverable. Copy your data off first.\n'
+}
+
+packages() {
+    section "Package management is broken"
+    steps <<'EOF'
+Read the actual error rather than repeating the command: sudo apt update 2>&1 | tail -30
+A broken dependency chain is usually fixable: sudo apt --fix-broken install
+An interrupted dpkg run is usually fixable: sudo dpkg --configure -a
+Never delete files under /var/lib/dpkg by hand; it corrupts the package database.
+If a signature error appears, check the system clock first. A wrong clock breaks TLS and signature validation.
+Confirm the AstraOS APT policy has not been edited: grep -r . /etc/apt/apt.conf.d/60-astraos-security
+EOF
+}
+
+kernel() {
+    section "A kernel update left the system unbootable"
+    steps <<'EOF'
+Boot the previous kernel: choose "Advanced options for AstraOS" in GRUB and pick the older entry.
+Once booted, confirm which kernels are installed: dpkg -l 'linux-image-*' | grep ^ii
+Check that an initramfs exists for each kernel: ls -l /boot/
+Regenerate it for the running kernel only: sudo update-initramfs -u -k "$(uname -r)"
+Inspect the recorded update log before changing anything: less /var/log/apt/history.log
+Remove a specific broken kernel image only after the working one is confirmed.
+EOF
+}
+
+bootloader() {
+    section "GRUB is missing or misconfigured"
+    steps <<'EOF'
+Boot the AstraOS live image. You can repair the installed system from there.
+Identify the root and EFI partitions. Do not guess: partition sizes and filesystem types distinguish them.
+Mount the installed root filesystem, then bind the system directories before chrooting.
+Inside the chroot, reinstall GRUB for the correct boot mode: sudo grub-install /dev/<disk>
+Then regenerate the configuration: sudo update-grub
+For a UEFI system, confirm the EFI system partition is mounted at /boot/efi before running grub-install.
+Verifying this is straightforward: after rebooting, the GRUB menu should list AstraOS and any other installed systems.
+EOF
+    printf '\n  Getting the boot mode wrong is the most common cause of a "successful" repair\n'
+    printf '  that still does not boot. Check it first: astraos-info | grep -i boot\n'
+}
+
+disk() {
+    section "The disk is full"
+    steps <<'EOF'
+Confirm which filesystem is full and where it is mounted: df -h
+Find the large directories: sudo du -xh --max-depth=1 / 2>/dev/null | sort -h | tail -20
+Clear the package cache first; it is the safest large win: sudo apt clean
+Clear old journals: sudo journalctl --vacuum-size=200M
+Check for old kernels left behind by upgrades and remove ones you no longer need.
+If the root filesystem is genuinely too small, this needs repartitioning, not cleanup.
+EOF
+}
+
+network() {
+    section "Networking does not work"
+    steps <<'EOF'
+Check whether the interface exists and has an address: ip -brief addr
+Check for a default route: ip route show default
+Confirm NetworkManager management is enabled for the device: nmcli device status
+Check the kernel actually recognised the hardware: lspci -nnk | grep -A3 -i net
+A missing firmware file is reported in the kernel log: sudo dmesg | grep -i firmware
+Then confirm NetworkManager itself is healthy: systemctl status NetworkManager
+EOF
+    printf '\n  If firmware is missing, the Wi-Fi chipset may not be supported by\n'
+    printf '  AstraOS 0.1.0. See the Hardware Compatibility document before assuming a bug.\n'
+}
+
+diagnostics() {
+    section "Collect this before asking for help"
+    printf '    Run these and keep the output:\n\n'
+    printf '      astraos-info --json\n'
+    printf '      systemctl --failed\n'
+    printf '      sudo journalctl -b -p err --no-pager\n'
+    printf '      sudo dmesg | tail -100\n'
+    printf '      df -h\n'
+    printf '      lspci -nnk > hardware.txt 2>&1\n'
+    printf '      lsusb > usb.txt\n\n'
+    printf '  Do NOT send:\n'
+    printf '    * your password or any password\n'
+    printf '    * private keys\n'
+    printf '    * Wi-Fi configuration files containing a network key\n'
+    printf '    * screenshots of the account settings window\n\n'
+    printf '  These logs do not contain credentials, but the files listed under "do NOT\n'
+    printf '  send" do. Check anything else before sharing it.\n'
+}
+
+case "$topic" in
+    "")             overview ;;
+    desktop)        desktop ;;
+    login)          login ;;
+    boot)           boot ;;
+    packages)       packages ;;
+    kernel)         kernel ;;
+    bootloader)     bootloader ;;
+    disk)           disk ;;
+    network)        network ;;
+    diagnostics)    diagnostics ;;
+    -h|--help|help) usage ;;
+    *) printf 'astraos-recovery-guide: unknown topic "%s"\n' "$topic" >&2; usage; exit 2 ;;
+esac
+
+printf '\n  Full guide on this system: /usr/share/doc/astraos/RECOVERY.md\n'
+printf '  Report a defect: https://astraos.invalid/issues\n\n'

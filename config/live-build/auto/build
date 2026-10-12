@@ -1,0 +1,57 @@
+#!/bin/sh
+# AstraOS live-build executor.
+#
+# live-build runs this from the build directory after auto/config has configured it.
+# Its only job is to run the build in a way that cannot silently report success:
+# every stage's exit status is honoured and the full output is logged.
+
+set -eu
+
+ASTRAOS_REPO_ROOT="${ASTRAOS_REPO_ROOT:?ASTRAOS_REPO_ROOT must be set by the calling script}"
+. "${ASTRAOS_REPO_ROOT}/config/distribution.env"
+
+LOG_DIR="${ASTRAOS_REPO_ROOT}/${ASTRAOS_LOG_DIR}"
+mkdir -p "$LOG_DIR"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+LOG="${LOG_DIR}/live-build-${STAMP}.log"
+
+say() { printf '[astraos:auto/build] %s\n' "$*" >&2; }
+
+say "logging to ${LOG}"
+say "this stage downloads and installs the full package set; expect several GB"
+
+# `lb build` streams to stdout/stderr. Capture it, keep it visible, and preserve the
+# pipeline status of lb (not tee) so a failure cannot be swallowed (plan §16.2).
+set +e
+lb build 2>&1 | tee "$LOG"
+LB_STATUS="${PIPESTATUS[0]:-${?}}"
+set -e
+
+if [ "${LB_STATUS:-1}" -ne 0 ]; then
+    say "FAILED: lb build exited with status ${LB_STATUS}"
+    say "last 40 lines of ${LOG}:"
+    tail -40 "$LOG" >&2 || true
+    exit "${LB_STATUS}"
+fi
+
+# A zero exit from lb is necessary but not sufficient: confirm an image exists.
+found=""
+for candidate in *.iso; do
+    if [ -f "$candidate" ]; then found="$candidate"; break; fi
+done
+
+if [ -z "$found" ]; then
+    say "FAILED: lb build reported success but produced no .iso in $(pwd)"
+    say "contents of $(pwd):"
+    ls -la >&2 || true
+    exit 1
+fi
+
+if [ "$(wc -c < "$found")" -lt 104857600 ]; then
+    say "FAILED: ${found} is smaller than 100 MiB and is not a plausible live image"
+    ls -la "$found" >&2
+    exit 1
+fi
+
+say "built ${found} ($(wc -c < "$found") bytes)"
+printf '%s\n' "$found" > "${ASTRAOS_REPO_ROOT}/${ASTRAOS_BUILD_DIR}/.last-iso-name"

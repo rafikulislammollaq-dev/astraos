@@ -1,0 +1,27 @@
+      .--------------------------------------.
+      |            A S T R A   O S           |
+      |      0.1.0 Alpha  -  codename Nova   |
+      '--------------------------------------'
+
+AstraOS is an independent Linux distribution based on Debian GNU/Linux.
+It is not an official Debian release and it is not yet a stable product.
+This is an ALPHA release: expect defects. See /usr/share/doc/astraos/KNOWN_LIMITATIONS.md
+
+Useful commands
+  astraos-info              OS, kernel, hardware and network summary
+  astraos-info --json       the same summary, machine readable
+  astraos-help              where to find documentation and how to report problems
+  astraos-welcome           first-run guidance (installed systems)
+
+Live session
+  This is a LIVE environment. It is running from the installation medium.
+  Changes made here are NOT saved to disk and will be lost when you reboot.
+  To keep anything, install AstraOS with the installer.
+
+  The live user has administrative rights through sudo. The root account is locked.
+
+Documentation
+  /usr/share/doc/astraos/   offline copies of the project documentation
+  https://astraos.invalid/docs
+
+Wake up. The stars are waiting.

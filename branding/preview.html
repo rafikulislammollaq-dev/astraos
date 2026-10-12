@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AstraOS brand assets</title>
+<style>
+  :root {
+    --void: #05030A; --void2: #0B0716;
+    --magenta: #FF2FB9; --pink: #FF5CC8; --purple: #8B3DFF; --cyan: #22E6FF;
+    --text: #F2EEFF; --dim: rgba(242,238,255,.62); --faint: rgba(242,238,255,.34);
+    --hairline: rgba(255,255,255,.08);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 32px 80px;
+    background: radial-gradient(120% 90% at 15% 0%, #1a0b2e 0%, var(--void) 55%) var(--void);
+    color: var(--text);
+    font-family: 'DejaVu Sans', system-ui, -apple-system, sans-serif;
+    font-size: 14px; line-height: 1.55;
+  }
+  h1 { font-size: 26px; letter-spacing: .22em; margin: 0 0 4px; font-weight: 600; }
+  h1 span { color: var(--cyan); }
+  h2 {
+    font-family: 'DejaVu Sans Mono', ui-monospace, monospace;
+    font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--faint); font-weight: 500;
+    margin: 46px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--hairline);
+  }
+  .sub { color: var(--dim); margin: 0 0 8px; }
+  .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+  figure {
+    margin: 0; border: 1px solid var(--hairline); border-radius: 14px; overflow: hidden;
+    background: rgba(18,12,32,.6);
+  }
+  figure img { display: block; width: 100%; height: auto; background: var(--void2); }
+  figcaption {
+    font-family: 'DejaVu Sans Mono', ui-monospace, monospace;
+    font-size: 10px; letter-spacing: .12em; color: var(--faint);
+    padding: 9px 12px; border-top: 1px solid var(--hairline);
+  }
+  .marks { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+  .mark {
+    border: 1px solid var(--hairline); border-radius: 14px; padding: 18px;
+    display: flex; align-items: center; justify-content: center; min-width: 190px;
+  }
+  .mark.checker {
+    background-image:
+      linear-gradient(45deg, #1b1626 25%, transparent 25%),
+      linear-gradient(-45deg, #1b1626 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #1b1626 75%),
+      linear-gradient(-45deg, transparent 75%, #1b1626 75%);
+    background-size: 18px 18px;
+    background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+    background-color: #120f1c;
+  }
+  .mark.on-light { background: #F4F6FA; }
+  .mark img { width: 150px; height: 150px; }
+  .mark img.small { width: 48px; height: 48px; }
+  .wordmark { max-width: 560px; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+  .swatch {
+    width: 132px; border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden;
+  }
+  .swatch .chip { height: 56px; }
+  .swatch .meta {
+    padding: 7px 10px;
+    font-family: 'DejaVu Sans Mono', ui-monospace, monospace; font-size: 9.5px;
+    letter-spacing: .06em; color: var(--dim); background: rgba(10,8,18,.7);
+  }
+  note { display: block; color: var(--faint); font-size: 12px; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<h1>ASTRA <span>OS</span></h1>
+<p class="sub">Generated brand assets — 0.1.0 Alpha. Palette source of truth: <code>config/branding.env</code>.</p>
+
+<h2>Ring marks</h2>
+<div class="marks">
+  <div class="mark checker"><img src="generated/astraos-logo-512.png" alt="AstraOS ring mark"></div>
+  <div class="mark on-light"><img src="generated/astraos-logo-mono-dark-512.png" alt="AstraOS monochrome mark, dark ink"></div>
+  <div class="mark"><img src="generated/astraos-logo-mono-light-512.png" alt="AstraOS monochrome mark, light ink"></div>
+  <div class="mark"><img class="small" src="generated/astraos-logo-512.png" alt="AstraOS mark at 48px"></div>
+</div>
+
+<h2>Wordmark</h2>
+<div class="mark wordmark"><img src="logos/astraos-wordmark.svg" alt="AstraOS wordmark" style="width:100%"></div>
+
+<h2>Boot splash — 1920×1080</h2>
+<div class="grid">
+  <figure>
+    <img src="generated/astraos-splash-boot-1920x1080.png" alt="AstraOS boot splash">
+    <figcaption>PLYMOUTH + GRUB BACKGROUND</figcaption>
+  </figure>
+  <figure>
+    <img src="generated/astraos-login-background-1920x1080.png" alt="AstraOS login background">
+    <figcaption>LIGHTDM GREETER BACKGROUND</figcaption>
+  </figure>
+</div>
+
+<h2>Wallpapers — 1920×1080</h2>
+<div class="grid">
+  <figure>
+    <img src="generated/astraos-wallpaper-dark-1920x1080.png" alt="AstraOS dark wallpaper">
+    <figcaption>ASTRAOS-WALLPAPER-DARK — DESKTOP DEFAULT</figcaption>
+  </figure>
+  <figure>
+    <img src="generated/astraos-wallpaper-light-1920x1080.png" alt="AstraOS light wallpaper">
+    <figcaption>ASTRAOS-WALLPAPER-LIGHT — LIGHT THEME</figcaption>
+  </figure>
+</div>
+
+<h2>Brand palette</h2>
+<div class="swatches">
+  <div class="swatch"><div class="chip" style="background:#05030A"></div><div class="meta">void<br>#05030A</div></div>
+  <div class="swatch"><div class="chip" style="background:#0B0716"></div><div class="meta">void-2<br>#0B0716</div></div>
+  <div class="swatch"><div class="chip" style="background:#FF2FB9"></div><div class="meta">neon-magenta<br>#FF2FB9</div></div>
+  <div class="swatch"><div class="chip" style="background:#FF5CC8"></div><div class="meta">neon-pink<br>#FF5CC8</div></div>
+  <div class="swatch"><div class="chip" style="background:#8B3DFF"></div><div class="meta">neon-purple<br>#8B3DFF</div></div>
+  <div class="swatch"><div class="chip" style="background:#22E6FF"></div><div class="meta">neon-cyan<br>#22E6FF</div></div>
+</div>
+
+<note>
+  Regenerate with <code>python3 branding/tools/render_assets.py</code>.
+  These PNGs are build inputs for plymouth, GRUB, LightDM and the XFCE wallpaper.
+</note>
+
+</body>
+</html>

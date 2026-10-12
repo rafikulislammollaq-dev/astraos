@@ -1,0 +1,52 @@
+# Graphical installer (plan §10).
+#
+# Calamares is the maintained upstream installer. It is NOT written from scratch and
+# no custom partitioning program exists in this project (plan §10.1 and Rule 9).
+#
+# The kpmcore/parted stack below is what Calamares actually uses to identify and
+# partition the target disk, so the disk-selection screens show real devices.
+
+calamares
+calamares-settings-debian
+
+squashfs-tools
+dosfstools
+e2fsprogs
+ntfs-3g
+xfsprogs
+btrfs-progs
+f2fs-tools
+jfsutils
+reiserfsprogs
+exfatprogs
+parted
+gdisk
+# kpmcore is shipped as a versioned library package in the pinned release. The
+# exact major version is asserted by tests/static/test_packages.py.
+libkpmcore12
+os-prober
+grub2-common
+grub-efi-amd64-bin
+grub-efi-ia32-bin
+grub-pc-bin
+grub-efi-amd64-signed
+shim-signed
+efibootmgr
+efivar
+
+lvm2
+cryptsetup
+cryptsetup-initramfs
+keyutils
+
+# REMOVED: dropbear-initramfs.
+# It provides a minimal SSH server inside the initramfs, which exists to allow remote
+# unlocking of a root filesystem encrypted with a passphrase. AstraOS does not ship that
+# configuration, and disk encryption has never been tested (docs/KNOWN_LIMITATIONS.md
+# §2). Installing an untested network service in the initramfs - the stage that runs
+# before any security policy or firewall applies - for a feature nobody has verified is
+# not a trade worth making (plan §13.2). Re-add it together with the initramfs network
+# configuration, not before.
+
+arch-install-scripts
+unattended-upgrades

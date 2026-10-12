@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Per-user desktop defaults, copied from /etc/skel for every new account.
+
+  WHY THIS EXISTS AT ALL, when /etc/xdg/xfce4 already sets a system-wide default:
+  wallpaper is stored per user in Xfce. A user's own file takes precedence over the
+  system default, and the first time a user changes any desktop setting Xfce writes a
+  complete file of its own. Seeding the AstraOS wallpaper here means the desktop looks
+  like AstraOS from the first login instead of after the first reboot, and it survives
+  that first write.
+
+  Only the wallpaper is seeded. Everything else stays at the system-wide default so
+  upstream changes reach existing users (plan §7.2: keep the interface configurable
+  rather than hardcoding an unmodifiable shell).
+-->
+<channel name="xfce4-desktop" version="1.0">
+  <property name="backdrop" type="empty">
+    <property name="screen0" type="empty">
+      <property name="monitor0" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
+        </property>
+      </property>
+    </property>
+  </property>
+  <property name="desktop-icons" type="empty">
+    <property name="icon-size" type="uint" value="48"/>
+    <property name="file-icons" type="empty">
+      <property name="show-home" type="bool" value="true"/>
+      <property name="show-trash" type="bool" value="true"/>
+      <property name="show-removable" type="bool" value="true"/>
+    </property>
+  </property>
+</channel>

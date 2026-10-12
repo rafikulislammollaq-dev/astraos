@@ -1,0 +1,25 @@
+Package: @@PACKAGE@@
+Version: @@VERSION@@
+Architecture: @@ARCH@@
+Maintainer: @@VENDOR@@ <maintainers@astraos.invalid>
+Section: admin
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: astraos-base (>= @@VERSION@@), calamares (>= 3.2), squashfs-tools, parted, gdisk, dosfstools, e2fsprogs, mount, util-linux, os-prober, grub2-common, efibootmgr, kpmcore
+Recommends: ntfs-3g, xfsprogs, btrfs-progs, f2fs-tools, exfatprogs, lvm2, cryptsetup, cryptsetup-initramfs
+Description: AstraOS installer configuration
+ The Calamares configuration and branding that make the upstream Calamares installer
+ an AstraOS installer: the module sequence, the partitioning defaults, the user
+ creation policy, the summary and the AstraOS visual identity.
+ .
+ AstraOS does NOT ship a custom partitioning program and does not reimplement disk
+ handling. Calamares performs all partitioning through kpmcore, which is the same
+ path every distribution using Calamares takes (plan §10.1 and Rule 9: never
+ compromise disk safety for convenience).
+ .
+ Safety properties enforced by this configuration:
+  * the target disk is shown explicitly and is never assumed;
+  * erasing a disk requires an explicit confirmation step;
+  * no disk is formatted without user confirmation;
+  * no fixed, shared or automatic login credentials are shipped;
+  * installation can only be started by the user, never by a script.

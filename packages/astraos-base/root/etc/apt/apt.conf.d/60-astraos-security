@@ -1,0 +1,23 @@
+// AstraOS APT security settings.
+//
+// Signature verification is never disabled (plan §13.3). These settings restate APT's
+// secure defaults explicitly so the policy is visible in the repository and cannot be
+// changed by accident.
+//
+// NOTE ON LOCAL PACKAGES: AstraOS's own .deb files are installed by live-build with
+// explicit command-line options, which take precedence over this file. This file does
+// not prevent installing the distribution's own packages; it prevents silently pulling
+// unauthenticated packages from a repository.
+
+APT::Get::AllowUnauthenticated "false";
+APT::Get::AllowInsecureRepositories "false";
+APT::Get::AllowDowngradeToInsecureRepositories "false";
+Acquire::AllowInsecureRepositories "false";
+Acquire::AllowDowngradeToInsecureRepositories "false";
+Acquire::http::AllowRedirect "true";
+
+// Run the APT sandbox with seccomp where the kernel supports it.
+APT::Sandbox::Seccomp "true";
+
+// Never let an unauthenticated source be added silently.
+APT::Get::Update::SourceListWarnings "true";

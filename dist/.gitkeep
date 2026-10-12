@@ -1,0 +1,5 @@
+# AstraOS release output directory.
+#
+# Built ISO images, their .sha256 checksum files and their .manifest files are
+# written here. This directory is ignored by git: release images are distributed as
+# build artifacts, never committed (plan §4, §17).

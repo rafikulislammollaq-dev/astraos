@@ -1,0 +1,178 @@
+#!/bin/sh
+# AstraOS live-build configuration generator.
+#
+# live-build runs this from the build directory (build/live-build) via `lb config`.
+# scripts/configure-live-build.sh stages this file and the rest of config/live-build/
+# into that directory first.
+#
+# Every value comes from config/distribution.env, so the pinned release is defined in
+# exactly one place (plan §5).
+#
+# IMPORTANT DESIGN POINT
+# ----------------------
+# live-build's flag set has changed between releases (for example --bootloader became
+# --bootloaders, and the "volatile" mirror options were removed). Rather than assume
+# the installed version accepts a flag, the optional flags are probed against
+# `lb config --help` and either applied or explicitly skipped with a warning.
+#
+# An unsupported optional flag therefore degrades to a documented, visible warning
+# instead of a hard failure halfway through configuration. Flags the project genuinely
+# depends on (--distribution, --initsystem, ...) are "required" and do abort.
+#
+# The option set actually used is written to .astraos-config-options so the build
+# manifest can report what really happened (plan §24).
+
+set -eu
+
+ASTRAOS_REPO_ROOT="${ASTRAOS_REPO_ROOT:?ASTRAOS_REPO_ROOT must be set by the calling script}"
+. "${ASTRAOS_REPO_ROOT}/config/distribution.env"
+. "${ASTRAOS_REPO_ROOT}/config/branding.env"
+
+say() { printf '[astraos:auto/config] %s\n' "$*" >&2; }
+die() { printf '[astraos:auto/config] ERROR: %s\n' "$*" >&2; exit 1; }
+
+command -v lb >/dev/null 2>&1 || die "lb (live-build) is not installed. Run scripts/bootstrap-build-environment.sh"
+
+LB_HELP="$(lb config --help 2>&1 || true)"
+SKIPPED=""
+
+supports() {
+    printf '%s\n' "$LB_HELP" | grep -q -- "$1"
+}
+
+# Abort when live-build cannot do something AstraOS depends on.
+required() {
+    flag="$1"
+    if ! supports "$flag"; then
+        die "this live-build does not support ${flag}, which AstraOS requires. Install a newer live-build."
+    fi
+}
+
+# Build the argument list explicitly. Each conditional group is written as an
+# if/else so values containing spaces stay a single word to the shell.
+set -- noauto --verbose
+
+# --- Fundamentals: the build is meaningless without these --------------------
+required --distribution
+required --architecture
+required --binary-images
+required --initsystem
+
+set -- "$@" --mode debian --system live
+set -- "$@" --distribution "${ASTRAOS_BASE_SUITE}"
+set -- "$@" --architecture "${ASTRAOS_ARCH}"
+set -- "$@" --archive-areas "${ASTRAOS_DEBIAN_COMPONENTS}"
+
+# --- Repositories -------------------------------------------------------------
+set -- "$@" --mirror-bootstrap "${ASTRAOS_DEBIAN_MIRROR}"
+set -- "$@" --mirror-chroot "${ASTRAOS_DEBIAN_MIRROR}"
+set -- "$@" --mirror-binary "${ASTRAOS_DEBIAN_MIRROR}"
+if supports --mirror-chroot-security; then
+    set -- "$@" --mirror-chroot-security "${ASTRAOS_DEBIAN_SECURITY_MIRROR}"
+fi
+if supports --mirror-binary-security; then
+    set -- "$@" --mirror-binary-security "${ASTRAOS_DEBIAN_SECURITY_MIRROR}"
+fi
+if supports --security; then set -- "$@" --security true; fi
+if supports --updates; then set -- "$@" --updates true; fi
+if supports --backports; then set -- "$@" --backports false; fi
+if supports --updates-chroot-security; then set -- "$@" --updates-chroot-security true; fi
+
+# The "volatile" mirror concept was removed from modern live-build. Skip it when the
+# option is gone; AstraOS does not depend on it.
+if supports --mirror-chroot-volatile; then
+    set -- "$@" --mirror-chroot-volatile "${ASTRAOS_DEBIAN_MIRROR}"
+else
+    SKIPPED="${SKIPPED} --mirror-chroot-volatile"
+fi
+
+# --- Init and initramfs -------------------------------------------------------
+set -- "$@" --initsystem "${ASTRAOS_INIT}"
+if supports --initramfs; then set -- "$@" --initramfs live-boot; fi
+
+# --- Image type and bootloaders ----------------------------------------------
+set -- "$@" --binary-images iso-hybrid
+if supports --bootloaders; then
+    set -- "$@" --bootloaders syslinux,grub-efi
+    say "bootloaders: syslinux (legacy BIOS) + grub-efi (UEFI)"
+elif supports --bootloader; then
+    set -- "$@" --bootloader grub-efi
+    say "WARNING: this live-build has no --bootloaders."
+    say "WARNING: the resulting ISO will be UEFI-only and will not boot in legacy BIOS mode."
+else
+    die "cannot determine the bootloader option supported by this live-build"
+fi
+if supports --uefi-secure-boot; then
+    # Secure Boot support is not claimed for this release.
+    set -- "$@" --uefi-secure-boot disable
+fi
+if supports --debian-installer; then set -- "$@" --debian-installer false; fi
+if supports --memtest; then set -- "$@" --memtest none; fi
+if supports --win32-loader; then set -- "$@" --win32-loader false; fi
+
+# --- ISO metadata -------------------------------------------------------------
+if supports --iso-application; then set -- "$@" --iso-application "${ASTRAOS_NAME}"; fi
+if supports --iso-preparer; then set -- "$@" --iso-preparer "${BRAND_VENDOR}"; fi
+if supports --iso-publisher; then set -- "$@" --iso-publisher "${ASTRAOS_PRETTY_NAME} ${ASTRAOS_ARCH}"; fi
+if supports --iso-volume; then set -- "$@" --iso-volume "${ASTRAOS_ISO_VOLUME_ID}"; fi
+
+# --- Kernel -------------------------------------------------------------------
+if supports --linux-flavours; then set -- "$@" --linux-flavours "${ASTRAOS_ARCH}"; fi
+if supports --linux-packages; then set -- "$@" --linux-packages "linux-image linux-headers"; fi
+
+# --- Live boot parameters -----------------------------------------------------
+# `quiet splash` is applied to the normal entry only. The failsafe entry deliberately
+# drops quiet/splash and disables power management so a user can read boot messages and
+# recover from a graphics or ACPI problem (plan §7.4).
+LIVE_APPEND="boot=live components username=${ASTRAOS_LIVE_USER} hostname=${ASTRAOS_LIVE_HOSTNAME} locales=en_US.UTF-8 keyboard-layouts=us keyboard-variant= timezone=UTC live-config.hostname=${ASTRAOS_LIVE_HOSTNAME} quiet splash"
+FAILSAFE_APPEND="boot=live components username=${ASTRAOS_LIVE_USER} hostname=${ASTRAOS_LIVE_HOSTNAME} locales=en_US.UTF-8 keyboard-layouts=us timezone=UTC nolapic noapic acpi=off nomodeset"
+if supports --bootappend-live; then set -- "$@" --bootappend-live "${LIVE_APPEND}"; fi
+if supports --bootappend-live-failsafe; then set -- "$@" --bootappend-live-failsafe "${FAILSAFE_APPEND}"; fi
+if supports --syslinux-timeout; then set -- "$@" --syslinux-timeout 30; fi
+
+# --- APT behaviour ------------------------------------------------------------
+# Signature verification is never disabled: AllowUnauthenticated is explicitly false.
+if supports --apt-recommends; then set -- "$@" --apt-recommends true; fi
+if supports --apt-indices; then set -- "$@" --apt-indices false; fi
+if supports --apt-secure; then set -- "$@" --apt-secure true; fi
+if supports --apt-options; then
+    set -- "$@" --apt-options "--yes --option APT::Get::AllowUnauthenticated=false"
+fi
+
+# --- Output -------------------------------------------------------------------
+if supports --checksums; then set -- "$@" --checksums sha256; fi
+if supports --binary-compression; then set -- "$@" --binary-compression xz; fi
+if supports --source; then set -- "$@" --source false; fi
+if supports --zsync; then set -- "$@" --zsync false; fi
+
+# --- Caching (fast repeated builds; lives under the ignored build directory) ---
+if supports --cache; then set -- "$@" --cache true; fi
+if supports --cache-indices; then set -- "$@" --cache-indices true; fi
+if supports --cache-packages; then set -- "$@" --cache-packages true; fi
+
+# --- Tasks --------------------------------------------------------------------
+# AstraOS selects packages explicitly per category (config/package-lists/), so Debian
+# task metapackages are disabled to avoid duplicate applications.
+if supports --tasks; then set -- "$@" --tasks ""; fi
+
+say "distribution : ${ASTRAOS_BASE_DISTRIBUTION} ${ASTRAOS_BASE_RELEASE_VERSION} (${ASTRAOS_BASE_SUITE})"
+say "architecture : ${ASTRAOS_ARCH}"
+say "desktop      : ${ASTRAOS_DESKTOP} / ${ASTRAOS_DISPLAY_MANAGER} / ${ASTRAOS_DISPLAY_SERVER}"
+say "installer    : ${ASTRAOS_INSTALLER}"
+say "iso volume   : ${ASTRAOS_ISO_VOLUME_ID}"
+if [ -n "${SKIPPED}" ]; then
+    say "WARNING: options not supported by this live-build were skipped:${SKIPPED}"
+fi
+
+# Record the exact argv so the build manifest reports what was really used.
+{
+    printf 'lb-version=%s\n' "$(lb --version 2>/dev/null || echo unknown)"
+    printf 'argv:'
+    for arg in "$@"; do printf ' %s' "$arg"; done
+    printf '\n'
+    printf 'skipped:%s\n' "${SKIPPED:- none}"
+} > .astraos-config-options
+
+lb config "$@"
+
+say "live-build configuration written to $(pwd)/config"

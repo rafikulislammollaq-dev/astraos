@@ -1,0 +1,80 @@
+#!/bin/bash
+# astraos-welcome - conservative first-run guidance.
+#
+# Design rules (plan §15, §21):
+#   * It MUST NOT perform destructive actions automatically.
+#   * It MUST NOT download large models, GPU drivers or development toolchains.
+#   * It MUST NOT run package upgrades: it tells the user how, and stops.
+#   * It must work offline; network-dependent steps are offered, never assumed.
+#
+# The only things it changes on its own are read-only probes.
+
+set -uo pipefail
+
+VERSION="0.1.0"
+DOC_DIR="/usr/share/doc/astraos"
+MARKER="${HOME}/.config/astraos/welcome-shown"
+
+mkdir -p "$(dirname "$MARKER")" 2>/dev/null || true
+
+is_live() {
+    [ -d /lib/live ] || [ -e /run/live/medium ] || grep -qs overlay /proc/mounts
+}
+
+network_up() {
+    if command -v ip >/dev/null 2>&1; then
+        ip route show default 2>/dev/null | grep -q 'default'
+    else
+        return 1
+    fi
+}
+
+printf '\n'
+printf '  ============================================================\n'
+printf '     A S T R A   O S      %s Alpha\n' "$VERSION"
+printf '  ============================================================\n\n'
+
+if is_live; then
+    printf '  You are running the LIVE environment.\n\n'
+    printf '  Nothing you do here is saved to disk. To keep changes, install AstraOS:\n'
+    printf '    * Launch the installer from the desktop or the application menu.\n'
+    printf '    * Or run:  sudo calamares\n\n'
+    printf '  The installer shows the target disk before it writes anything and asks\n'
+    printf '  you to confirm. It will not partition a disk you have not selected.\n\n'
+    printf '  Evaluating safely: the live session does not touch your disks unless you\n'
+    printf '  start the installer and confirm a target.\n\n'
+else
+    printf '  AstraOS is installed on this system. Suggested next steps:\n\n'
+
+    printf '  1. Connect to the network, if you have not already\n'
+    if network_up; then
+        printf '       status: a default route is present\n'
+    else
+        printf '       status: no default route detected\n'
+    fi
+    printf '       Use the network icon in the panel, or: nmtui\n\n'
+
+    printf '  2. Check the system is fully up to date\n'
+    printf '       sudo apt update && sudo apt full-upgrade\n'
+    printf '       (AstraOS never runs this for you. Read the output before confirming.)\n\n'
+
+    printf '  3. Confirm the basics work\n'
+    printf '       astraos-info                 release, kernel, hardware, network\n'
+    printf '       systemctl --failed           units that failed to start\n\n'
+
+    printf '  4. Optional hardening\n'
+    printf '       The host firewall is documented but not enabled by default.\n'
+    printf '       See /etc/ufw/astraos-policy.conf for the exact rules to apply.\n\n'
+fi
+
+printf '  Documentation\n'
+printf '    %s/\n' "$DOC_DIR"
+printf '    Known limitations: %s/KNOWN_LIMITATIONS.md\n' "$DOC_DIR"
+printf '\n'
+printf '  AstraOS 0.1.0 is an ALPHA release built on Debian GNU/Linux.\n'
+printf '  It is not a stable product and it is not an official Debian release.\n'
+printf '  Back up your data before installing on a computer you rely on.\n'
+printf '\n'
+
+printf '%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MARKER" 2>/dev/null || true
+exit 0

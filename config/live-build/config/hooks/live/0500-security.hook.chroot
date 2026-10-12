@@ -1,0 +1,126 @@
+#!/bin/sh
+# AstraOS security enforcement hook (chroot stage).
+#
+# SCOPE
+# -----
+# The security *policy files* are owned by the astraos-base package and installed as
+# conffiles, so they are reviewable in the repository and survive package upgrades:
+#
+#   /etc/sudoers.d/00-astraos                  no NOPASSWD, no shared password
+#   /etc/apt/apt.conf.d/60-astraos-security    signature verification never disabled
+#   /etc/sysctl.d/60-astraos.conf              kernel and network defaults
+#   /etc/ufw/astraos-policy.conf               documented firewall intent
+#
+# This hook does only what a package cannot: it verifies the policy actually landed,
+# locks the root account, corrects dangerous permissions, and refuses to build an image
+# that embeds credentials. Third-party paths owned by other packages (/etc/issue,
+# /etc/motd, /etc/default/ufw, the greeter config) are written by 0100-identity.
+
+set -eu
+
+PREFIX='[astraos:security]'
+FAILED=0
+
+log() { printf '%s %s\n' "$PREFIX" "$*"; }
+fail() { printf '%s ERROR: %s\n' "$PREFIX" "$*" >&2; exit 1; }
+
+assert() {
+    description="$1"
+    shift
+    if "$@" >/dev/null 2>&1; then
+        printf '%s ok    %s\n' "$PREFIX" "$description"
+    else
+        printf '%s FAIL  %s\n' "$PREFIX" "$description" >&2
+        FAILED=$((FAILED + 1))
+    fi
+}
+
+# --- Verify the policy files arrived from the package -------------------------
+log "verifying policy files installed by astraos-base"
+assert "sudo policy present"        test -f /etc/sudoers.d/00-astraos
+assert "apt policy present"         test -f /etc/apt/apt.conf.d/60-astraos-security
+assert "sysctl defaults present"    test -f /etc/sysctl.d/60-astraos.conf
+assert "firewall policy present"    test -f /etc/ufw/astraos-policy.conf
+assert "astraos-release present"    test -f /etc/astraos-release
+
+# The sudoers drop-in must be 0440 root:root or sudo refuses to read it.
+if [ -f /etc/sudoers.d/00-astraos ]; then
+    chmod 0440 /etc/sudoers.d/00-astraos
+    chown root:root /etc/sudoers.d/00-astraos
+fi
+
+if command -v visudo >/dev/null 2>&1; then
+    assert "sudo policy passes visudo"  visudo -cf /etc/sudoers.d/00-astraos
+fi
+
+# No passwordless rule anywhere in /etc/sudoers.d (plan §10.4).
+if grep -rqs NOPASSWD /etc/sudoers.d/ 2>/dev/null; then
+    fail "a passwordless sudo rule is present in /etc/sudoers.d"
+fi
+log "no passwordless sudo rules found"
+
+# --- Root account -------------------------------------------------------------
+# Root is locked in the image. Administrative access is through sudo with the user's
+# own password, never a shared password (plan §7.3, §10.4).
+log "locking the root account"
+if passwd -l root >/dev/null 2>&1; then
+    log "root locked"
+else
+    log "WARNING: could not lock the root account; check passwd(1) output manually"
+fi
+assert "root account is locked"  sh -c 'passwd -S root 2>/dev/null | grep -q "^root *L"'
+
+# No fixed password for any account that will be created at boot.
+assert "no fixed password for the live user"  sh -c '! grep -qs "^astra:" /etc/shadow'
+
+# --- Permissions --------------------------------------------------------------
+log "correcting permissions"
+chmod 0700 /etc/sudoers.d 2>/dev/null || true
+chmod 0644 /etc/passwd /etc/group 2>/dev/null || true
+chmod 0640 /etc/shadow /etc/gshadow 2>/dev/null || true
+chmod 0755 /etc/skel 2>/dev/null || true
+
+if command -v dpkg-statoverride >/dev/null 2>&1; then
+    log "recording the sudoers override with dpkg-statoverride"
+    dpkg-statoverride --add --update root root 0440 /etc/sudoers.d/00-astraos >/dev/null 2>&1 \
+        || log "WARNING: dpkg-statoverride could not record the sudoers override"
+fi
+
+# --- Dangerous permissions ----------------------------------------------------
+# A world-writable directory outside the expected temporary locations is a defect.
+log "scanning for world-writable directories"
+WORLD_WRITABLE="$(find / -xdev -type d -perm -0002 \
+    ! -path '/tmp' ! -path '/tmp/*' ! -path '/var/tmp' ! -path '/run/lock' 2>/dev/null || true)"
+if [ -n "$WORLD_WRITABLE" ]; then
+    printf '%s\n' "$WORLD_WRITABLE" | while IFS= read -r dir; do
+        log "correcting world-writable directory: ${dir}"
+        chmod o-w "$dir" 2>/dev/null || true
+    done
+else
+    log "none found"
+fi
+
+# --- Secrets ------------------------------------------------------------------
+# Nothing secret belongs in the image. Check for the obvious mistakes.
+log "checking that no credentials are embedded"
+for pattern in 'BEGIN RSA PRIVATE KEY' 'BEGIN OPENSSH PRIVATE KEY' 'BEGIN PGP PRIVATE KEY' 'BEGIN EC PRIVATE KEY'; do
+    if grep -rlqs "$pattern" /etc 2>/dev/null; then
+        fail "a private key appears to be embedded in the image (${pattern})"
+    fi
+done
+
+if grep -rqsE 'AllowUnauthenticated[[:space:]]+"true"' /etc/apt/ 2>/dev/null; then
+    fail "an APT configuration file enables unauthenticated packages"
+fi
+log "no embedded credentials and no disabled APT verification"
+
+# --- Remote access ------------------------------------------------------------
+# AstraOS ships no remote administration daemon (plan §13.2).
+assert "no ssh server installed"     sh -c '! test -e /usr/sbin/sshd'
+
+# --- Report -------------------------------------------------------------------
+printf '%s -----------------------------------------\n' "$PREFIX"
+if [ "$FAILED" -gt 0 ]; then
+    fail "${FAILED} security assertion(s) did not pass; refusing to build the image"
+fi
+log "security baseline applied and verified"

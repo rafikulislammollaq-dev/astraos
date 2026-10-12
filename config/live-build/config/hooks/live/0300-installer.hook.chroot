@@ -1,0 +1,130 @@
+#!/bin/sh
+# AstraOS installer validation hook (chroot stage).
+#
+# The Calamares configuration is installed by the astraos-installer package. This hook
+# exists to VALIDATE it, because a settings.conf that names a module which is not
+# installed produces an installer that fails on its final screen - exactly the defect
+# plan §10.1 warns about. Validating here means a broken installer cannot be shipped.
+#
+# Nothing in this hook writes the configuration; if the package is wrong, the build
+# fails rather than being silently repaired.
+
+set -eu
+
+PREFIX='[astraos:installer]'
+
+log() { printf '%s %s\n' "$PREFIX" "$*"; }
+fail() { printf '%s ERROR: %s\n' "$PREFIX" "$*" >&2; exit 1; }
+
+# --- Presence -----------------------------------------------------------------
+[ -x /usr/bin/calamares ] || fail "calamares is not installed"
+[ -f /etc/calamares/settings.conf ] || fail "the astraos-installer package did not install /etc/calamares/settings.conf"
+[ -d /usr/share/calamares/branding/astraos ] || fail "the Calamares AstraOS branding directory is missing"
+log "calamares installed and configured"
+
+# --- Module directory ---------------------------------------------------------
+MODULE_DIRS=""
+for candidate in /usr/lib/x86_64-linux-gnu/calamares/modules \
+                 /usr/lib/calamares/modules \
+                 /usr/lib64/calamares/modules; do
+    [ -d "$candidate" ] && MODULE_DIRS="${MODULE_DIRS} ${candidate}"
+done
+[ -n "${MODULE_DIRS}" ] || fail "cannot find the Calamares module directory; the installer cannot be validated"
+log "module directories:${MODULE_DIRS}"
+
+# --- Extract the module sequence ----------------------------------------------
+# Calamares 3.x settings.conf is YAML: the module sequence is a list of plain scalar
+# entries nested under `- show:` / `- exec:` steps, for example:
+#
+#   sequence:
+#   - show:
+#     - welcome
+#     - locale
+#   - exec:
+#     - partition
+#
+# The pattern below matches only lines that are a list item with a bare word, which
+# excludes the step keys themselves ("- show:" contains a colon) and every other YAML
+# key. A parser that looked for the old "modules:" key would find nothing on
+# Calamares 3.x and silently pass, so this shape is checked for explicitly.
+MODULES="$(grep -E '^[[:space:]]+-[[:space:]]+[A-Za-z0-9_][A-Za-z0-9_-]*[[:space:]]*$' \
+    /etc/calamares/settings.conf | sed -E 's/^[[:space:]]+-[[:space:]]+//; s/[[:space:]]+$//')"
+
+[ -n "${MODULES}" ] || fail "no module sequence could be parsed from /etc/calamares/settings.conf (expected a YAML 'sequence:' list)"
+
+# The sequence must contain the steps a usable installer cannot omit.
+for step in partition summary users bootloader; do
+    if printf '%s\n' "$MODULES" | grep -qx -- "$step"; then
+        printf '%s ok    sequence includes %s\n' "$PREFIX" "$step"
+    else
+        fail "the Calamares sequence does not include the '${step}' step; the installer would be incomplete"
+    fi
+done
+
+MISSING=0
+COUNT=0
+for entry in $MODULES; do
+    name="$(printf '%s' "$entry" | sed 's/^[a-z-]*://')"
+    [ -n "$name" ] || continue
+    COUNT=$((COUNT + 1))
+    found=no
+    for dir in ${MODULE_DIRS}; do
+        if [ -d "${dir}/${name}" ]; then found=yes; break; fi
+    done
+    if [ "$found" = yes ]; then
+        printf '%s ok    module %s\n' "$PREFIX" "$name"
+    else
+        printf '%s FAIL  module %s is referenced by settings.conf but is not installed\n' "$PREFIX" "$name" >&2
+        MISSING=$((MISSING + 1))
+    fi
+done
+
+if [ "$MISSING" -gt 0 ]; then
+    fail "${MISSING} of ${COUNT} Calamares module(s) missing. The installer would fail; refusing to build."
+fi
+log "all ${COUNT} configured Calamares modules are installed"
+
+# --- Branding sanity ----------------------------------------------------------
+for asset in branding.desc logo.png; do
+    [ -f "/usr/share/calamares/branding/astraos/${asset}" ] \
+        || fail "installer branding asset is missing: ${asset}"
+done
+log "installer branding assets present"
+
+# --- Disk-safety policy -------------------------------------------------------
+# Calamares does the partitioning. These assertions encode plan §10.3 and Rule 9:
+# the installer must never pre-authorise erasing a disk, and it must always show the
+# user which partitions it is going to touch.
+PARTITION_CONF=/etc/calamares/modules/partition.conf
+[ -f "$PARTITION_CONF" ] || fail "partition.conf is missing; the installer would have no partitioning policy"
+
+if grep -qsE '^initialPartitioningChoice:[[:space:]]*eraseDisk' "$PARTITION_CONF"; then
+    fail "partition.conf defaults to eraseDisk; the default must not authorise erasure"
+fi
+printf '%s ok    the default partitioning choice does not erase a disk\n' "$PREFIX"
+
+if grep -qsE '^alwaysShowPartitionLabels:[[:space:]]*true' "$PARTITION_CONF"; then
+    printf '%s ok    partition labels are always shown to the user\n' "$PREFIX"
+else
+    fail "alwaysShowPartitionLabels is not enabled in partition.conf; the user must see which partitions are affected"
+fi
+
+if grep -qsE '^defaultFileSystemType:[[:space:]]*ext4' "$PARTITION_CONF"; then
+    printf '%s ok    default root filesystem is ext4\n' "$PREFIX"
+else
+    fail "partition.conf does not select ext4 as the default root filesystem (plan §11)"
+fi
+
+# --- No fixed credentials -----------------------------------------------------
+# The Calamares users module must not ship an autologin or a preset password.
+if grep -rqs 'autologinUser' /etc/calamares/modules/ 2>/dev/null; then
+    if grep -rqsE 'autologinUser:[[:space:]]*[^"'"'"'[:space:]]' /etc/calamares/modules/ 2>/dev/null; then
+        fail "a Calamares module configures an autologin user; AstraOS must not ship fixed credentials"
+    fi
+fi
+
+if grep -rqsE '^\s*password:' /etc/calamares/modules/users.conf 2>/dev/null; then
+    fail "users.conf appears to contain a fixed password"
+fi
+
+log "installer configuration validated"

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AstraOS simplified mark, light ink.
+
+  Used on dark backgrounds where the gradient mark is unavailable or would not read:
+  GRUB menu items, plymouth text, installer step rail, monochrome print (plan §9).
+
+  Strokes only, no filters, no gradients, so it renders correctly in the minimal SVG
+  subset used by boot-time tooling.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+     role="img" aria-label="AstraOS">
+  <title>AstraOS</title>
+  <g fill="none" stroke="#F2EEFF" stroke-width="18">
+    <circle cx="256" cy="256" r="182"/>
+  </g>
+  <path d="M 256 74 A 182 182 0 0 1 438 256" fill="none" stroke="#F2EEFF"
+        stroke-width="13" stroke-linecap="round" opacity="0.75"/>
+  <g fill="#F2EEFF">
+    <path d="M 256 176 L 261 251 L 336 256 L 261 261 L 256 336 L 251 261 L 176 256 L 251 251 Z"
+          opacity="0.65"/>
+  </g>
+</svg>

@@ -1,0 +1,74 @@
+AstraOS - an independent Linux desktop operating system
+Copyright (C) 2026 The AstraOS Project
+
+This program is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software Foundation,
+either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with this
+program. If not, see <https://www.gnu.org/licenses/>.
+
+-------------------------------------------------------------------------------
+SCOPE OF THIS LICENCE
+-------------------------------------------------------------------------------
+
+This licence covers the AstraOS project's own material:
+
+  * the build system and scripts (scripts/, config/, Makefile)
+  * the AstraOS packages (packages/astraos-*)
+  * the desktop and system configuration (desktop/, system/, installer/)
+  * the AstraOS artwork (branding/)
+
+It does NOT cover the upstream software that AstraOS distributes. AstraOS is a
+distribution: it includes hundreds of third-party packages, each with its own
+copyright and licence. Those are recorded on an installed system at
+
+  /usr/share/doc/<package>/copyright
+
+For a summary of the upstream components and their licences, see
+docs/ARCHITECTURE.md and run `astraos-release-info`.
+
+-------------------------------------------------------------------------------
+WHERE THE FULL LICENSE TEXT LIVES
+-------------------------------------------------------------------------------
+
+The complete text of the GNU General Public License version 3 is not duplicated in
+this repository, because every Debian-derived system already ships it. On an AstraOS
+(or Debian, or Ubuntu) system:
+
+  /usr/share/common-licenses/GPL-3
+
+Online: <https://www.gnu.org/licenses/gpl-3.0.html>
+
+If you are reading this in a checkout and want the text without a Debian system
+available, that URL is the authoritative source.
+
+-------------------------------------------------------------------------------
+UPSTREAM ATTRIBUTION
+-------------------------------------------------------------------------------
+
+AstraOS is an independent distribution based on Debian GNU/Linux.
+
+  Debian GNU/Linux    https://www.debian.org/legal/licenses/
+  Linux kernel        GPL-2.0-only (with the standard syscall exception)
+  Xfce                https://www.xfce.org/
+  LightDM             GPL-3.0-or-later
+  Plymouth            GPL-2.0-or-later
+  GRUB                GPL-3.0-or-later
+  Calamares           GPL-3.0-or-later
+  DejaVu fonts        Bitstream Vera licence (redistributable)
+
+AstraOS is not affiliated with, endorsed by, or an official release of the Debian
+Project. "Debian" is a registered trademark of Software in the Public Interest, Inc.,
+and is used here only to describe the upstream base accurately.
+
+AstraOS includes no proprietary assets. No logo, icon or trademark from another
+operating system is redistributed. All AstraOS artwork in branding/ was created for
+this project.
+
+Third-party fonts referenced by the wordmark and the desktop theme are dependencies
+(fonts-dejavu-core), not bundled files.

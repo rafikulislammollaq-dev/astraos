@@ -1,0 +1,148 @@
+# AstraOS ISO build.
+#
+# Manually triggered on purpose. A full OS build takes a long time and downloads several
+# gigabytes, so it must never be the automatic response to a commit (plan §17).
+#
+# The workflow runs the SAME scripts as a local build, so CI cannot drift from the
+# documented procedure. If a step here is not in docs/BUILDING.md, that is a bug.
+
+name: Build ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_bootstrap:
+        description: "Skip installing build dependencies (they are usually already present)"
+        type: boolean
+        default: false
+      upload_artifact:
+        description: "Upload the ISO as a workflow artifact"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-iso-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build AstraOS ISO
+    # A GitHub-hosted runner is a valid Linux build environment; the project is
+    # CI-first because a local Linux host is not always available.
+    runs-on: ubuntu-24.04
+    # A live desktop image with a browser and office tools takes a long time to assemble.
+    timeout-minutes: 300
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          # The manifest records the commit that produced the image.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Report the release identity
+        run: |
+          echo "### AstraOS build" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat VERSION >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Static checks before spending build time
+        run: |
+          # Fail fast: no point burning an hour of build time on a repository that does
+          # not pass its own checks.
+          python3 tests/run.py
+
+      - name: Install build dependencies
+        if: ${{ inputs.skip_bootstrap != true }}
+        run: |
+          sudo ./scripts/bootstrap-build-environment.sh --yes
+
+      - name: Validate the build host
+        run: ./scripts/validate-environment.sh
+
+      - name: Verify the package selection
+        run: python3 scripts/verify-package-availability.py
+
+      - name: Build the image
+        # No sudo prefix: build-iso.sh elevates per command where it needs to, which
+        # keeps the privileged surface small and visible.
+        run: ./scripts/build-iso.sh
+        env:
+          # live-build and dpkg read this for reproducible timestamps.
+          SOURCE_DATE_EPOCH: ${{ github.event.repository.pushed_at && fromJSON('0') || 0 }}
+
+      - name: Show what was produced
+        run: |
+          echo "### Build output" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          ls -la dist/ >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat dist/*.manifest >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "no manifest found"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate the image
+        run: |
+          iso=$(ls -1t dist/*.iso | head -n1)
+          ./scripts/validate-iso.sh "$iso"
+
+      - name: Regenerate checksums for the published artifact
+        run: |
+          iso=$(ls -1t dist/*.iso | head -n1)
+          ./scripts/generate-checksums.sh "$iso"
+          ./scripts/generate-manifest.sh "$iso"
+          echo "SHA-256:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat dist/*.sha256 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the ISO
+        if: ${{ inputs.upload_artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: astraos-iso
+          # The ISO is large; keep the artifact window short so storage does not grow
+          # without bound.
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            dist/*.iso
+            dist/*.iso.sha256
+            dist/*.iso.manifest
+            dist/astraos-packages.txt
+
+      - name: Upload the build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astraos-build-logs
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            logs/
+            build/live-build/*.log
+            build/live-build/.astraos-config-options
+
+      - name: Record what was NOT tested
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "### Not tested by this workflow"
+            echo ""
+            echo "This workflow builds and structurally validates the image. It does **not**"
+            echo "boot it, run the installer, or boot an installed system. Those require a"
+            echo "virtual machine and are described in docs/INSTALLATION_VIRTUALBOX.md."
+            echo ""
+            echo "The manifest records them as UNTESTED until they are actually performed."
+          } >> "$GITHUB_STEP_SUMMARY"

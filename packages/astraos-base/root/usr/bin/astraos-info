@@ -1,0 +1,335 @@
+#!/bin/bash
+# astraos-info - report AstraOS release, system and hardware information.
+#
+# Design constraints (plan §14):
+#   * Reports only facts read from the running system; it never guesses.
+#   * MUST NOT disclose passwords, authentication tokens, Wi-Fi credentials, private
+#     keys or any other secret. It deliberately does not read /etc/shadow, NetworkManager
+#     connection profiles, keyrings, or environment variables that commonly hold tokens.
+#   * Degrades gracefully: a missing tool or unreadable file prints "unknown" for that
+#     field instead of failing the whole command.
+#
+# Usage:
+#   astraos-info            human-readable summary
+#   astraos-info --json     machine-readable summary
+#   astraos-info --short    one line per key, for scripting
+#   astraos-info --help
+
+set -uo pipefail
+
+VERSION="0.1.0"
+
+# --- Field collection ---------------------------------------------------------
+# Every function returns a single line, or "unknown".
+read_file_first_line() {
+    if [ -r "$1" ]; then
+        head -n1 "$1" 2>/dev/null || printf 'unknown'
+    else
+        printf 'unknown'
+    fi
+}
+
+os_name() {
+    if [ -r /etc/os-release ]; then
+        # shellcheck source=/dev/null
+        ( . /etc/os-release; printf '%s' "${PRETTY_NAME:-${NAME:-unknown}}" )
+    else
+        printf 'unknown'
+    fi
+}
+
+os_id() {
+    if [ -r /etc/os-release ]; then
+        ( . /etc/os-release; printf '%s' "${ID:-unknown}" )
+    else
+        printf 'unknown'
+    fi
+}
+
+astraos_version() {
+    if [ -r /etc/astraos-release ]; then
+        ( . /etc/astraos-release; printf '%s' "${VERSION:-unknown}" )
+    else
+        printf 'unknown'
+    fi
+}
+
+astraos_codename() {
+    if [ -r /etc/astraos-release ]; then
+        ( . /etc/astraos-release; printf '%s' "${CODENAME:-unknown}" )
+    else
+        printf 'unknown'
+    fi
+}
+
+astraos_stage() {
+    if [ -r /etc/astraos-release ]; then
+        ( . /etc/astraos-release; printf '%s' "${RELEASE_STAGE:-unknown}" )
+    else
+        printf 'unknown'
+    fi
+}
+
+base_distribution() {
+    if [ -r /etc/astraos-release ]; then
+        ( . /etc/astraos-release
+          printf '%s %s (%s)' "${BASE_DISTRIBUTION:-unknown}" "${BASE_RELEASE:-}" "${BASE_CODENAME:-unknown}" )
+    else
+        printf 'unknown'
+    fi
+}
+
+kernel_release() {
+    uname -r 2>/dev/null || printf 'unknown'
+}
+
+kernel_package() {
+    # The installed linux-image package, so the running kernel can be traced to a package.
+    if command -v dpkg-query >/dev/null 2>&1; then
+        local found
+        found="$(dpkg-query -W -f='${Package} ${Version}\n' 'linux-image-*' 2>/dev/null \
+                 | grep -v -- '-unsigned\|-dbg' | head -n1)"
+        [ -n "$found" ] && printf '%s' "$found" || printf 'unknown'
+    else
+        printf 'unknown'
+    fi
+}
+
+architecture() {
+    dpkg --print-architecture 2>/dev/null || uname -m 2>/dev/null || printf 'unknown'
+}
+
+cpu_model() {
+    local value
+    value="$(awk -F': ' '/^model name|^Hardware|^Processor/{print $2; exit}' /proc/cpuinfo 2>/dev/null)"
+    [ -n "$value" ] && printf '%s' "$value" || printf 'unknown'
+}
+
+cpu_cores() {
+    local count
+    count="$(nproc 2>/dev/null)"
+    [ -n "$count" ] && printf '%s' "$count" || printf 'unknown'
+}
+
+memory_total() {
+    awk '/^MemTotal:/{printf "%.1f GiB", $2/1048576}' /proc/meminfo 2>/dev/null || printf 'unknown'
+}
+
+memory_available() {
+    awk '/^MemAvailable:/{printf "%.1f GiB", $2/1048576}' /proc/meminfo 2>/dev/null || printf 'unknown'
+}
+
+swap_total() {
+    awk '/^SwapTotal:/{ if ($2 == 0) printf "none"; else printf "%.1f GiB", $2/1048576 }' /proc/meminfo 2>/dev/null || printf 'unknown'
+}
+
+root_usage() {
+    df -h / 2>/dev/null | awk 'NR==2{printf "%s used of %s (%s)", $3, $2, $5}' || printf 'unknown'
+}
+
+root_filesystem() {
+    df -T / 2>/dev/null | awk 'NR==2{print $2}' || printf 'unknown'
+}
+
+boot_mode() {
+    if [ -d /sys/firmware/efi ]; then
+        printf 'UEFI'
+    elif [ -d /sys/firmware/bios ] || [ -r /boot/grub/grub.cfg ]; then
+        printf 'Legacy BIOS'
+    else
+        printf 'unknown'
+    fi
+}
+
+secure_boot_state() {
+    if ! [ -d /sys/firmware/efi ]; then
+        printf 'not applicable (legacy BIOS boot)'
+        return
+    fi
+    if command -v mokutil >/dev/null 2>&1; then
+        # Do not attempt a privileged query; report only what is readable.
+        printf 'reported by firmware (Secure Boot is not supported by AstraOS 0.1.0)'
+    else
+        printf 'unknown (mokutil not installed)'
+    fi
+}
+
+desktop_session() {
+    printf '%s' "${XDG_CURRENT_DESKTOP:-${DESKTOP_SESSION:-unknown}}"
+}
+
+session_type() {
+    printf '%s' "${XDG_SESSION_TYPE:-unknown}"
+}
+
+display_manager() {
+    if [ -e /etc/systemd/system/display-manager.service ]; then
+        local unit
+        unit="$(readlink -f /etc/systemd/system/display-manager.service 2>/dev/null | xargs -r basename 2>/dev/null)"
+        [ -n "$unit" ] && printf '%s' "${unit%.service}" || printf 'unknown'
+    else
+        printf 'unknown'
+    fi
+}
+
+live_or_installed() {
+    # A live system boots from an overlay or from the live medium.
+    if grep -qs ' / ' /proc/mounts 2>/dev/null; then :; fi
+    if [ -d /lib/live ] || [ -r /run/live/medium/.disk/info ] || grep -qs 'overlay' /proc/mounts; then
+        printf 'live'
+    else
+        printf 'installed'
+    fi
+}
+
+network_interfaces() {
+    if command -v ip >/dev/null 2>&1; then
+        local result
+        result="$(ip -brief addr show 2>/dev/null | awk '$1 != "lo" {printf "%s=%s ", $1, $3}')"
+        [ -n "$result" ] && printf '%s' "$result" || printf 'none'
+    else
+        printf 'unknown'
+    fi
+}
+
+default_route() {
+    if command -v ip >/dev/null 2>&1; then
+        local result
+        result="$(ip route show default 2>/dev/null | awk 'NR==1{print $3}')"
+        [ -n "$result" ] && printf '%s' "$result" || printf 'none'
+    else
+        printf 'unknown'
+    fi
+}
+
+firewall_state() {
+    if command -v ufw >/dev/null 2>&1; then
+        # `ufw status` needs root; fall back to the policy file when unprivileged.
+        local result
+        result="$(ufw status 2>/dev/null | head -n1)"
+        case "$result" in
+            *active*) printf 'active' ;;
+            *inactive*) printf 'inactive (default for AstraOS 0.1.0)' ;;
+            *) printf 'unknown (run as root: sudo ufw status)' ;;
+        esac
+    else
+        printf 'unknown'
+    fi
+}
+
+uptime_human() {
+    local seconds
+    seconds="$(awk '{printf "%d", $1}' /proc/uptime 2>/dev/null)"
+    if [ -z "$seconds" ]; then printf 'unknown'; return; fi
+    printf '%dd %dh %dm' $((seconds / 86400)) $(((seconds % 86400) / 3600)) $(((seconds % 3600) / 60))
+}
+
+# --- Output -------------------------------------------------------------------
+# FIELDS is the single source of truth for both output modes.
+FIELDS=(
+    "astraos_version"
+    "astraos_codename"
+    "astraos_stage"
+    "os_name"
+    "os_id"
+    "base_distribution"
+    "architecture"
+    "live_or_installed"
+    "kernel_release"
+    "kernel_package"
+    "cpu_model"
+    "cpu_cores"
+    "memory_total"
+    "memory_available"
+    "swap_total"
+    "root_filesystem"
+    "root_usage"
+    "boot_mode"
+    "secure_boot_state"
+    "desktop_session"
+    "session_type"
+    "display_manager"
+    "network_interfaces"
+    "default_route"
+    "firewall_state"
+    "uptime"
+)
+
+json_escape() {
+    # Escape backslash, quote and control characters. Values here never contain
+    # secrets, but they may contain quotes (for example a CPU model name).
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037'
+}
+
+print_human() {
+    printf '\n  ASTRA OS  %s %s  (%s)\n' \
+        "$(astraos_version)" "$(astraos_stage)" "$(astraos_codename)"
+    printf '  %s\n' "----------------------------------------------"
+
+    printf '  %-20s %s\n' "release"       "$(os_name)"
+    printf '  %-20s %s\n' "distribution id" "$(os_id)"
+    printf '  %-20s %s\n' "upstream base" "$(base_distribution)"
+    printf '  %-20s %s\n' "architecture"  "$(architecture)"
+    printf '  %-20s %s\n' "environment"   "$(live_or_installed)"
+    printf '\n'
+    printf '  %-20s %s\n' "kernel"        "$(kernel_release)"
+    printf '  %-20s %s\n' "kernel package" "$(kernel_package)"
+    printf '  %-20s %s\n' "boot mode"     "$(boot_mode)"
+    printf '  %-20s %s\n' "secure boot"   "$(secure_boot_state)"
+    printf '  %-20s %s\n' "uptime"        "$(uptime_human)"
+    printf '\n'
+    printf '  %-20s %s\n' "cpu"           "$(cpu_model)"
+    printf '  %-20s %s\n' "cpu threads"   "$(cpu_cores)"
+    printf '  %-20s %s\n' "memory"        "$(memory_total) total, $(memory_available) available"
+    printf '  %-20s %s\n' "swap"          "$(swap_total)"
+    printf '\n'
+    printf '  %-20s %s\n' "root filesystem" "$(root_filesystem)"
+    printf '  %-20s %s\n' "root usage"    "$(root_usage)"
+    printf '\n'
+    printf '  %-20s %s\n' "desktop"       "$(desktop_session)"
+    printf '  %-20s %s\n' "session type"  "$(session_type)"
+    printf '  %-20s %s\n' "display manager" "$(display_manager)"
+    printf '  %-20s %s\n' "firewall"      "$(firewall_state)"
+    printf '\n'
+    printf '  %-20s %s\n' "interfaces"    "$(network_interfaces)"
+    printf '  %-20s %s\n' "default route" "$(default_route)"
+    printf '\n'
+    printf '  This is an ALPHA release. Known limitations:\n'
+    printf '    /usr/share/doc/astraos/KNOWN_LIMITATIONS.md\n'
+    printf '  AstraOS is based on Debian GNU/Linux and is not an official Debian release.\n\n'
+}
+
+print_json() {
+    printf '{\n'
+    local index=0 total=${#FIELDS[@]}
+    for field in "${FIELDS[@]}"; do
+        index=$((index + 1))
+        local value
+        value="$( "$field" )"
+        printf '  "%s": "%s"' "$field" "$(json_escape "$value")"
+        [ "$index" -lt "$total" ] && printf ','
+        printf '\n'
+    done
+    printf '}\n'
+}
+
+print_short() {
+    for field in "${FIELDS[@]}"; do
+        printf '%s=%s\n' "$field" "$( "$field" )"
+    done
+}
+
+case "${1:-}" in
+    --json)  print_json ;;
+    --short) print_short ;;
+    --help|-h)
+        printf 'astraos-info %s - report AstraOS system information\n\n' "$VERSION"
+        printf 'Usage:\n  astraos-info           human-readable summary\n'
+        printf '  astraos-info --json    machine-readable JSON\n'
+        printf '  astraos-info --short   key=value pairs\n'
+        printf '  astraos-info --help    this message\n\n'
+        printf 'This command never reads or prints credentials, keys or network secrets.\n'
+        ;;
+    "") print_human ;;
+    *) printf 'astraos-info: unknown option %s\n' "$1" >&2; printf "Try 'astraos-info --help'.\n" >&2; exit 2 ;;
+esac

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=AstraOS Help
+Comment=Documentation index, reporting channels and recovery guide
+Comment[en]=Documentation index, reporting channels and recovery guide
+Exec=xfce4-terminal --title="AstraOS Help" --geometry=100x38 --hold --command="astraos-help"
+Icon=help-browser
+Terminal=false
+Categories=System;Documentation;
+Keywords=AstraOS;help;documentation;manual;support;report;
+StartupNotify=true

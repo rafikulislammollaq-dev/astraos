@@ -1,0 +1,31 @@
+# Networking (plan §12).
+#
+# NetworkManager is the single networking authority for the desktop session.
+# Wi-Fi credentials are never stored in the image or written to logs (plan §13.5).
+
+network-manager
+network-manager-gnome
+network-manager-openvpn-gnome
+network-manager-pptp-gnome
+modemmanager
+mobile-broadband-provider-info
+ppp
+pppoe
+wpasupplicant
+iw
+rfkill
+wireless-tools
+avahi-daemon
+libnss-mdns
+openssh-client
+ntpsec
+resolvconf
+isc-dhcp-client
+pppoeconf
+curl
+wget
+
+# Firewall (plan §13.4). Policy is documented in docs/SECURITY.md and shipped as
+# system/security/astraos-firewall.default; enabled on the installed system only.
+ufw
+gufw

@@ -1,0 +1,18 @@
+Package: @@PACKAGE@@
+Version: @@VERSION@@
+Architecture: @@ARCH@@
+Maintainer: @@VENDOR@@ <maintainers@astraos.invalid>
+Section: admin
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: bash (>= 5.0), coreutils, grep, sed, gawk, procps, util-linux, iproute2, kmod, dpkg
+Recommends: pciutils, usbutils, lm-sensors
+Description: AstraOS base system identity, policy and diagnostics
+ Provides the parts of AstraOS that are not branding or desktop: the distribution
+ identity file, the sysctl hardening defaults, the sudo policy, the APT signature
+ policy, the documented firewall policy, and the astraos-info diagnostic command.
+ .
+ This is an independent distribution based on Debian GNU/Linux. It is not an
+ official Debian release. /etc/os-release, /etc/issue and /etc/motd are written at
+ image build time because base-files owns those paths as configuration files; see
+ docs/KNOWN_LIMITATIONS.md.

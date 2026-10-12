@@ -1,0 +1,7 @@
+# Configuration files owned by astraos-base.
+# Package administrators' edits to these files survive package upgrades.
+/etc/astraos-release
+/etc/sysctl.d/60-astraos.conf
+/etc/sudoers.d/00-astraos
+/etc/apt/apt.conf.d/60-astraos-security
+/etc/ufw/astraos-policy.conf

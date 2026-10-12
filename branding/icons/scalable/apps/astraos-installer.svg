@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AstraOS installer application icon. Original artwork.
+     Shape language: a ring over a disk, which is what the installer operates on. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"
+     role="img" aria-label="Install AstraOS">
+  <title>Install AstraOS</title>
+  <defs>
+    <linearGradient id="ig" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF5CC8"/>
+      <stop offset="55%" stop-color="#8B3DFF"/>
+      <stop offset="100%" stop-color="#22E6FF"/>
+    </linearGradient>
+  </defs>
+  <!-- Disk drive body -->
+  <rect x="20" y="150" width="216" height="74" rx="16" fill="#12141A"
+        stroke="#2E3542" stroke-width="3"/>
+  <rect x="40" y="176" width="96" height="10" rx="5" fill="#22E6FF" opacity="0.75"/>
+  <circle cx="206" cy="187" r="9" fill="#2EE6C9"/>
+  <!-- Direction arrow onto the disk -->
+  <path d="M 128 26 L 128 118" stroke="url(#ig)" stroke-width="14"
+        stroke-linecap="round"/>
+  <path d="M 92 88 L 128 126 L 164 88" fill="none" stroke="url(#ig)"
+        stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

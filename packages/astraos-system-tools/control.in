@@ -1,0 +1,21 @@
+Package: @@PACKAGE@@
+Version: @@VERSION@@
+Architecture: @@ARCH@@
+Maintainer: @@VENDOR@@ <maintainers@astraos.invalid>
+Section: admin
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: astraos-base (>= @@VERSION@@), bash (>= 5.0), coreutils, util-linux, procps, iproute2
+Recommends: xfce4-terminal, mousepad, xdg-utils
+Description: AstraOS user-facing system utilities
+ The small set of AstraOS-specific tools that solve a real problem rather than
+ duplicating an existing application (plan §15):
+ .
+  * astraos-info            system and hardware summary (in astraos-base)
+  * astraos-help            where the documentation lives and how to report problems
+  * astraos-welcome         first-run guidance for an installed system
+  * astraos-release-info    release identity, provenance and licence pointers
+  * astraos-recovery-guide  step-by-step recovery for common failures
+ .
+ Every utility here is deliberately additive. AstraOS does not ship a replacement for
+ system settings, the package manager, or any other established component.

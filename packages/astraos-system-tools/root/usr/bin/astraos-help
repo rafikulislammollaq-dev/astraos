@@ -1,0 +1,60 @@
+#!/bin/bash
+# astraos-help - where AstraOS documentation lives and how to report a problem.
+#
+# Offline first: this command works with no network connection, because the primary
+# documentation is installed on the system (plan §1: the desktop must work offline).
+
+set -uo pipefail
+
+DOC_DIR="/usr/share/doc/astraos"
+
+have() { [ -e "$1" ]; }
+
+printf '\n  ASTRA OS  help\n'
+printf '  ================================================\n\n'
+
+printf '  This is an ALPHA release. Known defects and unsupported hardware are\n'
+printf '  documented rather than hidden:\n'
+if have "${DOC_DIR}/KNOWN_LIMITATIONS.md"; then
+    printf '    %s\n\n' "${DOC_DIR}/KNOWN_LIMITATIONS.md"
+else
+    printf '    (KNOWN_LIMITATIONS.md is not installed on this system)\n\n'
+fi
+
+printf '  Documentation on this system\n'
+for doc in README.md ARCHITECTURE.md BUILDING.md SECURITY.md \
+           INSTALLATION_VIRTUALBOX.md INSTALLATION_PHYSICAL_PC.md \
+           RECOVERY.md TROUBLESHOOTING.md HARDWARE_COMPATIBILITY.md \
+           RELEASE_PROCESS.md KNOWN_LIMITATIONS.md; do
+    if have "${DOC_DIR}/${doc}"; then
+        printf '    %s/%s\n' "${DOC_DIR}" "${doc}"
+    fi
+done
+printf '\n'
+
+printf '  Common tasks\n'
+printf '    astraos-info                     system and hardware summary\n'
+printf '    astraos-info --json              machine-readable summary\n'
+printf '    astraos-release-info             release identity and provenance\n'
+printf '    astraos-recovery-guide           fix a system that will not boot\n'
+printf '    astraos-welcome                  first-run guidance\n'
+printf '    sudo cat /usr/share/astraos/SERVICE-POLICY.txt\n'
+printf '                                     why each service is enabled or disabled\n'
+printf '\n'
+
+printf '  Getting help\n'
+printf '    Documentation : https://astraos.invalid/docs\n'
+printf '    Report a bug  : https://astraos.invalid/issues\n'
+printf '    Include the output of: astraos-info --json\n'
+printf '\n'
+
+printf '  Before reporting a problem, collect evidence:\n'
+printf '    sudo journalctl -b -p err            boot errors\n'
+printf '    systemctl --failed                   failed units\n'
+printf '    sudo dmesg                           kernel messages\n'
+printf '\n'
+
+printf '  Testing the release without installing it\n'
+printf '    The live image is the supported way to evaluate AstraOS. It does not\n'
+printf '    modify your disks unless you start the installer and confirm a target.\n'
+printf '\n'

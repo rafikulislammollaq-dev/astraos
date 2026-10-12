@@ -1,0 +1,128 @@
+# AstraOS Plymouth boot splash.
+#
+# Written against the Plymouth script module. Design choices:
+#
+#   * The background is the generated boot splash bitmap, scaled to fill the screen, so
+#     the neon ring matches the login screen exactly.
+#   * The ring PNG pulses gently rather than spinning. Plymouth's script module has no
+#     direct access to the generated arc geometry, and a pulsing mark reads as "working"
+#     without requiring an animation frame sequence (which would add megabytes to the
+#     image for no benefit on a fast boot).
+#   * A text prompt is always available for the disk-encryption password and for boot
+#     messages, so a failure can never be hidden behind the splash (plan §7.4).
+#
+# If any image is missing, the script degrades to a black background with the text
+# prompt rather than failing to initialise, because a broken splash must not stop boot.
+
+Plymouth.SetRefreshFunction(Refresh);
+
+# --- Setup -------------------------------------------------------------------
+
+screen_width = Window.GetWidth();
+screen_height = Window.GetHeight();
+
+background_image = Image("astraos-splash-boot.png");
+ring_image = Image("astraos-logo.png");
+
+if (background_image) {
+    # Scale to cover the screen, preserving the composition's centre.
+    scale_x = screen_width / background_image.GetWidth();
+    scale_y = screen_height / background_image.GetHeight();
+    scale = scale_x;
+    if (scale_y > scale_x)
+        scale = scale_y;
+
+    background_sprite = Sprite();
+    background_sprite.SetImage(background_image.Scale(
+        background_image.GetWidth() * scale,
+        background_image.GetHeight() * scale));
+    background_sprite.SetX((screen_width - background_sprite.GetImage().GetWidth()) / 2);
+    background_sprite.SetY((screen_height - background_sprite.GetImage().GetHeight()) / 2);
+    background_sprite.SetZ(-100);
+}
+
+if (ring_image) {
+    # Place the pulsing mark below the background ring so the two read as one object.
+    ring_scale = screen_height / 1080 * 0.34;
+    ring_sprite = Sprite();
+    ring_sprite.SetImage(ring_image.Scale(
+        ring_image.GetWidth() * ring_scale,
+        ring_image.GetHeight() * ring_scale));
+    ring_sprite.SetX((screen_width - ring_sprite.GetImage().GetWidth()) / 2);
+    ring_sprite.SetY(screen_height * 0.62);
+    ring_sprite.SetZ(100);
+}
+
+# --- Text prompt -------------------------------------------------------------
+# Always created, for encryption passwords and for kernel messages.
+prompt_sprite = Sprite();
+prompt_sprite.SetPosition(screen_width / 2, screen_height * 0.90, 1000);
+
+prompt_image = Image.Text("", 166, 255, 255, 1.0, "DejaVu Sans 14");
+if (prompt_image)
+    prompt_sprite.SetImage(prompt_image);
+
+progress_sprite = Sprite();
+progress_sprite.SetPosition(screen_width / 2, screen_height - 24, 1000);
+
+progress_image = Image.Text("", 166, 255, 255, 1.0, "DejaVu Sans 11");
+if (progress_image)
+    progress_sprite.SetImage(progress_image);
+
+mode = "";
+
+Plymouth.SetDisplayPasswordFunction(function (prompt, bullets) {
+    mode = "password";
+    if (prompt)
+        prompt_sprite.SetImage(Image.Text(prompt, 226, 230, 242, 1.0, "DejaVu Sans 14"));
+    if (bullets)
+        prompt_sprite.SetImage(Image.Text("********", 34, 230, 255, 1.0, "DejaVu Sans 14"));
+    refresh_callback();
+});
+
+Plymouth.SetMessageFunction(function (message) {
+    if (message == "fsckd-cancel-msg" || message == "keys:wait" || message == "password:") {
+        # Kernel prompts that must always be visible.
+        mode = "message";
+    }
+    progress_sprite.SetImage(Image.Text(message, 152, 162, 179, 1.0, "DejaVu Sans 11"));
+    refresh_callback();
+});
+
+Plymouth.SetDisplayNormalFunction(function (prompt) {
+    if (progress_image)
+        progress_sprite.SetImage(Image.Text("", 152, 162, 179, 1.0, "DejaVu Sans 11"));
+    refresh_callback();
+});
+
+# --- Progress ----------------------------------------------------------------
+boot_progress = 0.0;
+
+Plymouth.SetBootProgressFunction(function (time, duration) {
+    if (duration > 0)
+        boot_progress = time / duration;
+    else
+        boot_progress = 0.0;
+
+    percent = Math.Int(boot_progress * 100);
+    if (percent > 100)
+        percent = 100;
+
+    progress_sprite.SetImage(Image.Text(
+        "STARTING ASTRA OS  " + percent + "%",
+        242, 238, 255, 0.85, "DejaVu Sans 11"));
+});
+
+# --- Animation ---------------------------------------------------------------
+# A gentle opacity pulse on the ring. Plymouth's opacity is set through SetOpacity
+# where supported; where it is not, the sprite simply stays fully opaque.
+frame = 0;
+
+Refresh = function () {
+    frame = frame + 1;
+    if (ring_sprite) {
+        phase = Math.Sin(frame * 0.05);
+        opacity = 0.72 + (phase * 0.18);
+        ring_sprite.SetOpacity(opacity);
+    }
+};

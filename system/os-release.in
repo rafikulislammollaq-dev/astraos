@@ -1,0 +1,47 @@
+# AstraOS /etc/os-release
+#
+# Rendered from system/os-release.in by scripts/configure-live-build.sh, substituting
+# the @...@ placeholders from config/distribution.env and VERSION.
+#
+# Field meanings are respected exactly as defined by the os-release specification
+# (plan §9): NAME/PRETTY_NAME describe AstraOS, while ID_LIKE and the Debian fields
+# describe the upstream base. AstraOS is NOT represented as the kernel vendor and is
+# NOT claimed to be an official Debian release.
+
+NAME="@@NAME@@"
+PRETTY_NAME="@@PRETTY_NAME@@"
+VERSION="@@VERSION@@ (@@CODENAME@@)"
+VERSION_ID="@@VERSION@@"
+VERSION_CODENAME=@@CODENAME_LOWER@@
+ID=astraos
+ID_LIKE=debian
+ANSI_COLOR="1;35"
+HOME_URL="@@HOMEPAGE@@"
+SUPPORT_URL="@@SUPPORT_URL@@"
+BUG_REPORT_URL="@@BUG_URL@@"
+PRIVACY_POLICY_URL="@@HOMEPAGE@@/privacy"
+LOGO=astraos-logo
+DOCUMENTATION_URL="@@DOCUMENTATION_URL@@"
+
+# --- Upstream base -------------------------------------------------------------
+# AstraOS is an independent distribution built on Debian GNU/Linux. These fields
+# describe the base release the image was built from. They are kept separate from the
+# AstraOS identity above so both are reported accurately (plan §5, §9).
+ASTRAOS_BASE_DISTRIBUTION="@@BASE_DISTRIBUTION@@"
+ASTRAOS_BASE_RELEASE="@@BASE_RELEASE_VERSION@@"
+ASTRAOS_BASE_CODENAME="@@BASE_RELEASE_CODENAME@@"
+ASTRAOS_BASE_SUITE="@@BASE_SUITE@@"
+ASTRAOS_ARCHITECTURE="@@ARCH@@"
+
+# --- Project ---------------------------------------------------------------------
+ASTRAOS_VERSION="@@VERSION@@"
+ASTRAOS_CODENAME="@@CODENAME@@"
+ASTRAOS_RELEASE_STAGE="@@STAGE@@"
+ASTRAOS_RELEASE_TYPE="alpha"
+ASTRAOS_KERNEL="linux"
+ASTRAOS_DESKTOP="@@DESKTOP@@"
+ASTRAOS_DISPLAY_SERVER="@@DISPLAY_SERVER@@"
+ASTRAOS_INIT="@@INIT@@"
+ASTRAOS_INSTALLER="@@INSTALLER@@"
+ASTRAOS_LIVE_IMAGE="true"
+ASTRAOS_REPOSITORIES="debian"

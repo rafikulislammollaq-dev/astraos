@@ -1,0 +1,123 @@
+# AstraOS pull request validation.
+#
+# Deliberately cheap. Per plan §17, a pull request must NOT launch an expensive full OS
+# build: that behaviour trains people to ignore CI. This workflow runs the static suite,
+# shell linting and package availability checks, which is enough to catch the mistakes
+# that actually occur in this repository.
+#
+# The ISO build is a separate, manually triggered workflow (build-iso.yml).
+
+name: Validate
+
+on:
+  push:
+    branches: ["main", "master", "release/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Static checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install lint tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck --version
+
+      - name: Show the release being validated
+        run: |
+          cat VERSION
+          echo "---"
+
+      - name: Static test suite
+        run: python3 tests/run.py --verbose
+
+      - name: Shell syntax and shellcheck
+        run: make lint
+
+      - name: Verify the package selection against the Debian archive
+        run: python3 scripts/verify-package-availability.py
+
+      - name: Check that tests failed loudly if any file is missing
+        run: |
+          # Guard against the suite silently collecting nothing, which would make a
+          # green run meaningless.
+          count=$(python3 tests/run.py --list | grep -cE '^\s+test_' || true)
+          echo "discovered ${count} tests"
+          if [ "${count}" -lt 20 ]; then
+            echo "::error::only ${count} tests were discovered; the suite is not running properly"
+            exit 1
+          fi
+
+  branding:
+    name: Branding assets are reproducible
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Re-render the assets at low resolution
+        run: python3 branding/tools/render_assets.py --scale 0.15 --out /tmp/astraos-assets
+
+      - name: Confirm the renderer produced valid output
+        run: |
+          count=$(ls -1 /tmp/astraos-assets/*.png 2>/dev/null | wc -l)
+          echo "rendered ${count} file(s)"
+          if [ "${count}" -lt 7 ]; then
+            echo "::error::the asset renderer produced ${count} files; expected 7"
+            exit 1
+          fi
+          file /tmp/astraos-assets/*.png
+
+      - name: Confirm the committed assets are valid PNGs
+        run: |
+          python3 - <<'PY'
+          import struct, sys, zlib
+          from pathlib import Path
+
+          failed = 0
+          for path in sorted(Path("branding/generated").glob("*.png")):
+              data = path.read_bytes()
+              if data[:8] != b"\x89PNG\r\n\x1a\n":
+                  print(f"::error file={path}::bad PNG signature")
+                  failed += 1
+                  continue
+              pos = 8
+              while pos + 12 <= len(data):
+                  length = struct.unpack(">I", data[pos:pos+4])[0]
+                  tag = data[pos+4:pos+8]
+                  payload = data[pos+8:pos+8+length]
+                  crc = struct.unpack(">I", data[pos+8+length:pos+12+length])[0]
+                  if (zlib.crc32(tag + payload) & 0xFFFFFFFF) != crc:
+                      print(f"::error file={path}::bad CRC in {tag!r}")
+                      failed += 1
+                  pos += 12 + length
+              print(f"ok {path}")
+          sys.exit(1 if failed else 0)
+          PY

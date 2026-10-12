@@ -1,0 +1,33 @@
+# Hardware firmware (plan §12).
+#
+# Only firmware that Debian distributes is included. Redistribution licensing is
+# handled by Debian's non-free-firmware component, which the archive definition in
+# config/archives/astraos.list.chroot enables (plan §23).
+#
+# Untested hardware: nothing in this list has been verified on physical hardware.
+# See docs/HARDWARE_COMPATIBILITY.md and docs/KNOWN_LIMITATIONS.md.
+
+# Generic
+firmware-linux-free
+firmware-linux-nonfree
+firmware-misc-nonfree
+
+# Wi-Fi
+firmware-iwlwifi
+firmware-atheros
+firmware-realtek
+firmware-brcm80211
+firmware-mediatek
+# NOTE: there is no firmware-rtlwifi package in Debian; RTL Wi-Fi firmware ships in
+# firmware-realtek (listed above).
+firmware-ti-connectivity
+firmware-libertas
+wireless-regdb
+
+# Graphics
+firmware-amd-graphics
+firmware-nvidia-graphics
+
+# Audio / misc
+firmware-sof-signed
+alsa-firmware-loaders

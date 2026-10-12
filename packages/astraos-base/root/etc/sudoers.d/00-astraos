@@ -1,0 +1,24 @@
+# AstraOS sudo policy.
+#
+# Members of the sudo group may administer the system after authenticating with their
+# own password. There is no NOPASSWD rule, no shared password, and no unrestricted
+# passwordless root access (plan §10.4, §13.1).
+#
+# /etc/sudoers is left untouched; this drop-in is additive.
+#
+# NOTE: the live session grants the live user membership of the sudo group at boot
+# through live-config. The installed system's user is created by the Calamares users
+# module with a password the user chooses during installation.
+
+Defaults use_pty
+Defaults logfile="/var/log/sudo.log"
+Defaults log_input, log_output
+Defaults timestamp_timeout=15
+Defaults passwd_tries=3
+Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Defaults env_reset
+Defaults !visiblepw
+
+# Administrator group. %sudo already exists on Debian; this restates the grant so the
+# policy is self-contained and does not depend on edits to /etc/sudoers.
+%sudo ALL=(ALL:ALL) ALL

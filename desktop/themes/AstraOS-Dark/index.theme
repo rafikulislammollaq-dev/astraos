@@ -1,0 +1,23 @@
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=AstraOS-Dark
+Comment=AstraOS desktop theme: graphite and cyan, flat, readable
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+# The GTK theme name this directory provides.
+GtkTheme=AstraOS-Dark
+
+# AstraOS 0.1.0 ships a COLOUR-ONLY GTK theme and deliberately does not ship window
+# decorations, a Metacity theme or a cursor theme. Missing theme components are a
+# common cause of invisible titlebars, so each one names a component that is guaranteed
+# to be installed rather than a name that does not exist on disk.
+MetacityTheme=Adwaita
+IconTheme=AstraOS
+CursorTheme=Adwaita
+
+# Window controls on the right, ordered minimise / maximise / close.
+ButtonLayout=menu:minimize,maximize,close
+
+# Also declare the Xfce desktop theme name so Xfce's appearance settings show the
+# AstraOS theme as the active one.

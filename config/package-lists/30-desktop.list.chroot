@@ -1,0 +1,94 @@
+# AstraOS desktop session (plan §7).
+#
+# XFCE is the foundation: responsive, low resource use, mature, and well supported
+# on Debian. The desktop is *configured and branded*, not replaced with a homemade
+# shell (plan §7 and Rule 7).
+
+# --- XFCE core ---
+xfce4
+xfce4-session
+xfce4-panel
+xfce4-settings
+xfce4-appfinder
+xfce4-terminal
+xfce4-power-manager
+xfce4-power-manager-plugins
+xfce4-notifyd
+xfce4-screenshooter
+xfce4-taskmanager
+xfce4-clipman
+xfce4-clipman-plugin
+xfce4-pulseaudio-plugin
+xfce4-whiskermenu-plugin
+xfce4-datetime-plugin
+xfce4-systemload-plugin
+xfce4-netload-plugin
+xfce4-cpugraph-plugin
+xfce4-diskperf-plugin
+xfce4-battery-plugin
+xfce4-indicator-plugin
+xfce4-sensors-plugin
+xfce4-verve-plugin
+xfce4-xkb-plugin
+thunar
+thunar-volman
+thunar-archive-plugin
+tumbler
+xfconf
+libgarcon-1-0
+libgarcon-common
+libxfce4ui-utils
+exo-utils
+xfce4-goodies
+
+# --- Boot splash (plan §7.4) ---
+# plymouth draws the AstraOS boot splash. It is a hard requirement rather than a
+# recommendation because the branding package installs a Plymouth theme: without
+# plymouth itself the theme would never be shown and the boot would look unbranded.
+# The 0700-verify hook asserts the theme file exists, so a silent omission is caught.
+plymouth
+plymouth-themes
+plymouth-label
+
+# --- Display manager & login (plan §7.3) ---
+lightdm
+lightdm-gtk-greeter
+lightdm-gtk-greeter-settings
+slick-greeter
+
+# --- Audio (PipeWire is the supported stack in the pinned Debian release) ---
+pipewire
+pipewire-alsa
+pipewire-pulse
+pipewire-audio
+wireplumber
+pavucontrol
+alsa-utils
+libspa-0.2-bluetooth
+
+# --- Bluetooth ---
+bluez
+blueman
+
+# --- Screen locking and session safety ---
+light-locker
+xscreensaver
+
+# --- Printing support (desktop completeness; no proprietary drivers) ---
+cups
+cups-client
+cups-filters
+printer-driver-cups-pdf
+system-config-printer
+
+# --- Accessibility (plan §7.5) ---
+orca
+libatk-adaptor
+at-spi2-core
+xbrlapi
+fontconfig
+fonts-dejavu-core
+fonts-dejavu-extra
+fonts-noto-core
+fonts-noto-color-emoji
+fonts-liberation2

@@ -1,0 +1,36 @@
+# /etc/astraos-release
+#
+# AstraOS release identity, separate from /etc/os-release. Parsed by the astraos-info
+# command and by the installer branding. Rendered from system/astraos-release.in by
+# scripts/configure-live-build.sh.
+#
+# Values that can only be known at build time (BUILD_DATE, ISO_NAME, SHA256, PACKAGE_COUNT)
+# are appended by the build scripts, not invented here. If a value is unknown it stays
+# "unknown" rather than being guessed (plan §24, §28 Rule 4).
+
+NAME="@@NAME@@"
+VERSION="@@VERSION@@"
+CODENAME="@@CODENAME@@"
+RELEASE_STAGE="@@STAGE@@"
+RELEASE_TYPE="@@RELEASE_TYPE@@"
+ARCHITECTURE="@@ARCH@@"
+
+BASE_DISTRIBUTION="@@BASE_DISTRIBUTION@@"
+BASE_RELEASE="@@BASE_RELEASE_VERSION@@"
+BASE_CODENAME="@@BASE_RELEASE_CODENAME@@"
+BASE_SUITE="@@BASE_SUITE@@"
+
+DESKTOP="Xfce"
+DISPLAY_SERVER="X11"
+DISPLAY_MANAGER="LightDM"
+INIT_SYSTEM="systemd"
+INSTALLER="Calamares"
+BOOTLOADER="GRUB"
+ROOT_FILESYSTEM="ext4"
+
+# The released image is built by the AstraOS build pipeline from this configuration.
+# It is not a renamed Debian image (plan §6.2).
+BUILT_FROM="AstraOS build system"
+UPSTREAM_PROVENANCE="Independent distribution based on Debian GNU/Linux. Not an official Debian release."
+SUPPORT_URL="@@SUPPORT_URL@@"
+DOCUMENTATION_URL="@@DOCUMENTATION_URL@@"

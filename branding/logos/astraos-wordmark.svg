@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AstraOS wordmark: ring glyph plus the "ASTRA OS" lettering.
+
+  The lettering is live text in DejaVu Sans, which ships with every Debian system and
+  with this project's fonts-dejavu-core dependency (config/branding.env,
+  BRAND_FONT_DISPLAY). It is deliberately not converted to outlines so the wordmark
+  stays editable; consumers that cannot resolve the font will fall back to any
+  sans-serif. A rendered PNG equivalent is produced by branding/tools/render_assets.py
+  for tools that need a bitmap (GRUB, plymouth, LightDM).
+
+  Palette: pink #FF5CC8 / purple #8B3DFF / cyan #22E6FF / text #F2EEFF.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 256" width="1024" height="256"
+     role="img" aria-label="AstraOS wordmark">
+  <title>AstraOS</title>
+
+  <defs>
+    <linearGradient id="wmRing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#FF5CC8"/>
+      <stop offset="55%"  stop-color="#8B3DFF"/>
+      <stop offset="100%" stop-color="#22E6FF"/>
+    </linearGradient>
+    <filter id="wmBloom" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Ring glyph, left aligned, optically centred on the cap height of the text. -->
+  <g transform="translate(28,28) scale(0.39)">
+    <circle cx="256" cy="256" r="182" fill="none" stroke="url(#wmRing)"
+            stroke-width="20" filter="url(#wmBloom)"/>
+    <path d="M 256 74 A 182 182 0 0 1 438 256" fill="none" stroke="#22E6FF"
+          stroke-width="15" stroke-linecap="round" opacity="0.85"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="248" y="140"
+        font-family="'DejaVu Sans','Noto Sans',sans-serif"
+        font-size="92" font-weight="600" letter-spacing="14"
+        fill="#F2EEFF">ASTRA</text>
+  <text x="248" y="228"
+        font-family="'DejaVu Sans','Noto Sans',sans-serif"
+        font-size="46" font-weight="400" letter-spacing="22"
+        fill="#22E6FF" opacity="0.92">STELLAR DESKTOP</text>
+</svg>

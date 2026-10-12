@@ -1,0 +1,18 @@
+# AstraOS kernel selection (plan §1, §5).
+#
+# AstraOS ships the distribution-supported kernel from the pinned Debian release
+# rather than a hand-rolled kernel tree. The kernel package version that actually
+# landed in a build is recorded in the build manifest (plan §24).
+#
+# Debian trixie provides the 6.12 LTS series as linux-image-amd64.
+
+linux-image-amd64
+linux-headers-amd64
+
+# CPU microcode updates (non-free-firmware): deliverable and redistributable.
+intel-microcode
+amd64-microcode
+
+# Thermal / backlight / battery handling used by the desktop power manager.
+thermald
+acpi-support

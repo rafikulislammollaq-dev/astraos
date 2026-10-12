@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=AstraOS Welcome
+Name[en]=AstraOS Welcome
+GenericName=Getting started
+Comment=First-run guidance for AstraOS: installing, updating and where to find help
+Comment[en]=First-run guidance for AstraOS: installing, updating and where to find help
+Exec=xfce4-terminal --title="AstraOS Welcome" --geometry=100x32 --command="astraos-welcome"
+Icon=astraos-welcome
+Terminal=false
+Categories=System;Settings;
+Keywords=AstraOS;welcome;start;help;install;getting;started;
+StartupNotify=true
+StartupWMClass=xfce4-terminal

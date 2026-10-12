@@ -1,0 +1,37 @@
+#!/bin/sh
+# astraos-base post-installation script.
+#
+# Kept deliberately minimal and idempotent. It must never fail a package installation
+# because an optional tool is missing, and it must never touch the user's data.
+# Every failure is reported but only a genuinely broken state aborts.
+
+set -e
+
+ASTRAOS_PREFIX='[astraos-base]'
+
+# Apply the AstraOS sysctl defaults now that the file has been installed.
+# Live systems apply these at boot anyway; this makes them effective immediately.
+if [ "$1" = "configure" ]; then
+    if [ -r /etc/sysctl.d/60-astraos.conf ] && command -v sysctl >/dev/null 2>&1; then
+        sysctl -q -p /etc/sysctl.d/60-astraos.conf 2>/dev/null \
+            || echo "${ASTRAOS_PREFIX} note: some sysctl settings will take effect after reboot" >&2
+    fi
+
+    # Validate the sudo policy. A malformed sudoers file can lock every administrator
+    # out of sudo, so verify it here and shout loudly if it is wrong.
+    if [ -r /etc/sudoers.d/00-astraos ] && command -v visudo >/dev/null 2>&1; then
+        if ! visudo -cf /etc/sudoers.d/00-astraos >/dev/null 2>&1; then
+            echo "${ASTRAOS_PREFIX} WARNING: /etc/sudoers.d/00-astraos failed validation." >&2
+            echo "${ASTRAOS_PREFIX} WARNING: sudo may be unusable. Inspect the file before rebooting." >&2
+        fi
+    fi
+
+    # Ensure the machine id exists; some services refuse to start without it.
+    if [ ! -s /etc/machine-id ]; then
+        if command -v systemd-machine-id-setup >/dev/null 2>&1; then
+            systemd-machine-id-setup >/dev/null 2>&1 || true
+        fi
+    fi
+fi
+
+exit 0

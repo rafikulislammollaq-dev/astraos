@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AstraOS Xfce appearance defaults (xsettings channel).
+
+  Installed as /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml, which is the
+  system-wide default. A user's own settings in ~/.config override these, so the
+  desktop stays user-configurable rather than locked down (plan §7.2).
+
+  Palette reference: config/branding.env
+-->
+<channel name="xsettings" version="1.0">
+  <property name="Net" type="empty">
+    <property name="ThemeName" type="string" value="AstraOS-Dark"/>
+    <property name="IconThemeName" type="string" value="AstraOS"/>
+    <property name="DoubleClickTime" type="int" value="400"/>
+    <property name="DoubleClickDistance" type="int" value="5"/>
+    <property name="DndDragThreshold" type="int" value="8"/>
+    <property name="CursorBlink" type="bool" value="true"/>
+    <property name="CursorBlinkTime" type="int" value="1200"/>
+    <property name="SoundThemeName" type="string" value="default"/>
+  </property>
+
+  <property name="Xft" type="empty">
+    <!-- Readable default sizes: 11pt UI text is comfortable at 96 DPI and does not
+         need magnification on a 1080p laptop panel (plan §7.5). -->
+    <property name="DPI" type="int" value="96"/>
+    <property name="Antialias" type="int" value="1"/>
+    <property name="Hinting" type="int" value="1"/>
+    <property name="HintStyle" type="string" value="hintslight"/>
+    <property name="RGBA" type="string" value="rgb"/>
+    <property name="LCDUseXserver" type="bool" value="false"/>
+  </property>
+
+  <property name="Gtk" type="empty">
+    <property name="CursorThemeName" type="string" value="Adwaita"/>
+    <property name="CursorThemeSize" type="int" value="24"/>
+    <property name="FontName" type="string" value="DejaVu Sans 11"/>
+    <property name="MonospaceFontName" type="string" value="DejaVu Sans Mono 11"/>
+    <property name="MenuImages" type="bool" value="true"/>
+    <property name="ButtonImages" type="bool" value="true"/>
+    <property name="DialogsUseHeader" type="bool" value="false"/>
+    <!-- Keep accessibility tooling available but not started by default. -->
+    <property name="EnableEventSounds" type="bool" value="false"/>
+    <property name="EnableInputFeedbackSounds" type="bool" value="false"/>
+    <property name="Module" type="empty">
+      <property name="atk-bridge" type="bool" value="false"/>
+    </property>
+  </property>
+
+  <property name="Xfce" type="empty">
+    <property name="LastCustomDPI" type="int" value="96"/>
+  </property>
+</channel>

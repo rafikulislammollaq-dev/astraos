@@ -1,0 +1,34 @@
+# Line endings.
+#
+# This repository targets Linux. Every text file must be stored with LF line endings, on
+# every platform, because the artifacts are copied verbatim into a Debian chroot:
+#
+#   * a shell script or hook with CRLF fails at run time with `\r: not found`, or worse,
+#     silently breaks a `case`/`esac` pattern in a #!/bin/sh hook;
+#   * /etc/fstab, /etc/hosts and the GRUB configuration dislike trailing carriage returns;
+#   * dpkg maintainer scripts are run by sh, not bash, and are strict about this.
+#
+# `eol=lf` keeps the working copy LF too, so a build run directly from a Windows checkout
+# behaves the same as one run from the committed tree.
+* text=auto eol=lf
+
+# Binaries: never touched by the text normalisation above.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.xz binary
+*.gz binary
+*.zst binary
+*.deb binary
+
+# The ISO and its sidecars are build output; keep them out of diffs.
+*.iso binary
+*.squashfs binary
+*.img binary

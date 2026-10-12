@@ -1,0 +1,60 @@
+#!/bin/sh
+# astraos-branding post-installation script.
+#
+# Registers the theme files with the components that consume them. Every step is
+# guarded: a missing optional component must not fail the package installation, because
+# astraos-branding is also installable on a system without a boot splash.
+
+set -e
+
+PREFIX='[astraos-branding]'
+
+warn() { echo "${PREFIX} $*" >&2; }
+
+# --- Plymouth boot splash -----------------------------------------------------
+# Set the AstraOS theme as the active one and rebuild the initramfs so the splash is
+# present from the very first boot. Without the initramfs rebuild the theme applies
+# only after the kernel hands over, which looks like a broken splash.
+if [ -d /usr/share/plymouth/themes/astraos ] && command -v plymouth-set-default-theme >/dev/null 2>&1; then
+    if plymouth-set-default-theme astraos >/dev/null 2>&1; then
+        if command -v update-initramfs >/dev/null 2>&1; then
+            update-initramfs -u >/dev/null 2>&1 \
+                || warn "the initramfs could not be rebuilt; run: sudo update-initramfs -u"
+        fi
+    else
+        warn "could not set the Plymouth theme to astraos"
+    fi
+fi
+
+# If plymouth is absent, record the theme as the default anyway so it is picked up if
+# plymouth is installed later.
+if [ -f /usr/share/plymouth/themes/astraos/astraos.plymouth ] \
+   && [ ! -e /etc/alternatives/default.plymouth ]; then
+    :
+fi
+
+# --- Icon theme cache ---------------------------------------------------------
+# The icon theme is only found by applications once the index is registered.
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    if [ -f /usr/share/icons/AstraOS/index.theme ]; then
+        gtk-update-icon-cache -q -t -f /usr/share/icons/AstraOS >/dev/null 2>&1 \
+            || warn "gtk-update-icon-cache reported a problem for the AstraOS theme"
+    fi
+fi
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || true
+fi
+
+# --- GRUB theme ---------------------------------------------------------------
+# The GRUB theme is installed as an unprivileged file tree in /usr/share/astraos and
+# copied into /boot by the AstraOS grub configuration. It is deliberately NOT copied
+# into /boot here: writing to /boot from a package postinst can fail on a system whose
+# /boot is full or mounted read-only, and a failure there would leave a half-installed
+# package. The image build and the bootloader configuration handle that.
+
+# --- Xfce icon theme preference ----------------------------------------------
+# Do not edit user configuration from a package script. The system-wide default is
+# shipped in /etc/xdg/xfce4 by astraos-desktop.
+
+exit 0

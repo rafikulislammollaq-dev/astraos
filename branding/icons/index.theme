@@ -1,0 +1,32 @@
+[Icon Theme]
+Name=AstraOS
+Comment=AstraOS icon theme
+Comment[en]=AstraOS icon theme
+Inherits=hicolor
+
+# The AstraOS theme is deliberately a small overlay, not a full icon set.
+#
+# Reason: shipping incomplete icon themes is one of the most common causes of missing
+# icons in file managers and menus. AstraOS instead provides its own application icons
+# and inherits everything else from hicolor (the freedesktop fallback theme), so an
+# application whose icon we do not supply still gets its upstream icon.
+#
+# Only applications that AstraOS itself ships or configures are overridden.
+
+Directories=scalable/apps,scalable/places
+
+[scalable/apps]
+Size=256
+Context=Applications
+Type=Scalable
+MinSize=16
+MaxSize=512
+
+[scalable/places]
+Size=256
+Context=Places
+Type=Scalable
+MinSize=16
+MaxSize=512
+
+# Example: application= folder=, falls back to hicolor when not listed here.

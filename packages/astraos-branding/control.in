@@ -1,0 +1,23 @@
+Package: @@PACKAGE@@
+Version: @@VERSION@@
+Architecture: @@ARCH@@
+Maintainer: @@VENDOR@@ <maintainers@astraos.invalid>
+Section: x11
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: fonts-dejavu-core, hicolor-icon-theme
+Recommends: plymouth, plymouth-themes, grub2-common, lightdm, lightdm-gtk-greeter
+Suggests: inkscape
+Description: AstraOS visual identity
+ The AstraOS brand assets and the configuration that points system components at them:
+ wallpapers, the AstraOS ring logo in colour and monochrome, the AstraOS icon theme,
+ the Plymouth boot splash, the GRUB theme, and the LightDM greeter assets.
+ .
+ All artwork is original to the AstraOS project. No asset is copied from another
+ distribution and no third-party logo or trademark is redistributed. The palette and
+ the generated bitmaps both derive from config/branding.env, so the identity has a
+ single source of truth in the source tree.
+ .
+ The upstream LightDM greeter configuration file is written at image build time
+ because lightdm-gtk-greeter owns that path as a configuration file; the drop-in
+ /etc/lightdm/lightdm.conf.d/50-astraos.conf is shipped by this package.

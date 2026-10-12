@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AstraOS welcome application icon. Original artwork, square 256x256 viewBox so it
+     aligns with the freedesktop icon grid. Uses the AstraOS brand gradient. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"
+     role="img" aria-label="AstraOS Welcome">
+  <title>AstraOS Welcome</title>
+  <defs>
+    <linearGradient id="wg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF5CC8"/>
+      <stop offset="55%" stop-color="#8B3DFF"/>
+      <stop offset="100%" stop-color="#22E6FF"/>
+    </linearGradient>
+    <linearGradient id="wbg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1A1230"/>
+      <stop offset="100%" stop-color="#05030A"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="24" width="224" height="208" rx="34" fill="url(#wbg)"
+        stroke="url(#wg)" stroke-width="3"/>
+  <circle cx="128" cy="108" r="46" fill="none" stroke="url(#wg)" stroke-width="6"/>
+  <path d="M 128 62 A 46 46 0 0 1 174 108" fill="none" stroke="#22E6FF"
+        stroke-width="4" stroke-linecap="round"/>
+  <circle cx="128" cy="108" r="7" fill="#FFF" opacity="0.85"/>
+  <rect x="72" y="176" width="112" height="7" rx="3.5" fill="#22E6FF" opacity="0.9"/>
+  <rect x="88" y="194" width="80" height="6" rx="3" fill="#F2EEFF" opacity="0.35"/>
+</svg>

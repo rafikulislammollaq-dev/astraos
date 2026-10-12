@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=AstraOS Welcome
+Comment=Show getting-started guidance on the first login of an installed system
+Exec=/usr/bin/astraos-welcome
+
+# Never show this in the live session: the installer is the correct first step there,
+# and the login screen already says the session is live.
+OnlyShowIn=XFCE;
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=4
+
+# Run once per user. The welcome command itself also records that it has run, so this
+# is defence in depth rather than the only guard.
+X-AstraOS-ShowOnce=true
+
+Icon=astraos-welcome
+Terminal=true
+NoDisplay=false

@@ -1,0 +1,99 @@
+# AstraOS core system (plan §5.1).
+# One package per line. Comments and blank lines are ignored by live-build.
+# Availability of every name here is checked against the pinned Debian release by
+# scripts/validate-environment.sh before a build starts.
+
+# --- Core system ---
+systemd
+systemd-sysv
+systemd-timesyncd
+dbus
+dbus-x11
+apt
+apt-utils
+dpkg
+cron
+locales
+tzdata
+console-setup
+keyboard-configuration
+kbd
+console-data
+
+# --- Kernel & initramfs ---
+initramfs-tools
+initramfs-tools-core
+kmod
+linux-base
+dmsetup
+cryptsetup-initramfs
+
+# --- Shells & essential utilities ---
+bash
+bash-completion
+dash
+coreutils
+util-linux
+util-linux-extra
+e2fsprogs
+dosfstools
+xfsprogs
+btrfs-progs
+parted
+gdisk
+fdisk
+lvm2
+mdadm
+nano
+less
+file
+findutils
+grep
+sed
+gawk
+procps
+psmisc
+tree
+debianutils
+xz-utils
+gzip
+bzip2
+tar
+unzip
+zip
+p7zip-full
+ca-certificates
+gnupg
+curl
+wget
+rsync
+sudo
+adduser
+passwd
+openssl
+
+# --- Diagnostics ---
+lsof
+strace
+pciutils
+usbutils
+usb-modeswitch
+lshw
+smartmontools
+hdparm
+nvme-cli
+ethtool
+dmidecode
+acpi
+lm-sensors
+htop
+btop
+ncdu
+iputils-ping
+traceroute
+bind9-dnsutils
+net-tools
+
+# --- Logging ---
+rsyslog
+logrotate

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AstraOS simplified mark, dark ink. The light-background counterpart of
+  astraos-logo-mono-light.svg; used on the light desktop theme, in the light
+  wallpaper overlay and in documentation.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+     role="img" aria-label="AstraOS">
+  <title>AstraOS</title>
+  <g fill="none" stroke="#12141A" stroke-width="18">
+    <circle cx="256" cy="256" r="182"/>
+  </g>
+  <path d="M 256 74 A 182 182 0 0 1 438 256" fill="none" stroke="#12141A"
+        stroke-width="13" stroke-linecap="round" opacity="0.75"/>
+  <g fill="#12141A">
+    <path d="M 256 176 L 261 251 L 336 256 L 261 261 L 256 336 L 251 261 L 176 256 L 251 251 Z"
+          opacity="0.65"/>
+  </g>
+</svg>

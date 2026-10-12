@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AstraOS desktop defaults (xfce4-desktop channel).
+
+  Sets the AstraOS wallpaper as the default for the common monitor names. The
+  backdrops are listed per monitor because xfce4-desktop stores wallpaper per output;
+  listing the usual names means the AstraOS wallpaper appears on a fresh session
+  without the user choosing it.
+
+  The list is not exhaustive - a monitor name that is not listed simply falls back to
+  Xfce's own default, which is a cosmetic issue, not a failure. Documented in
+  docs/KNOWN_LIMITATIONS.md.
+-->
+<channel name="xfce4-desktop" version="1.0">
+  <property name="backdrop" type="empty">
+    <property name="screen0" type="empty">
+      <property name="monitor0" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
+        </property>
+        <property name="workspace1" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
+        </property>
+      </property>
+      <property name="monitorVGA-1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
+        </property>
+      </property>
+      <property name="monitorLVDS-1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
+        </property>
+      </property>
+      <property name="monitorVirtual-1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
+        </property>
+      </property>
+      <property name="monitorVirtual1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
+        </property>
+      </property>
+    </property>
+  </property>
+
+  <property name="desktop-icons" type="empty">
+    <property name="style" type="int" value="2"/>
+    <property name="icon-size" type="uint" value="48"/>
+    <property name="file-icons" type="empty">
+      <property name="show-filesystem" type="bool" value="false"/>
+      <property name="show-home" type="bool" value="false"/>
+      <property name="show-trash" type="bool" value="true"/>
+      <property name="show-removable" type="bool" value="true"/>
+    </property>
+    <property name="tooltip-size" type="uint" value="72"/>
+  </property>
+
+  <property name="desktop-menu" type="empty">
+    <property name="show" type="bool" value="true"/>
+  </property>
+</channel>

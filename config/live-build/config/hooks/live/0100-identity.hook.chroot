@@ -1,0 +1,95 @@
+#!/bin/sh
+# AstraOS identity hook (chroot stage).
+#
+# WHY THIS IS A HOOK AND NOT A PACKAGE
+# ------------------------------------
+# Several identity files are owned as conffiles by Debian packages that AstraOS still
+# depends on:
+#
+#   /etc/os-release, /usr/lib/os-release, /etc/issue, /etc/issue.net, /etc/motd
+#       owned by base-files
+#   /etc/default/ufw
+#       owned by ufw
+#   /etc/lightdm/lightdm-gtk-greeter.conf
+#       owned by lightdm-gtk-greeter
+#
+# A package of ours cannot simply ship those paths: dpkg would report a file conflict,
+# and declaring Replaces/Breaks against base-files would remove the base system.
+# The supported derivative approach for an alpha is to write these files at image build
+# time, which is what this hook does from the staged, version-controlled sources.
+#
+# Consequence, documented honestly in docs/KNOWN_LIMITATIONS.md: a later upgrade of
+# base-files can overwrite /etc/os-release until AstraOS ships its own base-files
+# variant. The `astraos-info` command and /etc/astraos-release (owned by the
+# astraos-base package, so it is safe) are unaffected.
+#
+# Everything that CAN be owned by a package is owned by a package:
+#   astraos-base          astraos-info, /etc/astraos-release, sysctl, sudoers, APT policy
+#   astraos-branding      logos, wallpapers, icon theme, plymouth, GRUB, LightDM assets
+#   astraos-desktop       XFCE defaults, skel, launchers, autostart
+#   astraos-system-tools  astraos-help, astraos-welcome, astraos-recovery-guide
+
+set -eu
+
+STAGE=/usr/share/astraos/staged
+PREFIX='[astraos:identity]'
+
+log() { printf '%s %s\n' "$PREFIX" "$*"; }
+fail() { printf '%s ERROR: %s\n' "$PREFIX" "$*" >&2; exit 1; }
+
+[ -d "$STAGE/system" ] || fail "staged system configuration is missing"
+
+install_file() {
+    src="$1"; dst="$2"; mode="${3:-0644}"
+    [ -f "$src" ] || fail "expected staged file not found: $src"
+    mkdir -p "$(dirname "$dst")"
+    cp -f "$src" "$dst"
+    chmod "$mode" "$dst"
+}
+
+# --- Identity -----------------------------------------------------------------
+log "installing distribution identity files"
+install_file "$STAGE/system/os-release" /etc/os-release
+install_file "$STAGE/system/os-release" /usr/lib/os-release
+install_file "$STAGE/system/issue" /etc/issue
+install_file "$STAGE/system/issue.net" /etc/issue.net
+install_file "$STAGE/system/motd" /etc/motd
+install_file "$STAGE/system/default-hostname" /etc/hostname
+
+# --- Firewall defaults and greeter configuration ------------------------------
+log "installing ufw defaults and greeter configuration"
+install_file "$STAGE/system/security/astraos-firewall.default" /etc/default/ufw
+install_file "$STAGE/branding/lightdm/lightdm-gtk-greeter.conf" /etc/lightdm/lightdm-gtk-greeter.conf
+
+printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n::1\t\tlocalhost ip6-localhost ip6-loopback\n' \
+    "$(cat /etc/hostname)" > /etc/hosts
+
+# --- Confirm the packages actually landed -------------------------------------
+# The brand assets come from astraos-branding, the desktop defaults from
+# astraos-desktop. If a package failed to install, the image would boot into an
+# unbranded desktop, so fail the build instead.
+log "verifying AstraOS packages were installed"
+for required in \
+    /usr/bin/astraos-info \
+    /etc/astraos-release \
+    /usr/share/astraos/logos/astraos-logo.svg \
+    /usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png \
+    /usr/share/icons/AstraOS/index.theme \
+    /usr/share/plymouth/themes/astraos/astraos.plymouth \
+    /usr/share/astraos/grub-theme/theme.txt \
+    /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
+do
+    [ -e "$required" ] || fail "missing after package installation: ${required}"
+    printf '%s ok    %s\n' "$PREFIX" "$required"
+done
+
+# --- Locale -------------------------------------------------------------------
+log "configuring locale"
+printf 'en_US.UTF-8 UTF-8\n' > /etc/locale.gen
+if command -v locale-gen >/dev/null 2>&1; then
+    locale-gen >/dev/null 2>&1 || log "WARNING: locale-gen failed"
+else
+    log "WARNING: locale-gen is not installed"
+fi
+
+log "identity installed"

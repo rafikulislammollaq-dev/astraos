@@ -1,0 +1,57 @@
+# Graphics stack (plan §5.2).
+#
+# X11 only for the first release. The desktop is built to be Wayland-ready but
+# does not claim Wayland support: see docs/KNOWN_LIMITATIONS.md.
+#
+# Open-source drivers only. No proprietary GPU stack is required for the desktop to
+# work, and none is installed by default (plan §5.2).
+
+# --- X server ---
+xserver-xorg
+xserver-xorg-core
+xserver-xorg-legacy
+xserver-xorg-input-all
+xserver-xorg-input-libinput
+xserver-xorg-input-wacom
+xserver-xorg-video-all
+xserver-xorg-video-fbdev
+xserver-xorg-video-vesa
+xserver-xorg-video-intel
+xserver-xorg-video-amdgpu
+xserver-xorg-video-ati
+xserver-xorg-video-nouveau
+xserver-xorg-video-qxl
+xinit
+xauth
+x11-utils
+x11-xserver-utils
+x11-xkb-utils
+x11-common
+xdg-utils
+xdg-user-dirs
+xdg-user-dirs-gtk
+
+# --- Mesa / rendering (software fallback must exist so a VM always renders) ---
+libgl1
+libgl1-mesa-dri
+libegl1
+libglu1-mesa
+mesa-utils
+mesa-vulkan-drivers
+
+# NOTE: elogind is deliberately NOT installed. AstraOS uses systemd, and elogind is
+# the non-systemd session manager; installing both is a conflict.
+
+# --- Session integration ---
+libpam-systemd
+# policykit-1 was renamed: the daemon package is polkitd in the pinned release.
+polkitd
+pkexec
+libpolkit-agent-1-0
+libpolkit-gobject-1-0
+gvfs
+gvfs-backends
+gvfs-fuse
+udisks2
+upower
+accountsservice

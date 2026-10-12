@@ -1,0 +1,114 @@
+#!/bin/sh
+# AstraOS image assertion hook (chroot stage, runs last).
+#
+# This is the in-image half of the test strategy. It runs inside the chroot that is
+# about to be compressed into the live filesystem, and it aborts the build when
+# something the release depends on is missing.
+#
+# This is deliberately NOT a "does the OS boot" test. Nothing here proves bootability;
+# it proves the image contains what the configuration says it should. Boot is tested
+# separately (tests/boot/, docs/INSTALLATION_VIRTUALBOX.md). Per plan §18, passing a
+# structural check is not evidence that the OS boots.
+
+set -u
+
+PREFIX='[astraos:verify]'
+FAILED=0
+TOTAL=0
+
+# check "description" COMMAND [ARGS...]
+check() {
+    description="$1"
+    shift
+    TOTAL=$((TOTAL + 1))
+    if "$@" >/dev/null 2>&1; then
+        printf '%s ok    %s\n' "$PREFIX" "$description"
+    else
+        printf '%s FAIL  %s\n' "$PREFIX" "$description" >&2
+        FAILED=$((FAILED + 1))
+    fi
+}
+
+# grep-q "description" FILE PATTERN
+grep_q() {
+    description="$1"; file="$2"; pattern="$3"
+    check "$description" grep -qs -- "$pattern" "$file"
+}
+
+printf '%s verifying AstraOS 0.1.0 Alpha image contents\n' "$PREFIX"
+
+# --- Distribution identity ----------------------------------------------------
+check "os-release exists"                 test -f /etc/os-release
+grep_q "os-release reports ID=astraos"    /etc/os-release '^ID=astraos$'
+grep_q "os-release declares the Debian base" /etc/os-release '^ID_LIKE=debian$'
+grep_q "os-release declares 0.1.0"        /etc/os-release '^VERSION_ID="0\.1\.0"$'
+check "astraos-release exists"            test -f /etc/astraos-release
+check "astraos-info command is installed" test -x /usr/bin/astraos-info
+
+# --- Kernel and initramfs -----------------------------------------------------
+check "a compressed kernel is in /boot"   sh -c 'ls /boot/vmlinuz-* >/dev/null 2>&1'
+check "an initramfs is in /boot"          sh -c 'ls /boot/initrd.img-* /boot/initrd-* >/dev/null 2>&1'
+check "update-initramfs is available"     sh -c 'command -v update-initramfs'
+
+# --- Boot chain ---------------------------------------------------------------
+check "grub-install is available"         sh -c 'command -v grub-install'
+check "efibootmgr is available"           sh -c 'command -v efibootmgr'
+check "grub configuration directory"      test -d /etc/grub.d
+
+# --- Live session -------------------------------------------------------------
+check "live-boot is installed"            test -d /lib/live/boot
+check "live-config is installed"          test -d /usr/lib/live/config
+check "live-config user setup script"     test -f /usr/lib/live/config/0030-user-setup
+
+# --- Desktop session ----------------------------------------------------------
+check "xfce4-session is installed"        test -x /usr/bin/xfce4-session
+check "xfce4-panel is installed"          test -x /usr/bin/xfce4-panel
+check "thunar is installed"               test -x /usr/bin/thunar
+check "xfce4-terminal is installed"       test -x /usr/bin/xfce4-terminal
+check "lightdm is installed"              test -x /usr/sbin/lightdm
+check "lightdm-gtk-greeter is installed"  test -x /usr/sbin/lightdm-gtk-greeter
+check "lightdm configuration exists"      test -f /etc/lightdm/lightdm.conf
+check "greeter configuration exists"      test -f /etc/lightdm/lightdm-gtk-greeter.conf
+check "Xorg is installed"                 test -x /usr/bin/Xorg
+check "a mesa DRI driver is present"      sh -c 'ls /usr/lib/*/dri/*_dri.so >/dev/null 2>&1'
+
+# --- AstraOS desktop configuration -------------------------------------------
+check "xfce defaults are shipped"         test -d /etc/xdg/xfce4
+check "skel xfce configuration shipped"   test -d /etc/skel/.config/xfce4
+check "astraos wallpaper is installed"    sh -c 'ls /usr/share/astraos/wallpapers/*.png >/dev/null 2>&1'
+check "astraos logo is installed"         test -f /usr/share/astraos/logos/astraos-logo.svg
+check "plymouth theme is installed"       test -f /usr/share/plymouth/themes/astraos/astraos.plymouth
+
+# --- Installer ----------------------------------------------------------------
+check "calamares is installed"            test -x /usr/bin/calamares
+check "calamares settings exist"          test -f /etc/calamares/settings.conf
+check "calamares astraos branding exists" test -d /usr/share/calamares/branding/astraos
+check "unsquashfs is available"           sh -c 'command -v unsquashfs'
+
+# --- Networking and audio -----------------------------------------------------
+check "NetworkManager is installed"       test -x /usr/sbin/NetworkManager
+check "nm-applet is installed"            test -x /usr/bin/nm-applet
+check "wpa_supplicant is installed"       test -x /usr/sbin/wpa_supplicant
+check "wireplumber is installed"          test -x /usr/bin/wireplumber
+
+# --- Security baseline --------------------------------------------------------
+check "sudo is installed"                 test -x /usr/bin/sudo
+check "ufw is installed"                  test -x /usr/sbin/ufw
+check "no passwordless sudo rule shipped" sh -c '! grep -rqs NOPASSWD /etc/sudoers /etc/sudoers.d'
+# AstraOS's own policy file legitimately contains AllowUnauthenticated "false", so this
+# looks specifically for the value that would DISABLE signature verification.
+check "apt signatures are not disabled"   sh -c '! grep -rqsE "AllowUnauthenticated[[:space:]]+\"true\"" /etc/apt/apt.conf.d'
+check "no fixed password for the live user" sh -c '! grep -qs "^astra:" /etc/shadow'
+check "root account is locked"            sh -c 'passwd -S root 2>/dev/null | grep -q "^root *L"'
+check "no ssh server installed"           sh -c '! test -e /usr/sbin/sshd && ! test -x /usr/bin/ssh'
+
+# --- Service policy -----------------------------------------------------------
+check "a display-manager unit is wired up" sh -c 'test -e /etc/systemd/system/display-manager.service || systemctl is-enabled lightdm >/dev/null 2>&1'
+
+printf '%s -----------------------------------------\n' "$PREFIX"
+printf '%s checks run: %s\n' "$PREFIX" "$TOTAL"
+if [ "$FAILED" -gt 0 ]; then
+    printf '%s FAILED: %s image assertion(s) did not pass. Refusing to finish the build.\n' "$PREFIX" "$FAILED" >&2
+    exit 1
+fi
+printf '%s all image assertions passed\n' "$PREFIX"

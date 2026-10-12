@@ -1,0 +1,74 @@
+# AstraOS GRUB2 theme.
+#
+# Installed to /usr/share/astraos/grub-theme and referenced from /etc/default/grub
+# with GRUB_THEME. Kept deliberately simple: themed GRUB is a common source of
+# "the boot menu is invisible on my monitor" reports, so every element has a plain
+# fallback colour and the menu never depends on an image to be readable (plan §7.4).
+
+# --- Global ------------------------------------------------------------------
+title-text: ""
+desktop-image: "astraos-splash-boot.png"
+desktop-color: "#05030A"
+terminal-font: "DejaVu Sans Mono Regular 14"
+terminal-box: "terminal_box_*.png"
+terminal-left: "0"
+terminal-top: "0"
+terminal-width: "100%"
+terminal-height: "100%"
+terminal-border: "0"
+
+# --- Boot menu ---------------------------------------------------------------
++ boot_menu {
+    left = 12%
+    top = 58%
+    width = 76%
+    height = 32%
+    item_font = "DejaVu Sans Regular 16"
+    item_color = "#F2EEFF"
+    selected_item_color = "#22E6FF"
+    item_height = 30
+    item_padding = 8
+    item_spacing = 4
+    item_icon_space = 0
+    icon_width = 0
+    icon_height = 0
+    scrollbar = false
+    menu_pixmap_style = "menu_*.png"
+
+    + label {
+        left = 0
+        top = 0
+        width = 100%
+        height = 30
+        align = "center"
+        color = "#FF5CC8"
+        font = "DejaVu Sans Mono Regular 12"
+        text = "ASTRA OS  0.1.0 ALPHA"
+    }
+}
+
+# --- Progress indicator ------------------------------------------------------
++ progress_bar {
+    id = "__timeout__"
+    left = 12%
+    top = 92%
+    width = 76%
+    height = 10
+    font = "DejaVu Sans Regular 12"
+    text_color = "#98A2B3"
+    fg_color = "#22E6FF"
+    bg_color = "#1A1E26"
+    border_color = "#2E3542"
+    text = "Starting in %d seconds"
+}
+
+# --- Help text ---------------------------------------------------------------
++ label {
+    left = 12%
+    top = 50%
+    width = 76%
+    align = "center"
+    color = "#98A2B3"
+    font = "DejaVu Sans Regular 13"
+    text = "Use the arrow keys to select. Enter to boot. 'e' to edit, 'c' for a command line."
+}

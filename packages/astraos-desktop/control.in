@@ -1,0 +1,23 @@
+Package: @@PACKAGE@@
+Version: @@VERSION@@
+Architecture: @@ARCH@@
+Maintainer: @@VENDOR@@ <maintainers@astraos.invalid>
+Section: x11
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: astraos-base (>= @@VERSION@@), astraos-branding (>= @@VERSION@@), xfce4-session, xfce4-panel, xfconf, libgarcon-1-0, thunar, xfce4-terminal, xfce4-settings, xfce4-appfinder
+Recommends: xfce4-whiskermenu-plugin, xfce4-goodies, xfce4-power-manager, xfce4-notifyd, xfce4-screenshooter, xfce4-taskmanager, xfce4-clipman-plugin, xfce4-pulseaudio-plugin, mousepad, ristretto, xarchiver, parole, lightdm, lightdm-gtk-greeter
+Description: AstraOS Xfce desktop configuration
+ The AstraOS desktop: the system-wide Xfce defaults, the panel layout, keyboard
+ shortcuts, window-manager settings, the skeleton home directory for new users, and
+ the AstraOS application launchers.
+ .
+ The desktop is CONFIGURED Xfce, not a replacement for it. AstraOS 0.1.0 does not
+ ship a custom shell, window manager or session manager (plan §7). Configuration is
+ applied through the documented Xfce mechanisms (/etc/xdg/xfce4, /etc/skel, and the
+ xfconf system channel) so the interface stays user-configurable and upgradable with
+ the upstream packages.
+ .
+ Transparency and blur effects are deliberately limited. The desktop must stay
+ responsive on modest hardware, so the neon identity lives in the wallpaper, splash
+ and greeter, while panel and window chrome use flat, high-contrast colours.

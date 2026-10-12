@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AstraOS keyboard shortcuts (xfce4-keyboard-shortcuts channel).
+
+  Every entry is a documented, conventional shortcut. Keyboard access to the desktop
+  is an accessibility requirement, not a power-user extra (plan §7.5), so the bindings
+  that open the menu, the launcher and a terminal are all set by default.
+
+  Bindings that clash with nothing on a default Xfce installation are preferred. A
+  binding that the user's keyboard cannot produce is harmless; Xfce simply never
+  fires it.
+-->
+<channel name="xfce4-keyboard-shortcuts" version="1.0">
+
+  <property name="commands" type="empty">
+    <!-- Desktop navigation -->
+    <property name="&lt;Primary&gt;&lt;Alt&gt;t" type="string" value="xfce4-terminal"/>
+    <property name="&lt;Primary&gt;&lt;Alt&gt;h" type="string" value="thunar"/>
+    <property name="&lt;Primary&gt;&lt;Alt&gt;f" type="string" value="firefox-esr"/>
+    <property name="&lt;Primary&gt;&lt;Alt&gt;i" type="string" value="xfce4-terminal --title='AstraOS information' --command='astraos-info; echo; read -p \"Press Enter to close...\"'"/>
+
+    <!-- Application menu / launcher -->
+    <property name="&lt;Super&gt;space" type="string" value="xfce4-popup-whiskermenu"/>
+    <property name="&lt;Primary&gt;&lt;Alt&gt;w" type="string" value="xfce4-popup-whiskermenu"/>
+
+    <!-- Window and workspace management -->
+    <property name="&lt;Super&gt;d" type="string" value="xfce4-popup-showdesktop"/>
+    <property name="&lt;Primary&gt;&lt;Alt&gt;l" type="string" value="xflock4"/>
+    <property name="&lt;Primary&gt;&lt;Alt&gt;Delete" type="string" value="xfce4-session-logout"/>
+
+    <!-- Screenshots -->
+    <property name="Print" type="string" value="xfce4-screenshooter -f"/>
+    <property name="&lt;Shift&gt;Print" type="string" value="xfce4-screenshooter -r"/>
+
+    <!-- Task manager: a fixed key so a frozen desktop can be inspected -->
+    <property name="&lt;Primary&gt;&lt;Shift&gt;Escape" type="string" value="xfce4-taskmanager"/>
+  </property>
+
+  <property name="xfwm4" type="empty">
+    <!-- Window management stays on the upstream defaults so the behaviour is familiar.
+         Only the workspace switches are restated here for documentation value. -->
+    <property name="&lt;Alt&gt;F4" type="string" value="close_window_key"/>
+    <property name="&lt;Alt&gt;F10" type="string" value="maximize_window_key"/>
+    <property name="&lt;Primary&gt;&lt;Alt&gt;Left" type="string" value="left_workspace_key"/>
+    <property name="&lt;Primary&gt;&lt;Alt&gt;Right" type="string" value="right_workspace_key"/>
+    <property name="&lt;Super&gt;Left" type="string" value="tile_left_key"/>
+    <property name="&lt;Super&gt;Right" type="string" value="tile_right_key"/>
+    <property name="&lt;Super&gt;Up" type="string" value="maximize_window_key"/>
+  </property>
+</channel>

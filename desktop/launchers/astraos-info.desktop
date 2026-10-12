@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=AstraOS System Information
+Comment=Show the AstraOS release, kernel, hardware, storage and network summary
+Comment[en]=Show the AstraOS release, kernel, hardware, storage and network summary
+Exec=xfce4-terminal --title="AstraOS System Information" --geometry=110x40 --hold --command="astraos-info"
+Icon=astraos-logo
+Terminal=false
+Categories=System;Utility;
+Keywords=AstraOS;system;information;about;hardware;kernel;
+StartupNotify=true

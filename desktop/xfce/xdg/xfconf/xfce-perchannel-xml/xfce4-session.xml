@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AstraOS session defaults (xfce4-session channel).
+
+  Two security-relevant choices:
+
+  * Screen locking is ON with a short blank delay. A desktop that never locks is a
+    desktop that leaks whatever is on screen when the user walks away.
+  * Session saving is OFF. Saved sessions are a common cause of "the desktop starts
+    with things I closed last week" complaints, and they make a broken session
+    self-replicating across logins, which complicates recovery (plan §14).
+-->
+<channel name="xfce4-session" version="1.0">
+  <property name="general" type="empty">
+    <property name="AutoSave" type="bool" value="false"/>
+    <property name="SaveOnExit" type="bool" value="false"/>
+    <property name="SessionName" type="string" value="Default"/>
+    <property name="PromptOnLogout" type="bool" value="true"/>
+    <property name="LockScreen" type="bool" value="true"/>
+    <property name="ShowSplash" type="bool" value="false"/>
+    <property name="FailsafeSessionName" type="string" value="Failsafe"/>
+    <property name="Logout" type="empty">
+      <property name="ShowDialog" type="bool" value="true"/>
+    </property>
+  </property>
+
+  <property name="shutdown" type="empty">
+    <property name="Prompt" type="bool" value="true"/>
+  </property>
+
+  <property name="screensaver" type="empty">
+    <!-- Blank after 10 minutes, lock after 15. Short enough to matter, long enough
+         not to interrupt watching a video. -->
+    <property name="mode" type="uint" value="2"/>
+    <property name="blank_timeout" type="uint" value="10"/>
+    <property name="lock_timeout" type="uint" value="15"/>
+    <property name="lock_on_suspend" type="bool" value="true"/>
+    <property name="lock_on_sleep" type="bool" value="true"/>
+  </property>
+
+  <property name="splash" type="empty">
+    <property name="Engine" type="string" value="none"/>
+  </property>
+</channel>

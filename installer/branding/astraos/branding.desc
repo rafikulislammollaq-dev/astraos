@@ -1,0 +1,59 @@
+# AstraOS installer branding (Calamares branding component).
+#
+# Installed to /usr/share/calamares/branding/astraos. The `componentName: astraos` in
+# settings.conf is what selects this directory.
+#
+# The strings here are shown to the user during installation, so they are written to be
+# accurate rather than flattering: this is an alpha release and the installer says so.
+
+---
+componentName: astraos
+
+strings:
+    productName:         "AstraOS"
+    shortProductName:    "AstraOS"
+    version:             "0.1.0 Alpha"
+    shortVersion:        "0.1.0"
+    versionedName:       "AstraOS 0.1.0 Alpha"
+    shortVersionedName:  "AstraOS 0.1.0"
+    bootloaderEntryName: "AstraOS"
+    productUrl:          "https://astraos.invalid"
+    supportUrl:          "https://astraos.invalid/support"
+
+    # Shown on the welcome page. States the base distribution and the alpha status
+    # plainly (plan §23: do not claim to be an official Debian release).
+    welcome:             "AstraOS 0.1.0 Alpha is an independent distribution based on Debian GNU/Linux. This is an early release: back up anything you cannot lose before continuing."
+    replacement:         "Installing AstraOS will replace the operating system currently on the selected disk. Files on that disk will be lost."
+    alongside:          "AstraOS can be installed alongside an existing operating system if you free up space first. Choose manual partitioning to decide exactly which partitions are used."
+    erase:               "The selected disk will be erased and all data on it will be lost. This cannot be undone."
+    eraseAll:            "All partitions on the selected disk will be destroyed."
+    eraseEfi:            "The existing EFI system partition will be reused so the computer can continue to boot other installed systems."
+    eraseInstall:        "Erase the disk and install AstraOS"
+    manualPartitioning:  "Manual partitioning. You choose the partitions, the filesystem and the mount points."
+    bootLoader:          "AstraOS will install the GRUB bootloader so this computer can start AstraOS."
+
+images:
+    # Paths are relative to this branding directory.
+    productLogo:   "logo.png"
+    productIcon:   "logo.png"
+    productWelcome: "welcome.png"
+
+# AstraOS brand palette. Matches config/branding.env.
+style:
+    sidebarBackground:      "#05030A"
+    sidebarText:            "#F2EEFF"
+    sidebarTextSelect:      "#22E6FF"
+    sidebarTextHighlight:   "#8B3DFF"
+
+    # The accent is the neon magenta from the reference screenshots.
+    background:             "#12141A"
+    text:                   "#E8ECF2"
+    textHighlight:          "#22E6FF"
+    textSelect:             "#05030A"
+    button:                 "#232833"
+    buttonText:             "#E8ECF2"
+    buttonHighlight:        "#22E6FF"
+    buttonTextHighlight:    "#05030A"
+
+    # Calamares supports limited styling; keep it to colours so the installer does not
+    # depend on a stylesheet that a future Calamares version may rename.
