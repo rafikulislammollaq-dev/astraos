@@ -19,6 +19,19 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- The image contained every `firmware-*` package in the Debian archive, not the reviewed
+  selection in `config/package-lists/20-firmware.list.chroot`: live-build scans the archive
+  and installs them all unless told not to. It also pulled in the contrib packages
+  `firmware-b43-installer` and `firmware-b43legacy-installer`, which download Broadcom
+  firmware from the internet in their post-install scripts; that download failed and stopped
+  the build after several gigabytes had been installed. The sweep is now switched off
+  (`--firmware-chroot false`), the list is authoritative and carries the hardware coverage
+  the sweep provided, and the b43 gap is documented in `docs/HARDWARE_COMPATIBILITY.md`
+  rather than papered over.
+- A package list asked for two conflicting time daemons. `ntpsec` declares
+  `Conflicts: time-daemon`, which `systemd-timesyncd` provides, so apt could not resolve the
+  package set and failed after downloading all of it. `systemd-timesyncd` is the one AstraOS
+  ships; a test now rejects any second time daemon.
 - The image build ran with the option set of whichever live-build happened to be installed.
   The pinned release (live-build 20250505 for Debian 13) renamed `--binary-images` to
   `--binary-image` and `--binary-compression` to `--chroot-squashfs-compression-type`, and

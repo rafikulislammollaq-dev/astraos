@@ -197,6 +197,22 @@ if supports --cache; then set -- "$@" --cache true; fi
 if supports --cache-indices; then set -- "$@" --cache-indices true; fi
 if supports --cache-packages; then set -- "$@" --cache-packages true; fi
 
+# --- Firmware -----------------------------------------------------------------
+# live-build's own firmware stage installs every package in the archive whose name starts
+# with "firmware-" by scanning the archive contents. It is switched off: it defeats the
+# reviewed selection in config/package-lists/20-firmware.list.chroot, making the image depend
+# on whatever the archive contains at that moment, and it drags in
+# firmware-b43-installer and firmware-b43legacy-installer from contrib, whose post-install
+# scripts download Broadcom firmware from the internet. That download failed and stopped the
+# build after several gigabytes had been installed.
+if supports --firmware-chroot; then
+    set -- "$@" --firmware-chroot false
+else
+    SKIPPED="${SKIPPED} --firmware-chroot"
+fi
+# Only affects debian-installer, which AstraOS does not use (--debian-installer false).
+if supports --firmware-binary; then set -- "$@" --firmware-binary false; fi
+
 # --- Tasks --------------------------------------------------------------------
 # AstraOS selects packages explicitly per category (config/package-lists/), so Debian task
 # metapackages are never requested. The pinned live-build does not document --tasks at all,

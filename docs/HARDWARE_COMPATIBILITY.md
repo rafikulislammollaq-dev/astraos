@@ -13,11 +13,28 @@ handled by Debian's own redistribution arrangements (plan §12, §23):
 
 | Category | Packages |
 |---|---|
-| Wi-Fi | `firmware-iwlwifi`, `firmware-atheros`, `firmware-realtek`, `firmware-brcm80211`, `firmware-mediatek`, `firmware-ti-connectivity`, `firmware-libertas`, `wireless-regdb` |
-| Graphics | `firmware-amd-graphics`, `firmware-nvidia-graphics` |
+The list is explicit — it is `config/package-lists/20-firmware.list.chroot`, and it is the
+only source of firmware in the image. `live-build`'s automatic "install every firmware-*
+package" stage is switched off, so nothing arrives without having been chosen. This is what
+the categories below cover:
+
+| Category | Packages |
+|---|---|
+| Wi-Fi | `firmware-iwlwifi`, `firmware-atheros`, `firmware-realtek`, `firmware-brcm80211`, `firmware-mediatek`, `firmware-ti-connectivity`, `firmware-libertas`, `firmware-ipw2x00`, `firmware-zd1211`, `firmware-siano`, `firmware-qcom-soc`, `firmware-qcom-media`, `firmware-samsung`, `wireless-regdb` |
+| Wired | `firmware-bnx2`, `firmware-bnx2x`, `firmware-cavium`, `firmware-marvell-prestera`, `firmware-myricom`, `firmware-netronome`, `firmware-netxen`, `firmware-qlogic` |
+| Graphics | `firmware-amd-graphics`, `firmware-intel-graphics`, `firmware-nvidia-graphics`, `firmware-nvidia-gsp`, `firmware-nvidia-tesla-535-gsp`, `firmware-cirrus` |
 | Generic | `firmware-linux-free`, `firmware-linux-nonfree`, `firmware-misc-nonfree` |
-| Audio | `firmware-sof-signed`, `alsa-firmware-loaders` |
+| Audio | `firmware-sof-signed`, `firmware-intel-sound`, `firmware-intel-misc`, `firmware-ivtv`, `alsa-firmware-loaders` |
 | CPU | `intel-microcode`, `amd64-microcode` |
+
+One category is deliberately **absent**: Broadcom's older chips driven by `b43`, whose
+firmware Debian does not redistribute. Debian ships `firmware-b43-installer` from
+contrib instead, and that package downloads the firmware from the internet when it is
+installed. It cannot be part of the image: the download is not reproducible, it brings a
+third-party blob into the image outside Debian's archive, and it is exactly what failed a
+build here after several gigabytes had been installed. A user with such a card runs
+`apt install firmware-b43-installer` on the installed system, with a network connection,
+and that is the only route AstraOS offers for it.
 
 Graphics drivers are the **open-source** ones only: `i915` (Intel), `amdgpu`/`radeon`
 (AMD), `nouveau` (NVIDIA) and the software-rendered fallbacks `fbdev`/`vesa`.
@@ -49,7 +66,8 @@ that it can break the graphical session if it is done incorrectly.
 | Component | Likely outcome | What to do |
 |---|---|---|
 | Wi-Fi chipsets needing firmware not in the list above | Adapter not detected | Identify with `lspci -nnk`, check `dmesg` for a missing firmware file. Some need out-of-tree drivers AstraOS will not ship. |
-| Broadcom Wi-Fi (some models) | Depends on the specific chipset | `firmware-brcm80211` covers many, not all |
+| Broadcom Wi-Fi (newer chipsets) | Depends on the specific chipset | `firmware-brcm80211` covers many, not all |
+| Broadcom Wi-Fi with the older `b43` driver | Adapter not detected | Install `firmware-b43-installer` on the installed system, with a network connection. AstraOS cannot ship it: it downloads the firmware rather than containing it. See section 1. |
 | NVIDIA GPUs on newer chips | May fall back to software rendering, or fail to start the session | Boot the failsafe GRUB entry; consider installing the proprietary driver after installation |
 | Very new AMD or Intel GPUs | May need a newer kernel than Debian's stable kernel | Not solvable in AstraOS 0.1.0; the kernel is the base release's kernel |
 | Fingerprint readers | Almost certainly not supported | Out of scope for 0.1.0 |

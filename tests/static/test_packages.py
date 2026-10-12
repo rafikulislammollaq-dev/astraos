@@ -49,6 +49,30 @@ def test_every_entry_is_a_valid_package_name() -> None:
     )
 
 
+def test_no_firmware_installer_packages_are_listed() -> None:
+    """`firmware-*-installer` packages download firmware at install time.
+
+    They contain no firmware: their post-install script fetches it from the internet. Debian
+    ships them from contrib for exactly that reason, because the firmware itself is not
+    redistributable. In a build chroot that download either fails — which is what happened,
+    with firmware-b43-installer, after several gigabytes had been installed — or worse,
+    succeeds and bakes an unauditable blob chosen by a third party into the image.
+
+    A user with an affected card installs the installer on the installed system instead.
+    """
+    offenders: list[str] = []
+    for filename, packages in astraos_env.package_lists().items():
+        for package in packages:
+            if re.fullmatch(r"firmware-.*-installer", package):
+                offenders.append(f"{filename}: {package}")
+
+    assert not offenders, (
+        "these firmware installers are listed. They download firmware at install time rather "
+        "than containing it, so the build cannot produce a complete image from them:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
 def test_only_one_time_synchronisation_daemon() -> None:
     """Two time daemons cannot coexist, and apt proves it by refusing to install both.
 

@@ -335,6 +335,27 @@ def test_live_build_auto_scripts_do_not_recurse() -> None:
     )
 
 
+def test_live_build_firmware_sweep_is_disabled() -> None:
+    """The image must only contain the firmware this repository chose.
+
+    live-build installs every package whose name starts with firmware- unless told not to,
+    which both defeats config/package-lists/20-firmware.list.chroot and pulls in contrib
+    installers that download firmware at install time. The build failed on one of those, so
+    the option is asserted here rather than left to the list to compensate for.
+    """
+    text = (REPO_ROOT / "config" / "live-build" / "auto" / "config").read_text(
+        encoding="utf-8"
+    )
+    assert '--firmware-chroot false' in text, (
+        "auto/config does not pass --firmware-chroot false, so live-build will add every "
+        "firmware-* package in the archive to the image"
+    )
+    assert 'supports --firmware-chroot' in text, (
+        "the firmware option is passed without a probe, so a live-build that lacks it would "
+        "fail the build instead of recording the setting as skipped"
+    )
+
+
 def test_every_optional_live_build_flag_is_probed() -> None:
     """A flag passed to `lb config` without a probe is a flag that fails on some release.
 

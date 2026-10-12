@@ -1,13 +1,28 @@
 # Hardware firmware (plan §12).
 #
-# Only firmware that Debian distributes is included. Redistribution licensing is
-# handled by Debian's non-free-firmware component, which the archive definition in
+# Only firmware that Debian distributes is included. Redistribution licensing is handled by
+# Debian's non-free-firmware component, which the archive definition in
 # config/archives/astraos.list.chroot enables (plan §23).
+#
+# WHY THIS LIST IS EXPLICIT
+# -------------------------
+# live-build can install firmware for you: its firmware stage scans the archive and installs
+# every package whose name begins with "firmware-". That is switched off in auto/config
+# (--firmware-chroot false), because the sweep:
+#
+#   * defeats this file, so the image depends on whatever the archive happens to contain at
+#     build time rather than on a reviewed selection;
+#   * pulls in firmware-b43-installer and firmware-b43legacy-installer from contrib, whose
+#     post-install scripts download Broadcom firmware from the internet. That download failed
+#     and stopped a build after several gigabytes had already been installed.
+#
+# Everything the sweep used to provide is therefore listed here by name. Adding a package
+# here is a deliberate act; nothing arrives by accident.
 #
 # Untested hardware: nothing in this list has been verified on physical hardware.
 # See docs/HARDWARE_COMPATIBILITY.md and docs/KNOWN_LIMITATIONS.md.
 
-# Generic
+# Generic bundles
 firmware-linux-free
 firmware-linux-nonfree
 firmware-misc-nonfree
@@ -18,16 +33,45 @@ firmware-atheros
 firmware-realtek
 firmware-brcm80211
 firmware-mediatek
-# NOTE: there is no firmware-rtlwifi package in Debian; RTL Wi-Fi firmware ships in
-# firmware-realtek (listed above).
 firmware-ti-connectivity
 firmware-libertas
+firmware-ipw2x00
+firmware-zd1211
+firmware-siano
+firmware-qcom-soc
+firmware-qcom-media
+firmware-samsung
 wireless-regdb
+# NOTE: there is no firmware-rtlwifi package in Debian; RTL Wi-Fi firmware ships in
+# firmware-realtek (listed above).
+#
+# NOTE: Broadcom's older chips (the b43 driver) are NOT covered. Their firmware is not
+# redistributable as a Debian package — Debian ships installers that download it instead,
+# which cannot run in a build chroot and cannot be trusted to work offline. A user with such
+# a card installs firmware-b43-installer on the installed system with a network connection.
+# See docs/HARDWARE_COMPATIBILITY.md.
+
+# Wired networking
+firmware-bnx2
+firmware-bnx2x
+firmware-cavium
+firmware-marvell-prestera
+firmware-myricom
+firmware-netronome
+firmware-netxen
+firmware-qlogic
 
 # Graphics
 firmware-amd-graphics
+firmware-intel-graphics
 firmware-nvidia-graphics
+firmware-nvidia-gsp
+firmware-nvidia-tesla-535-gsp
+firmware-cirrus
 
-# Audio / misc
+# Audio and misc
 firmware-sof-signed
+firmware-intel-sound
+firmware-intel-misc
+firmware-ivtv
 alsa-firmware-loaders
