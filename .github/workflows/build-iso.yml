@@ -104,10 +104,11 @@ jobs:
             debian:trixie sleep infinity
           docker exec "$BUILD_CONTAINER" bash -c '
             set -eu
-            # The chroot apt inside live-build needs its sources settled before anything
-            # else runs; this is the same base the image is built from.
+            # git and ca-certificates are needed before the bootstrap script runs: the
+            # scripts read the workspace out of a git checkout (for the reproducible
+            # timestamp) and fetch over TLS. The minimal image has neither.
             apt-get update >/dev/null
-            apt-get install -y --no-install-recommends ca-certificates >/dev/null
+            apt-get install -y --no-install-recommends ca-certificates git >/dev/null
             # The workspace belongs to the runner user, but the container runs as root.
             git config --global --add safe.directory /astraos
             echo "container ready: $(. /etc/os-release && echo "$PRETTY_NAME")"'
