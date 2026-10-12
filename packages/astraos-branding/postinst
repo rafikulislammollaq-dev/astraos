@@ -54,7 +54,7 @@ fi
 # package. The image build and the bootloader configuration handle that.
 
 # --- Xfce icon theme preference ----------------------------------------------
-# Do not edit user configuration from a package script. The system-wide default is
-# shipped in /etc/xdg/xfce4 by astraos-desktop.
+# Do not edit user configuration from a package script. The defaults are shipped through
+# /etc/skel by astraos-desktop, which applies to every account created afterwards.
 
 exit 0

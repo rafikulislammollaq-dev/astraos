@@ -19,7 +19,7 @@ REQUIRED_DIRS = [
     "config", "config/package-lists", "config/live-build", "config/live-build/auto",
     "config/live-build/config/hooks/live", "config/live-build/config/archives",
     "branding", "branding/logos", "branding/icons", "branding/plymouth", "branding/grub",
-    "branding/lightdm", "branding/tools", "desktop", "desktop/xfce", "desktop/themes",
+    "branding/lightdm", "branding/tools", "desktop", "desktop/skel", "desktop/themes",
     "desktop/launchers", "desktop/autostart", "packages", "packages/astraos-base",
     "packages/astraos-branding", "packages/astraos-desktop", "packages/astraos-system-tools",
     "system", "system/sysctl", "system/security", "installer", "installer/calamares",

@@ -19,6 +19,19 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- The desktop defaults were installed into `/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/`,
+  which belongs to Debian's Xfce packages: `libxfce4ui-common` owns the keyboard shortcuts
+  file and `xfce4-settings` and `xfce4-session` own two more. Two packages cannot own the
+  same path, and dpkg stopped the image build with "trying to overwrite". The panel layout,
+  keyboard shortcuts, window-manager settings and wallpaper are now seeded through
+  `/etc/skel`, which this project owns and which populates the live account and every account
+  the installer creates. A test rejects a mapping back into the upstream directory.
+- The installer list requested `calamares-settings-debian`, whose `/etc/calamares` tree is the
+  same one `astraos-installer` owns — the second "trying to overwrite" in the same build.
+  Nothing needs it: upstream `calamares` neither depends nor recommends it, only the
+  `live-task-*` metapackages do. It is gone from the list, and `astraos-installer` now
+  declares `Conflicts` and `Replaces` against it, so a future dependency chain produces a
+  clean conflict instead of a half-finished unpack.
 - `astraos-installer` declared `Depends: kpmcore`, which is a source package in Debian 13,
   not an installable binary (the library is `libkpmcore12`). apt resolved nothing and failed
   the image build after every package had been downloaded. The availability verifier checked

@@ -7,7 +7,13 @@
 # partition the target disk, so the disk-selection screens show real devices.
 
 calamares
-calamares-settings-debian
+# NOT calamares-settings-debian. It ships Debian's own /etc/calamares tree — the same paths
+# astraos-installer owns — so installing both stops the image build with
+# "trying to overwrite '/etc/calamares/modules/bootloader.conf'". AstraOS IS the Calamares
+# configuration for this image; Debian's is not wanted. Nothing else pulls it in: upstream
+# calamares neither depends nor recommends it, only the live-task-* metapackages do, and
+# AstraOS selects packages explicitly rather than through tasks. astraos-installer declares
+# Conflicts/Replaces against it as a safety net.
 
 squashfs-tools
 dosfstools

@@ -73,8 +73,10 @@ check "Xorg is installed"                 test -x /usr/bin/Xorg
 check "a mesa DRI driver is present"      sh -c 'ls /usr/lib/*/dri/*_dri.so >/dev/null 2>&1'
 
 # --- AstraOS desktop configuration -------------------------------------------
-check "xfce defaults are shipped"         test -d /etc/xdg/xfce4
-check "skel xfce configuration shipped"   test -d /etc/skel/.config/xfce4
+# The desktop defaults are shipped through /etc/skel, not /etc/xdg/xfce4: that directory
+# belongs to Debian's Xfce packages and two packages cannot own the same path.
+check "desktop defaults are shipped"      test -f /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml
+check "desktop wallpaper is seeded"       test -f /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml
 check "astraos wallpaper is installed"    sh -c 'ls /usr/share/astraos/wallpapers/*.png >/dev/null 2>&1'
 check "astraos logo is installed"         test -f /usr/share/astraos/logos/astraos-logo.svg
 check "plymouth theme is installed"       test -f /usr/share/plymouth/themes/astraos/astraos.plymouth

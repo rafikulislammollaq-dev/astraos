@@ -49,6 +49,47 @@ def test_every_entry_is_a_valid_package_name() -> None:
     )
 
 
+def test_packages_do_not_install_into_upstream_config_directories() -> None:
+    """Two packages cannot own the same path, and dpkg stops the build when they try.
+
+    Both failures this guards against were real:
+
+      * `/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-keyboard-shortcuts.xml` is owned by
+        libxfce4ui-common, and xsettings.xml and xfce4-session.xml are owned by the Xfce
+        settings and session packages. AstraOS ships its desktop defaults in /etc/skel
+        instead, which it owns.
+      * `/etc/calamares/**` is owned by calamares-settings-debian. AstraOS keeps its own
+        tree there and declares Conflicts/Replaces, which is the documented way to take a
+        path over — so that one is allowed, but only with the declaration present.
+
+    The upstream file lists change between releases, so this is checked against the mapping
+    rather than against a snapshot of Debian's contents.
+    """
+    packaging = astraos_env.REPO_ROOT.joinpath("scripts/build-packages.sh").read_text(
+        encoding="utf-8"
+    )
+    code = "\n".join(
+        line for line in packaging.splitlines() if not line.lstrip().startswith("#")
+    )
+
+    assert "/etc/xdg/xfce4/xfconf" not in code, (
+        "the packaging step installs into /etc/xdg/xfce4/xfconf, which Debian's Xfce packages "
+        "own. dpkg will refuse the second owner and stop the image build. Ship desktop "
+        "defaults through /etc/skel instead."
+    )
+
+    installer = astraos_env.REPO_ROOT.joinpath(
+        "packages/astraos-installer/control.in"
+    ).read_text(encoding="utf-8")
+    if "/etc/calamares" in code:
+        for field in ("Conflicts: calamares-settings-debian", "Replaces: calamares-settings-debian"):
+            assert field in installer, (
+                f"astraos-installer installs an /etc/calamares tree without declaring "
+                f"{field!r}, so installing it alongside Debian's settings package would fail "
+                "the build with 'trying to overwrite'"
+            )
+
+
 def test_control_files_declare_parseable_dependencies() -> None:
     """The `.deb` files declare dependencies too, and apt resolves them during the build.
 

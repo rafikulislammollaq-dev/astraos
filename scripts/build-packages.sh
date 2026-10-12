@@ -320,9 +320,14 @@ cp -f "${REPO_ROOT}/branding/README.md" "${BRAND_STAGE}/usr/share/doc/astraos-br
 say "assembling astraos-desktop"
 DESKTOP_STAGE="$(stage_package astraos-desktop)"
 
-# XFCE system-wide defaults -> /etc/xdg/xfce4
-mkdir -p "${DESKTOP_STAGE}/etc/xdg/xfce4"
-cp -a "${REPO_ROOT}/desktop/xfce/xdg/." "${DESKTOP_STAGE}/etc/xdg/xfce4/"
+# Desktop defaults: /etc/skel only, deliberately.
+#
+# There is no /etc/xdg/xfce4 mapping here. That directory is owned by Debian's Xfce packages,
+# which ship their own xsettings.xml, xfce4-session.xml and keyboard-shortcuts file there;
+# dpkg refuses to let a second package own the same path, and the image build dies with
+# "trying to overwrite ... which is also in package ...". The defaults live in desktop/skel/
+# instead, which is a directory this project owns and which populates every new account.
+# tests/static/test_packages.py rejects a mapping back into an upstream-owned directory.
 
 # Skeleton home -> /etc/skel
 mkdir -p "${DESKTOP_STAGE}/etc/skel"

@@ -2,7 +2,7 @@
 <!--
   AstraOS Xfce appearance defaults (xsettings channel).
 
-  Installed as /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml, which is the
+  Seeded into every new account's ~/.config/xfce4/xfconf/xfce-perchannel-xml/, which is the
   system-wide default. A user's own settings in ~/.config override these, so the
   desktop stays user-configurable rather than locked down (plan §7.2).
 

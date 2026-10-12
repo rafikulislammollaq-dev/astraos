@@ -77,7 +77,7 @@ for required in \
     /usr/share/icons/AstraOS/index.theme \
     /usr/share/plymouth/themes/astraos/astraos.plymouth \
     /usr/share/astraos/grub-theme/theme.txt \
-    /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
+    /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
 do
     [ -e "$required" ] || fail "missing after package installation: ${required}"
     printf '%s ok    %s\n' "$PREFIX" "$required"

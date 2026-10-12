@@ -82,7 +82,10 @@ monospace face so digits do not jitter as they change.
 - Depth comes from a single subtle drop shadow in the window manager's compositor, not from
   layered blur.
 - Panel backgrounds are **solid**, not translucent. This is stated explicitly in
-  `desktop/xfce/xdg/xfconf/xfce-perchannel-xml/xfce4-panel.xml` with the reason.
+  `desktop/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml`, which is copied
+  into every new account's home directory, with the reason. (The defaults live under
+  `/etc/skel` rather than `/etc/xdg/xfce4` because Debian's Xfce packages own files in that
+  directory.)
 
 ## 4. Layout
 

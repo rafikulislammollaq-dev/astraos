@@ -177,7 +177,24 @@ power management disabled (plan §7.4), is therefore easier or harder to reach t
 depending on that default. The fix is to ship our own bootloader template with an explicit
 timeout; it is deferred because it cannot be verified without booting an image.
 
-### 3.11 No AI features
+### 3.11 Desktop defaults apply to new accounts only
+
+The AstraOS panel layout, wallpaper, keyboard shortcuts and window-manager settings are
+seeded from `/etc/skel` into each new account's home directory. An account that already
+exists keeps its own settings, and changing anything in the Xfce settings editor makes Xfce
+write its own complete file, which then wins.
+
+This is a deliberate trade-off. The alternative is writing to
+`/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/`, which is where Xfce looks for system-wide
+defaults — but those paths belong to Debian's Xfce packages (`libxfce4ui-common`,
+`xfce4-settings`, `xfce4-session`), and dpkg refuses to let a second package own the same
+file: the image build stops with "trying to overwrite". Seeding `/etc/skel` is the mechanism
+Xfce and Debian both use for defaults that must not fight the packaged files.
+
+The live session's user and any user the installer creates are both new accounts, so a fresh
+install gets the AstraOS desktop; a pre-existing account does not.
+
+### 3.12 No AI features
 
 AstraOS 0.1.0 includes no AI assistant and no AI component in the boot path. This is
 stated as a limitation because the project's long-term plan includes one, and because a

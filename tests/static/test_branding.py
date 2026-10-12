@@ -144,7 +144,6 @@ def test_desktop_wallpaper_paths_match_a_generated_file() -> None:
     expected = f"astraos-wallpaper-dark-{width}x{height}.png"
 
     for relative in (
-        "desktop/xfce/xdg/xfconf/xfce-perchannel-xml/xfce4-desktop.xml",
         "desktop/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml",
     ):
         text = (REPO_ROOT / relative).read_text(encoding="utf-8")

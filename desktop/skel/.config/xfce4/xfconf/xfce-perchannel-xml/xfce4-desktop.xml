@@ -1,19 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Per-user desktop defaults, copied from /etc/skel for every new account.
+  AstraOS desktop defaults (xfce4-desktop channel), copied from /etc/skel for every new
+  account.
 
-  WHY THIS EXISTS AT ALL, when /etc/xdg/xfce4 already sets a system-wide default:
-  wallpaper is stored per user in Xfce. A user's own file takes precedence over the
-  system default, and the first time a user changes any desktop setting Xfce writes a
-  complete file of its own. Seeding the AstraOS wallpaper here means the desktop looks
-  like AstraOS from the first login instead of after the first reboot, and it survives
-  that first write.
+  WHY THESE DEFAULTS LIVE IN /etc/skel AND NOT IN /etc/xdg/xfce4
+  --------------------------------------------------------------
+  /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/ is owned by Debian's Xfce packages, which ship
+  their own files there (xsettings.xml, xfce4-session.xml, xfce4-keyboard-shortcuts.xml and
+  others). Two packages cannot own the same path: dpkg refuses the second one with "trying to
+  overwrite ... which is also in package ..." and the whole image build stops. That is how
+  AstraOS lost a build.
 
-  Only the wallpaper is seeded. Everything else stays at the system-wide default so
-  upstream changes reach existing users (plan §7.2: keep the interface configurable
-  rather than hardcoding an unmodifiable shell).
+  The upstream file set also changes between releases, so any file written there is a
+  landmine. /etc/skel is ours: every new account — the live session's user and the user the
+  installer creates — is populated from it, which covers this distribution's actual
+  requirement without fighting the upstream packages.
+
+  Wallpaper is stored per user in Xfce, so seeding it here is also what makes the desktop look
+  like AstraOS from the first login, and what makes that survive Xfce rewriting the file the
+  first time a setting is changed.
 -->
 <channel name="xfce4-desktop" version="1.0">
+  <!-- The wallpaper is listed per monitor because xfce4-desktop stores it per output. The
+       list covers the usual names; a monitor that is not listed falls back to Xfce's own
+       default, which is cosmetic, not a failure (docs/KNOWN_LIMITATIONS.md). -->
   <property name="backdrop" type="empty">
     <property name="screen0" type="empty">
       <property name="monitor0" type="empty">
@@ -22,15 +32,56 @@
           <property name="image-style" type="int" value="5"/>
           <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
         </property>
+        <property name="workspace1" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
+        </property>
+      </property>
+      <property name="monitorVGA-1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
+        </property>
+      </property>
+      <property name="monitorLVDS-1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
+        </property>
+      </property>
+      <property name="monitorVirtual-1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
+        </property>
+      </property>
+      <property name="monitorVirtual1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="/usr/share/astraos/wallpapers/astraos-wallpaper-dark-1920x1080.png"/>
+        </property>
       </property>
     </property>
   </property>
+
   <property name="desktop-icons" type="empty">
+    <property name="style" type="int" value="2"/>
     <property name="icon-size" type="uint" value="48"/>
     <property name="file-icons" type="empty">
+      <property name="show-filesystem" type="bool" value="false"/>
       <property name="show-home" type="bool" value="true"/>
       <property name="show-trash" type="bool" value="true"/>
       <property name="show-removable" type="bool" value="true"/>
     </property>
+    <property name="tooltip-size" type="uint" value="72"/>
+  </property>
+
+  <property name="desktop-menu" type="empty">
+    <property name="show" type="bool" value="true"/>
   </property>
 </channel>

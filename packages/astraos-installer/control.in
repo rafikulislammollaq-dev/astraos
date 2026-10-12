@@ -7,6 +7,12 @@ Priority: optional
 Homepage: https://astraos.invalid
 Depends: astraos-base (>= @@VERSION@@), calamares (>= 3.2), squashfs-tools, parted, gdisk, dosfstools, e2fsprogs, mount, util-linux, os-prober, grub2-common, efibootmgr, libkpmcore12
 Recommends: ntfs-3g, xfsprogs, btrfs-progs, f2fs-tools, exfatprogs, lvm2, cryptsetup, cryptsetup-initramfs
+# Both packages ship an /etc/calamares tree, so they cannot be installed together. Declaring
+# the relationship means dpkg reports a clean conflict instead of failing halfway through an
+# unpack with "trying to overwrite". Nothing in AstraOS installs Debian's settings package;
+# this is the guard for a dependency chain that later tries to.
+Conflicts: calamares-settings-debian
+Replaces: calamares-settings-debian
 Description: AstraOS installer configuration
  The Calamares configuration and branding that make the upstream Calamares installer
  an AstraOS installer: the module sequence, the partitioning defaults, the user
