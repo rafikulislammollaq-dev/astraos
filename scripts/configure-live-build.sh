@@ -65,8 +65,13 @@ printf '%s\n' "started $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${BUILD_DIR}/.astraos-
 # --- 3. live-build configuration ---------------------------------------------
 say "staging the live-build configuration"
 mkdir -p "${BUILD_DIR}/auto" "${BUILD_DIR}/config"
+# Only auto/config is staged. live-build runs auto/build whenever it runs a build,
+# so an auto/build that calls `lb build` calls itself: the first build to get that far
+# recursed until it died. The logging and the existence check that auto/build used to do
+# live in scripts/build-iso.sh, which is the script that invokes lb and can therefore do
+# them without re-entering live-build.
 cp -a "${REPO_ROOT}/config/live-build/auto/." "${BUILD_DIR}/auto/"
-chmod 0755 "${BUILD_DIR}/auto/config" "${BUILD_DIR}/auto/build"
+chmod 0755 "${BUILD_DIR}/auto/config"
 
 # Hooks: only the .chroot hooks run in the chroot stage.
 mkdir -p "${BUILD_DIR}/config/hooks/live"

@@ -98,7 +98,10 @@ if [ "${ASTRAOS_NO_CACHE:-0}" = "1" ]; then
 fi
 
 LB_STATUS=0
-# `lb build` calls auto/config and auto/build, both of which are ours.
+# auto/config is ours and `lb config` runs it. There is deliberately no auto/build: lb runs
+# that when it runs a build, so an auto/build containing `lb build` calls itself. This
+# script is the wrapper instead — it owns the log and the status, which is where they
+# belong, because it is the process that started lb.
 lb build 2>&1 | tee -a "$BUILD_LOG" || LB_STATUS=$?
 if [ "$LB_STATUS" -ne 0 ]; then
     fail "live-build exited with status ${LB_STATUS}. Check ${BUILD_LOG} and the live-build log in build/live-build/"
@@ -109,8 +112,10 @@ fi
 # ---------------------------------------------------------------------------
 ISO_NAME="$(cat "${BUILD_DIR}/.last-iso-name" 2>/dev/null || true)"
 if [ -z "$ISO_NAME" ]; then
-    # auto/build should have written this. Fall back to a search rather than assuming.
-    ISO_NAME="$(find "$BUILD_DIR" -maxdepth 1 -name '*.iso' -printf '%f\n' 2>/dev/null | head -n1)"
+    # live-build does not record the output name anywhere convenient, so find it. The
+    # newest match wins, because a reused build tree can hold an older image.
+    ISO_NAME="$(find "$BUILD_DIR" -maxdepth 1 -name '*.iso' -printf '%T@ %f\n' 2>/dev/null \
+                | sort -rn | head -n1 | cut -d' ' -f2-)"
 fi
 [ -n "$ISO_NAME" ] || fail "live-build reported success but no ISO was found in ${BUILD_DIR}"
 

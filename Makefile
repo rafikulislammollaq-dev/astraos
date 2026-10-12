@@ -51,7 +51,6 @@ lint:
 	@fail=0; \
 	for script in $(SCRIPTS)/*.sh \
 	              $(REPO_ROOT)/config/live-build/auto/config \
-	              $(REPO_ROOT)/config/live-build/auto/build \
 	              $(REPO_ROOT)/config/live-build/config/hooks/live/*.hook.chroot; do \
 	    if [ -f "$$script" ]; then \
 	        if bash -n "$$script" 2>/dev/null; then \

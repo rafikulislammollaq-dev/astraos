@@ -19,6 +19,23 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- `scripts/build-packages.sh` printed progress on stdout while `finish_package` and
+  `stage_package` return a path through command substitution, so the package list captured a
+  log line and the staging step looked for a file named after it. Progress goes to stderr,
+  and a test enforces the split for any script that captures its own function's output.
+- `auto/build` recursed: live-build runs `auto/<command>` as part of `lb <command>`, so the
+  `lb build` inside `auto/build` re-ran `auto/build`, and the first build that reached the
+  live-build stage died in a loop. The file is gone; the log capture and the
+  ISO-existence check it performed now live in `scripts/build-iso.sh`, the process that
+  starts live-build and can therefore wrap it. A test rejects any auto script that runs its
+  own live-build command without the `noauto` positional.
+- The auto scripts were linted as bash although live-build runs them with sh. That hid a
+  `${PIPESTATUS[0]}` in `auto/build` which made every image build die with `Bad
+  substitution` under dash before any package was downloaded. ShellCheck's dialect is now
+  chosen per file: sh for the automatic scripts and the chroot hooks, bash for the rest.
+- The image build validated a staging directory with `dpkg-deb --info` and discarded the
+  error, which produced "dpkg-deb rejected the control directory for astraos-base" with no
+  explanation. It now reads the produced `.deb` back and checks the name and version in it.
 - Every script was committed without the executable bit, because it was first committed
   from Windows, which cannot store one. Nothing noticed locally — the files still run in
   Git Bash — and it broke the first real build on Linux, where

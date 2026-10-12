@@ -295,13 +295,53 @@ def test_files_with_a_shebang_are_executable_in_git() -> None:
     )
 
 
+def test_live_build_auto_scripts_do_not_recurse() -> None:
+    """An auto script must not run the live-build command that runs it.
+
+    live-build executes `auto/<command>` as part of `lb <command>`, so an `auto/build`
+    containing `lb build` calls itself. The first build that reached this point recursed
+    until it died, which is why there is no `auto/build` in this repository: the logging
+    and the image check it used to perform live in `scripts/build-iso.sh`, which is the
+    process that invokes live-build and can therefore wrap it without re-entering it.
+
+    `auto/config` is allowed to run `lb config` only because it passes the `noauto`
+    positional, which tells live-build not to run the auto script again. That is asserted
+    here so the recursion cannot come back in a different command.
+    """
+    auto_dir = REPO_ROOT / "config" / "live-build" / "auto"
+    assert auto_dir.is_dir(), "config/live-build/auto does not exist"
+
+    commands = {"config": "lb config", "build": "lb build", "clean": "lb clean"}
+    offenders: list[str] = []
+
+    for path in sorted(auto_dir.iterdir()):
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        command = commands.get(path.name)
+        if command and command in text and "noauto" not in text:
+            offenders.append(
+                f"{path.relative_to(REPO_ROOT)} runs {command!r} without the 'noauto' "
+                "positional, so live-build will re-run this script and recurse"
+            )
+
+    assert not offenders, (
+        "these auto scripts would re-enter live-build forever:\n  " + "\n  ".join(offenders)
+    )
+
+    assert (auto_dir / "config").is_file(), (
+        "config/live-build/auto/config is missing, so `lb build` would run with no "
+        "AstraOS configuration at all"
+    )
+
+
 def _shellcheck_dialect(path: Path) -> str:
     """Which shell dialect this file is actually run by.
 
-    Getting this wrong is not cosmetic. live-build executes `auto/config` and `auto/build`
-    with sh, whatever their shebang says, and the chroot hooks are run by sh too. Linting
-    `auto/build` as bash hid a `${PIPESTATUS[0]}` that made every image build die with
-    "auto/build: 27: Bad substitution" under dash.
+    Getting this wrong is not cosmetic. live-build executes the auto scripts with sh,
+    whatever their shebang says, and the chroot hooks are run by sh too. Linting an auto
+    script as bash once hid a `${PIPESTATUS[0]}` that made every image build die with
+    "Bad substitution" under dash.
     """
     relative = path.relative_to(REPO_ROOT).as_posix()
     if path.suffix == ".chroot" or relative.startswith("config/live-build/auto/"):
