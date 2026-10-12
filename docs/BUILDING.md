@@ -160,7 +160,13 @@ and uploads the ISO plus the manifest as an artifact.
 
 CI-specific notes:
 
-- The runner used is `ubuntu-24.04`, which is a valid Linux build host.
+- The job runs on `ubuntu-24.04`, but the image itself is **assembled inside a
+  `debian:trixie` container**. The runner's older `debootstrap` writes the pre-bookworm
+  security suite name into the new chroot (`trixie/updates`, which does not exist in Debian
+  13), and an older `live-build` has no `--bootloaders`, which silently produces a
+  UEFI-only image. Building inside the release being assembled removes both mismatches.
+- The container runs with `--privileged`, because `live-build` mounts filesystems and
+  chroots. It uses the same scripts as a local build, so CI cannot drift from this document.
 - The artifact is retained for 14 days. Builds are not archived permanently.
 - The workflow summary ends with an explicit statement of what it did **not** test:
   booting, installing and everything that follows.

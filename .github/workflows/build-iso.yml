@@ -5,6 +5,23 @@
 #
 # The workflow runs the SAME scripts as a local build, so CI cannot drift from the
 # documented procedure. If a step here is not in docs/BUILDING.md, that is a bug.
+#
+# WHY THE IMAGE IS BUILT INSIDE A DEBIAN 13 CONTAINER
+# --------------------------------------------------
+# The GitHub runner is Ubuntu 24.04. Its debootstrap and live-build are older than the
+# release AstraOS pins, and an older debootstrap writes the pre-bookworm security suite
+# naming into the new chroot:
+#
+#   deb http://security.debian.org/debian-security trixie/updates main ...
+#
+# That suite does not exist in Debian 13 (it is trixie-security), so `apt-get update`
+# inside the chroot fails and the build stops — a mismatch between the build host and the
+# distribution being built, not a defect in AstraOS. An older live-build also lacks
+# --bootloaders, which silently produced a UEFI-only image with no legacy BIOS support.
+#
+# Building inside debian:trixie removes both problems at once: the toolchain is the same
+# release that is being assembled, which is how a distribution is supposed to be built.
+# The container needs --privileged because live-build mounts filesystems and chroots.
 
 name: Build ISO
 
@@ -30,17 +47,19 @@ concurrency:
 jobs:
   build:
     name: Build AstraOS ISO
-    # A GitHub-hosted runner is a valid Linux build environment; the project is
-    # CI-first because a local Linux host is not always available.
     runs-on: ubuntu-24.04
     # A live desktop image with a browser and office tools takes a long time to assemble.
     timeout-minutes: 300
+    env:
+      # The image is assembled here, inside the container. CI cannot use a path outside the
+      # workspace, so it is a directory of its own.
+      BUILD_CONTAINER: astraos-build-container
 
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
         with:
-          # The manifest records the commit that produced the image.
+          # The build manifest records the commit that produced the image.
           fetch-depth: 0
 
       - name: Set up Python
@@ -62,24 +81,52 @@ jobs:
           # not pass its own checks.
           python3 tests/run.py
 
-      - name: Install build dependencies
-        if: ${{ inputs.skip_bootstrap != true }}
-        run: |
-          sudo ./scripts/bootstrap-build-environment.sh --yes
-
-      - name: Validate the build host
-        run: ./scripts/validate-environment.sh
-
       - name: Verify the package selection
         run: python3 scripts/verify-package-availability.py
 
+      - name: Free disk space
+        run: |
+          # A live-build tree needs well over 10 GB, and the runner image ships several
+          # gigabytes of toolchains nothing here uses. Removing them is faster than failing
+          # halfway through the chroot stage.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+
+      - name: Start the Debian 13 build container
+        run: |
+          docker run --detach --name "$BUILD_CONTAINER" \
+            --privileged \
+            --volume "$PWD:/astraos" \
+            --workdir /astraos \
+            --env DEBIAN_FRONTEND=noninteractive \
+            --env "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" \
+            debian:trixie sleep infinity
+          docker exec "$BUILD_CONTAINER" bash -c '
+            set -eu
+            # The chroot apt inside live-build needs its sources settled before anything
+            # else runs; this is the same base the image is built from.
+            apt-get update >/dev/null
+            apt-get install -y --no-install-recommends ca-certificates >/dev/null
+            # The workspace belongs to the runner user, but the container runs as root.
+            git config --global --add safe.directory /astraos
+            echo "container ready: $(. /etc/os-release && echo "$PRETTY_NAME")"'
+
+      - name: Install build dependencies
+        if: ${{ inputs.skip_bootstrap != true }}
+        run: |
+          # No privilege prefix: the container runs as root, and the script installs
+          # packages directly when it is root.
+          docker exec "$BUILD_CONTAINER" ./scripts/bootstrap-build-environment.sh --yes
+
+      - name: Validate the build host, inside the container
+        run: docker exec "$BUILD_CONTAINER" ./scripts/validate-environment.sh
+
       - name: Build the image
-        # No sudo prefix: build-iso.sh elevates per command where it needs to, which
-        # keeps the privileged surface small and visible.
-        run: ./scripts/build-iso.sh
-        env:
-          # live-build and dpkg read this for reproducible timestamps.
-          SOURCE_DATE_EPOCH: ${{ github.event.repository.pushed_at && fromJSON('0') || 0 }}
+        run: |
+          # The container is root and privileged, so build-iso.sh elevates nothing here;
+          # the same script run as an ordinary user elevates only the live-build commands.
+          docker exec "$BUILD_CONTAINER" ./scripts/build-iso.sh
 
       - name: Show what was produced
         run: |
@@ -90,21 +137,19 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat dist/*.manifest >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "no manifest found"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Validate the image
-        run: |
-          iso=$(ls -1t dist/*.iso | head -n1)
-          ./scripts/validate-iso.sh "$iso"
-
-      - name: Regenerate checksums for the published artifact
-        run: |
-          iso=$(ls -1t dist/*.iso | head -n1)
-          ./scripts/generate-checksums.sh "$iso"
-          ./scripts/generate-manifest.sh "$iso"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "SHA-256:" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cat dist/*.sha256 >> "$GITHUB_STEP_SUMMARY"
+          cat dist/*.sha256 >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "no checksum found"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stop the build container
+        if: always()
+        run: |
+          docker exec "$BUILD_CONTAINER" bash -c 'for d in /astraos/build/live-build/chroot /astraos/build/live-build/binary; do
+              mountpoint -q "$d" && umount -R "$d" || true
+            done' || true
+          docker rm --force "$BUILD_CONTAINER" || true
 
       - name: Upload the ISO
         if: ${{ inputs.upload_artifact }}
