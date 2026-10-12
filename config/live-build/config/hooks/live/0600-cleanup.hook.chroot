@@ -15,8 +15,13 @@ log() { printf '%s %s\n' "$PREFIX" "$*"; }
 # --- Preserve the build provenance before deleting anything -------------------
 log "preserving build provenance"
 mkdir -p /usr/share/astraos/build-info
-for f in /etc/astraos-release; do
-    [ -f "$f" ] && cp -f "$f" /usr/share/astraos/build-info/
+# Every identity file is preserved, not just the AstraOS one, so a bug report can say
+# exactly what the running system calls itself. /etc/os-release is included even though it
+# belongs to base-files: an upgrade can replace it, and that is worth being able to see.
+for f in /etc/astraos-release /etc/lsb-release /etc/os-release; do
+    if [ -f "$f" ]; then
+        cp -f "$f" /usr/share/astraos/build-info/
+    fi
 done
 if [ -f /usr/share/astraos/SERVICE-POLICY.txt ]; then
     cp -f /usr/share/astraos/SERVICE-POLICY.txt /usr/share/astraos/build-info/

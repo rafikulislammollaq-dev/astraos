@@ -12,8 +12,12 @@ match the explanation.
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -35,6 +39,7 @@ IDENTITY_HOOK = "config/live-build/config/hooks/live/0100-identity.hook.chroot"
 REMOVEUSER = "installer/calamares/modules/removeuser.conf"
 USERS_CONF = "installer/calamares/modules/users.conf"
 GREETER_DROPIN = "branding/lightdm/lightdm.conf.d/50-astraos.conf"
+ASTRAOS_INFO = "packages/astraos-base/root/usr/bin/astraos-info"
 
 
 def test_sudo_policy_has_no_passwordless_rule() -> None:
@@ -250,4 +255,67 @@ def test_hooks_do_not_install_package_owned_paths() -> None:
     assert not conflicts, (
         "the identity hook installs files the astraos-base package owns, so packaging and "
         "the hook would fight each other:\n  " + "\n  ".join(conflicts)
+    )
+
+
+def _reported_firewall_state(ufw_first_line: str) -> str:
+    """Run the real astraos-info with a stub ufw on PATH; return its firewall line.
+
+    The tool is executed rather than read because the defect this guards against was a
+    pattern-order bug in a shell `case`: the source looks correct to a reviewer, and only
+    running it showed that "Status: inactive" was reported as active.
+    """
+    shell = shutil.which("bash") or shutil.which("sh")
+    assert shell, "no shell interpreter is available to run astraos-info"
+
+    with tempfile.TemporaryDirectory() as temporary:
+        stub_dir = Path(temporary)
+        ufw = stub_dir / "ufw"
+        ufw.write_text(f'#!/bin/sh\nprintf \'%s\\n\' "{ufw_first_line}"\n', encoding="utf-8")
+        ufw.chmod(0o755)
+
+        environment = dict(os.environ)
+        environment["PATH"] = f"{stub_dir}{os.pathsep}{environment.get('PATH', '')}"
+
+        completed = subprocess.run(
+            [shell, str(REPO_ROOT / ASTRAOS_INFO)],
+            capture_output=True, text=True, env=environment, timeout=120,
+        )
+
+    assert completed.returncode == 0, (
+        f"astraos-info failed with a stub ufw on PATH:\n{completed.stderr.strip()}"
+    )
+
+    match = re.search(r"^[ \t]*firewall[ \t]+(\S.*)$", completed.stdout, re.M)
+    assert match, (
+        "astraos-info printed no firewall line, so this test cannot tell what it claims:\n"
+        + completed.stdout
+    )
+    return match.group(1).strip()
+
+
+def test_reported_firewall_state_is_never_overclaimed() -> None:
+    """`astraos-info` must not report an inactive firewall as active.
+
+    This is not hypothetical. The patterns were `*active*` and `*inactive*`, and a bare
+    `*active*` also matches "Status: inactive"; because case takes the first match, a fresh
+    install — where ufw is shipped disabled by design — reported `firewall active`. That is
+    a false security claim shown to the user, and a security review would have to trust it.
+    """
+    inactive = _reported_firewall_state("Status: inactive")
+    active = _reported_firewall_state("Status: active")
+    unprivileged = _reported_firewall_state("ERROR: You need to be root to run this script")
+
+    assert inactive.startswith("inactive"), (
+        f"astraos-info reports {inactive!r} for an inactive firewall; a user would be told "
+        "the firewall is protecting them when it is not"
+    )
+    assert "0.1.0" in inactive, (
+        "the inactive message no longer explains that inactive is the default for this "
+        "release, which is what stops it reading as a defect"
+    )
+    assert active == "active", f"astraos-info reports {active!r} for an active firewall"
+    assert unprivileged.startswith("unknown"), (
+        f"astraos-info reports {unprivileged!r} when ufw cannot be queried, so the "
+        "fallback branch is unreachable or misordered"
     )

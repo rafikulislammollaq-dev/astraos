@@ -8,9 +8,6 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
 ARTIFACT="${1:-}"
 if [ -z "$ARTIFACT" ]; then
     printf 'usage: %s path/to/image.iso\n' "$0" >&2

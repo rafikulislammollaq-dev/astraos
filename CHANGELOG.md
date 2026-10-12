@@ -19,6 +19,17 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- `astraos-info` reported an inactive firewall as `active`. The `case` patterns were
+  `*active*` and `*inactive*`, and `*active*` also matches `Status: inactive`, so the first
+  match won and a fresh install — where ufw is shipped disabled by design — printed
+  `firewall active`. The patterns are now anchored to the `Status:` prefix, and
+  `tests/security/test_security_config.py` runs the real tool with a stub `ufw` on `PATH`
+  so the reported state is checked behaviourally rather than by reading the source.
+- ShellCheck findings, which only appear where ShellCheck is installed (the CI runner, not
+  the development host): dead `REPO_ROOT`/`SCRIPT_DIR` assignments in
+  `bootstrap-build-environment.sh` and `generate-checksums.sh`, and a `for` loop in
+  `0600-cleanup.hook.chroot` written with a single-item list. That loop now preserves
+  `/etc/astraos-release`, `/etc/lsb-release` and `/etc/os-release` as build provenance.
 - Documentation staging: `README.md` was listed for installation into
   `/usr/share/doc/astraos/` but was copied from `docs/README.md`, which does not exist,
   so the image would have shipped with only a warning logged and no README — breaking the

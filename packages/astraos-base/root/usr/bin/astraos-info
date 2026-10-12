@@ -207,9 +207,13 @@ firewall_state() {
         # `ufw status` needs root; fall back to the policy file when unprivileged.
         local result
         result="$(ufw status 2>/dev/null | head -n1)"
+        # The patterns are anchored deliberately. A bare *active* pattern also matches
+        # "Status: inactive", and because case takes the first match, an unanchored
+        # pattern reports an inactive firewall as active — a false security claim on a
+        # fresh instalment, where ufw is documented as inactive. Keep the prefix.
         case "$result" in
-            *active*) printf 'active' ;;
-            *inactive*) printf 'inactive (default for AstraOS 0.1.0)' ;;
+            "Status: active"*) printf 'active' ;;
+            "Status: inactive"*) printf 'inactive (default for AstraOS 0.1.0)' ;;
             *) printf 'unknown (run as root: sudo ufw status)' ;;
         esac
     else
