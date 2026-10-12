@@ -43,6 +43,28 @@ done
 say()  { printf '[astraos:build] %s\n' "$*"; }
 fail() { printf '[astraos:build] FAILED: %s\n' "$*" >&2; exit 1; }
 
+# --- Privileges ---------------------------------------------------------------
+# live-build mounts filesystems, runs debootstrap and chroots, so it needs root. Only the
+# live-build commands are elevated. Everything else in this script — host validation,
+# package building, checksums, the manifest — runs as the invoking user, so the files they
+# write belong to that user and the privileged surface is one command instead of all of it.
+LB_SUDO=""
+if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+        # -E preserves ASTRAOS_REPO_ROOT and SOURCE_DATE_EPOCH, which auto/config reads out
+        # of the environment to find the repository and to keep the build reproducible.
+        LB_SUDO="$(command -v sudo) -E"
+    else
+        fail "live-build needs root privileges and sudo is not installed. Run this script as root, or install sudo (see docs/BUILDING.md)."
+    fi
+fi
+
+# $LB_SUDO is deliberately unquoted: it is either empty or a two-word command prefix.
+run_privileged() {
+    # shellcheck disable=SC2086
+    $LB_SUDO "$@"
+}
+
 mkdir -p "$LOG_DIR" "$DIST_DIR"
 export ASTRAOS_REPO_ROOT="$REPO_ROOT"
 
@@ -94,7 +116,7 @@ say "tens of minutes. It will request elevated privileges for mounting and deboo
 cd "$BUILD_DIR"
 if [ "${ASTRAOS_NO_CACHE:-0}" = "1" ]; then
     say "clearing live-build caches as requested"
-    lb clean --purge >/dev/null 2>&1 || true
+    run_privileged lb clean --purge >/dev/null 2>&1 || true
 fi
 
 LB_STATUS=0
@@ -102,7 +124,10 @@ LB_STATUS=0
 # that when it runs a build, so an auto/build containing `lb build` calls itself. This
 # script is the wrapper instead — it owns the log and the status, which is where they
 # belong, because it is the process that started lb.
-lb build 2>&1 | tee -a "$BUILD_LOG" || LB_STATUS=$?
+#
+# tee runs unprivileged so the log file belongs to the invoking user, and `pipefail` is
+# what makes the pipeline report lb's failure rather than tee's success (plan §16.2).
+run_privileged lb build 2>&1 | tee -a "$BUILD_LOG" || LB_STATUS=$?
 if [ "$LB_STATUS" -ne 0 ]; then
     fail "live-build exited with status ${LB_STATUS}. Check ${BUILD_LOG} and the live-build log in build/live-build/"
 fi
