@@ -138,6 +138,61 @@ def test_scripts_enable_strict_mode_or_aggregate_failures() -> None:
     )
 
 
+def test_logging_helpers_use_stderr_where_output_is_captured() -> None:
+    """A logging helper that prints on stdout corrupts any function whose value is captured.
+
+    `DEBS+=("$(finish_package astraos-base "$BASE_STAGE")")` takes the function's stdout as
+    the path to the .deb, so a progress line printed there becomes part of the filename.
+    That is exactly how the first complete package build failed, *after* all five packages
+    had been built correctly: the copy failed against a path named after a log line. The
+    rule is cheap to state and cheap to check — logs to stderr, data to stdout.
+    """
+    helpers = ("say", "log", "info", "warn", "note")
+    offenders: list[str] = []
+
+    for path in _scripts():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        functions = set(re.findall(r"^([A-Za-z_][A-Za-z0-9_]*)\(\)", text, re.M))
+        captured = {
+            name
+            for name in functions
+            if re.search(rf"\$\(\s*{re.escape(name)}\b", text)
+        }
+        if not captured:
+            continue
+
+        for helper in helpers:
+            definition = re.search(rf"^{helper}\(\)", text, re.M)
+            if not definition:
+                continue
+
+            # Take the definition itself and stop at its closing brace. An earlier
+            # version scanned to the next `}` in column 0, which ran past the end of a
+            # one-line helper and swallowed the following function — and because that
+            # function used stderr, the check could never fire. A guard that cannot fail
+            # is worse than none, so the extent of the definition is computed properly.
+            lines = text[definition.start():].splitlines()
+            body_lines = [lines[0]]
+            if not lines[0].rstrip().endswith("}"):
+                for line in lines[1:]:
+                    body_lines.append(line)
+                    if line.rstrip() == "}":
+                        break
+            body = "\n".join(body_lines)
+
+            if ">&2" not in body:
+                offenders.append(
+                    f"{path.relative_to(REPO_ROOT)}: {helper}() prints on stdout while the "
+                    f"output of {', '.join(sorted(captured))} is captured"
+                )
+
+    assert not offenders, (
+        "these scripts capture a function's stdout as data while a logging helper writes "
+        "to the same stream, so the log line would become part of the value:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
 def test_no_hardcoded_device_paths() -> None:
     """Plan §11: do not hardcode device names.
 

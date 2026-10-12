@@ -1,0 +1,4 @@
+  File "<string>", line 12
+    print(f'{helper}: stderr={
+                             ^
+SyntaxError: '{' was never closed

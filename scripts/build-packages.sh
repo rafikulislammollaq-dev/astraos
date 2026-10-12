@@ -35,7 +35,13 @@ STAGE_ROOT="${REPO_ROOT}/${ASTRAOS_BUILD_DIR}/package-stage"
 LIVE_PACKAGES_DIR="${REPO_ROOT}/${ASTRAOS_BUILD_DIR}/live-build/config/packages.chroot"
 LOG_DIR="${REPO_ROOT}/${ASTRAOS_LOG_DIR}"
 
-say() { printf '[astraos:packages] %s\n' "$*"; }
+# Progress goes to stderr, and stdout carries only data.
+#
+# This is not cosmetic: stage_package and finish_package return a path through command
+# substitution, so anything they print on stdout becomes part of that path. The first
+# build that got this far logged "built astraos-base -> astraos-base_0.1.0_amd64.deb"
+# on stdout and then tried to copy a file named after the log line.
+say() { printf '[astraos:packages] %s\n' "$*" >&2; }
 die() { printf '[astraos:packages] ERROR: %s\n' "$*" >&2; exit 1; }
 
 command -v dpkg-deb >/dev/null 2>&1 || die "dpkg-deb is not installed. Run scripts/bootstrap-build-environment.sh"
@@ -351,6 +357,13 @@ DEBS+=("$(finish_package astraos-system-tools "$TOOLS_STAGE")")
 DEBS+=("$(finish_package astraos-branding "$BRAND_STAGE")")
 DEBS+=("$(finish_package astraos-desktop "$DESKTOP_STAGE")")
 DEBS+=("$(finish_package astraos-installer "$INSTALLER_STAGE")")
+
+# The paths above come back through command substitution, so a stray log line on stdout
+# would travel with them and fail later as an unreadable filename. Check them here, where
+# the cause is obvious.
+for deb in "${DEBS[@]}"; do
+    [ -f "$deb" ] || die "internal error: expected a built package, got: ${deb}"
+done
 
 # ---------------------------------------------------------------------------
 # Stage for live-build
