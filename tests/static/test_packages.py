@@ -49,6 +49,37 @@ def test_every_entry_is_a_valid_package_name() -> None:
     )
 
 
+def test_only_one_time_synchronisation_daemon() -> None:
+    """Two time daemons cannot coexist, and apt proves it by refusing to install both.
+
+    ntpsec, chrony and openntpd all declare `Conflicts: time-daemon`, which
+    systemd-timesyncd provides. Listing one alongside systemd-timesyncd does not produce a
+    subtle misconfiguration: the build stops with "Unable to correct problems, you have held
+    broken packages" after several gigabytes have already been downloaded. This test costs
+    nothing and fails in the first second instead.
+    """
+    chosen = "systemd-timesyncd"
+    conflicting = {"ntpsec", "ntp", "chrony", "openntpd", "ntpdate"}
+
+    selected: dict[str, str] = {}
+    for filename, packages in astraos_env.package_lists().items():
+        for package in packages:
+            selected[package] = filename
+
+    assert chosen in selected, (
+        f"{chosen} is not in any package list. AstraOS synchronises time with the init "
+        "system's own daemon; if that decision changes, change this test with it."
+    )
+
+    offenders = sorted(
+        f"{name} (in {selected[name]})" for name in conflicting if name in selected
+    )
+    assert not offenders, (
+        f"these time daemons are listed together with {chosen}, which they conflict with, "
+        "so the build cannot resolve the package set:\n  " + "\n  ".join(offenders)
+    )
+
+
 def test_no_duplicate_entries_within_a_list() -> None:
     problems: list[str] = []
     for filename, packages in astraos_env.package_lists().items():

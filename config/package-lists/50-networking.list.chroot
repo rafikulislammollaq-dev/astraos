@@ -18,8 +18,12 @@ wireless-tools
 avahi-daemon
 libnss-mdns
 openssh-client
-ntpsec
 resolvconf
+# NOTE: no NTP daemon here. systemd-timesyncd (see 00-core.list.chroot) is the time
+# synchronisation service, and ntpsec, chrony or openntpd all declare Conflicts:
+# time-daemon against it, so listing one stops the build with an unsatisfiable dependency
+# set. One daemon, the one the init system already provides and the services hook enables.
+# tests/static/test_packages.py rejects a second one being added back.
 isc-dhcp-client
 pppoeconf
 curl
