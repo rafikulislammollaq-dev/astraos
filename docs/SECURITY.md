@@ -39,7 +39,9 @@ lm-sensors, ufw (policy engine only, firewall not active).
 
 **Deliberately not enabled:** `ssh.service`, `sshd.service`, `cups-browsed.service`.
 
-**Not installed at all:** any SSH server. The build fails if `/usr/sbin/sshd` exists.
+**Not installed at all:** any SSH server. The build fails if `/usr/sbin/sshd` exists. The
+*client* is installed (`openssh-client`, selected in `config/package-lists/50-networking.list.chroot`)
+so that a user can reach their own machines; it listens on nothing and runs no service.
 
 Audit the result on an installed system with:
 

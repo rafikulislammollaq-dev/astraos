@@ -109,7 +109,11 @@ check "no passwordless sudo rule shipped" sh -c '! grep -rqs NOPASSWD /etc/sudoe
 check "apt signatures are not disabled"   sh -c '! grep -rqsE "AllowUnauthenticated[[:space:]]+\"true\"" /etc/apt/apt.conf.d'
 check "no fixed password for the live user" sh -c '! grep -qs "^astra:" /etc/shadow'
 check "root account is locked"            sh -c 'passwd -S root 2>/dev/null | grep -q "^root *L"'
-check "no ssh server installed"           sh -c '! test -e /usr/sbin/sshd && ! test -x /usr/bin/ssh'
+# No ssh *server*. The client is deliberately selected (openssh-client, in
+# 50-networking.list.chroot) so it is not asserted absent: this check used to require that
+# /usr/bin/ssh be missing too, which no build satisfying the package selection could pass.
+# docs/SECURITY.md promises no listening service, which is what /usr/sbin/sshd is.
+check "no ssh server installed"           sh -c '! test -e /usr/sbin/sshd'
 
 # --- Service policy -----------------------------------------------------------
 check "a display-manager unit is wired up" sh -c 'test -e /etc/systemd/system/display-manager.service || systemctl is-enabled lightdm >/dev/null 2>&1'

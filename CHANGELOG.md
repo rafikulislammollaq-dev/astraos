@@ -19,6 +19,23 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- The installer verification hook required an *unquoted* `defaultFileSystemType: ext4` in
+  the Calamares partitioning policy, while the configuration the installer package ships
+  writes the value the other way YAML allows — quoted. Hooks run last, so the build died
+  there with "partition.conf does not select ext4 as the default root filesystem" after
+  every package had been installed, and the only way to find it was another full build.
+  Both spellings are accepted now, and `tests/static/test_hook_assertions.py` compares the
+  hook's pattern with the file the repository ships, in both directions: the pattern must
+  still be the one the hook uses, and it must match (or, for a refusal, not match) the
+  shipped file. The same module pins the partitioning-safety assertions.
+- The image verification hook asserted that `/usr/bin/ssh` did not exist, while
+  `config/package-lists/50-networking.list.chroot` deliberately selects `openssh-client`.
+  No build could satisfy both, so the check would have failed at the very end of the next
+  build. The property the project documents is that nothing *listens*: both hooks now test
+  for the ssh server, and `docs/SECURITY.md` states that the client is present, is not a
+  service and is never enabled. A test rejects any hook that requires a binary the package
+  selection puts in the image.
+
 - `astraos-branding`'s post-install script selected the boot-splash theme with
   `plymouth-set-default-theme`, which rewrites `/etc/plymouth/plymouthd.conf` — a file the
   `plymouth` package owns. A maintainer script runs inside the dpkg run that is configuring

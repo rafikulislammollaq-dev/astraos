@@ -109,7 +109,12 @@ else
     fail "alwaysShowPartitionLabels is not enabled in partition.conf; the user must see which partitions are affected"
 fi
 
-if grep -qsE '^defaultFileSystemType:[[:space:]]*ext4' "$PARTITION_CONF"; then
+# The value is allowed to be quoted. `defaultFileSystemType: "ext4"` and
+# `defaultFileSystemType: ext4` are the same YAML string, the shipped file uses the quoted
+# form, and a pattern that accepted only one of them failed the build once. Both spellings
+# are therefore matched deliberately, and tests/static/test_hook_assertions.py pins this
+# pattern against the file the repository ships.
+if grep -qsE '^defaultFileSystemType:[[:space:]]*"?ext4"?' "$PARTITION_CONF"; then
     printf '%s ok    default root filesystem is ext4\n' "$PREFIX"
 else
     fail "partition.conf does not select ext4 as the default root filesystem (plan §11)"
