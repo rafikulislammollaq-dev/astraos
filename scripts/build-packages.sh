@@ -5,9 +5,9 @@
 #   The four AstraOS packages are simple file-installation packages. Using the full
 #   Debian source-package machinery would add debhelper, fakeroot, a signed source
 #   tarball and a build-dependency chain, none of which buys anything for this release.
-#   dpkg-deb is used directly, and the constructed control file is validated before
-#   the package is produced. plan §2.3 forbids inventing substitutes for essential
-#   system components; this is packaging our own content, not replacing dpkg.
+#   dpkg-deb is used directly, and every .deb it produces is read back afterwards and
+#   checked for the right name and version. plan §2.3 forbids inventing substitutes for
+#   essential system components; this is packaging our own content, not replacing dpkg.
 #
 # Reproducibility (plan §2.4):
 #   SOURCE_DATE_EPOCH is derived from the latest commit when git is available, so two
@@ -165,16 +165,31 @@ finish_package() {
             | xargs -0 -r md5sum > DEBIAN/md5sums
     )
 
-    # Validate the control file before building.
-    if command -v dpkg-deb >/dev/null 2>&1; then
-        dpkg-deb --info "${stage}" >/dev/null 2>&1 \
-            || die "dpkg-deb rejected the control directory for ${name}"
-    fi
-
     local out="${OUT_DIR}/${name}_${PACKAGE_VERSION}_${ASTRAOS_ARCH_DEB}.deb"
     # --root-owner-group makes the archive reproducible regardless of who builds it.
     dpkg-deb --build --root-owner-group "${stage}" "$out" >/dev/null \
         || die "dpkg-deb --build failed for ${name}"
+
+    # Read the .deb back. This validates what was actually produced rather than the
+    # staging directory, and it is the only check that can catch a substitution that
+    # produced a syntactically valid but wrong package: the fields are compared below.
+    #
+    # The reason for the rework: this used to run `dpkg-deb --info` on the staging
+    # directory with stderr thrown away, and the first real CI build failed with
+    # "dpkg-deb rejected the control directory for astraos-base" and no explanation. A
+    # check that cannot say why it failed is worse than no check (plan §16.2, §28).
+    local reported_package reported_version info_output
+    info_output="$(dpkg-deb --info "$out" 2>&1)" \
+        || { printf '%s\n' "$info_output" >&2; die "dpkg-deb cannot read back ${name}"; }
+    dpkg-deb --contents "$out" >/dev/null \
+        || die "dpkg-deb cannot list the contents of ${name}"
+
+    reported_package="$(dpkg-deb -f "$out" Package 2>/dev/null)"
+    reported_version="$(dpkg-deb -f "$out" Version 2>/dev/null)"
+    [ "$reported_package" = "$name" ] \
+        || die "${name}: the built package calls itself '${reported_package}'"
+    [ "$reported_version" = "$PACKAGE_VERSION" ] \
+        || die "${name}: the built package reports version '${reported_version}', expected '${PACKAGE_VERSION}'"
 
     local size
     size="$(stat -c %s "$out" 2>/dev/null || wc -c < "$out")"
