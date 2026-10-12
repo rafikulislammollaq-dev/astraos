@@ -84,3 +84,49 @@ def all_packages() -> dict[str, list[str]]:
         for package in packages:
             owners.setdefault(package, []).append(filename)
     return owners
+
+
+# Dependency fields the .deb packages declare. Resolved by apt when the image is built, so a
+# name that does not exist stops the build just as surely as a wrong package list entry.
+CONTROL_DEPENDENCY_FIELDS = ("Depends", "Recommends", "Pre-Depends")
+
+
+def own_packages() -> set[str]:
+    """Names of the packages this repository builds, one per packages/*/control.in."""
+    return {path.parent.name for path in (REPO_ROOT / "packages").glob("*/control.in")}
+
+
+def control_dependencies() -> list[tuple[tuple[str, ...], str]]:
+    """Return (alternatives, source) for every dependency the AstraOS packages declare.
+
+    `alternatives` is a tuple because Debian allows `a | b`, where any one of them satisfies
+    the requirement; checking that all of them exist would be wrong.
+
+    `source` reads like `packages/astraos-installer/control.in Depends`, so a failure can
+    name the file and field instead of just the package.
+    """
+    groups: list[tuple[tuple[str, ...], str]] = []
+
+    for control in sorted((REPO_ROOT / "packages").glob("*/control.in")):
+        source_file = control.relative_to(REPO_ROOT).as_posix()
+        # Unfold continuation lines: a dependency list may be wrapped.
+        text = control.read_text(encoding="utf-8").replace("\n ", " ").replace("\n\t", " ")
+
+        for line in text.splitlines():
+            field, separator, value = line.partition(":")
+            if not separator or field.strip() not in CONTROL_DEPENDENCY_FIELDS:
+                continue
+            for entry in value.split(","):
+                alternatives: list[str] = []
+                for alternative in entry.split("|"):
+                    name = alternative.split("(", 1)[0].strip()
+                    # Drop an architecture qualifier such as `foo:any`.
+                    name = name.split(":", 1)[0].strip()
+                    # A substvar or a build profile is not a package name to look up.
+                    if not name or "$" in name or "<" in name:
+                        continue
+                    alternatives.append(name)
+                if alternatives:
+                    groups.append((tuple(alternatives), f"{source_file} {field.strip()}"))
+
+    return groups

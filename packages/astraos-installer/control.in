@@ -5,7 +5,7 @@ Maintainer: @@VENDOR@@ <maintainers@astraos.invalid>
 Section: admin
 Priority: optional
 Homepage: https://astraos.invalid
-Depends: astraos-base (>= @@VERSION@@), calamares (>= 3.2), squashfs-tools, parted, gdisk, dosfstools, e2fsprogs, mount, util-linux, os-prober, grub2-common, efibootmgr, kpmcore
+Depends: astraos-base (>= @@VERSION@@), calamares (>= 3.2), squashfs-tools, parted, gdisk, dosfstools, e2fsprogs, mount, util-linux, os-prober, grub2-common, efibootmgr, libkpmcore12
 Recommends: ntfs-3g, xfsprogs, btrfs-progs, f2fs-tools, exfatprogs, lvm2, cryptsetup, cryptsetup-initramfs
 Description: AstraOS installer configuration
  The Calamares configuration and branding that make the upstream Calamares installer

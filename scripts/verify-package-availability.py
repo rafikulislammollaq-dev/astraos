@@ -127,6 +127,8 @@ def main() -> int:
     print(f"  mirror  : {mirror}")
     print(f"  asked   : {len(packages)} distinct packages across "
           f"{len(astraos_env.package_lists())} lists")
+    print(f"  declared: {len(astraos_env.control_dependencies())} dependency groups in the "
+          f"AstraOS packages")
     print()
 
     cache_dir = astraos_env.REPO_ROOT / "build" / "cache" / "archive"
@@ -161,6 +163,34 @@ def main() -> int:
     virtual = sorted(name for name in packages if name not in real and name in provided)
     unresolved = missing + virtual
 
+    # The AstraOS .deb packages declare their own dependencies, and apt resolves those when
+    # the image is assembled. A name that does not exist there stops the build after every
+    # package has been downloaded — which is exactly how `Depends: kpmcore` was found.
+    dependency_groups = astraos_env.control_dependencies()
+    # The AstraOS packages depend on each other; those names are built here, so they will not
+    # be in the Debian archive and are not a failure.
+    own = astraos_env.own_packages()
+    unsatisfiable: list[tuple[tuple[str, ...], str]] = []
+    for alternatives, source in dependency_groups:
+        if any(name in real or name in provided or name in own for name in alternatives):
+            continue
+        unsatisfiable.append((alternatives, source))
+
+    if unsatisfiable:
+        print(f"The AstraOS packages declare {len(dependency_groups)} dependency group(s); "
+              f"{len(unsatisfiable)} cannot be satisfied:")
+        for alternatives, source in unsatisfiable:
+            joined = " | ".join(alternatives)
+            print(f"  x {joined}\n      declared by: {source}")
+        print()
+    else:
+        internal = [
+            group for group, _ in dependency_groups if any(name in own for name in group)
+        ]
+        print(f"OK: all {len(dependency_groups)} dependencies declared by the AstraOS "
+              f"packages resolve ({len(internal)} of them are AstraOS packages built here).")
+        print()
+
     if virtual:
         # A virtual package is installable, but it is usually a sign that the list
         # should name a real provider. Reported as a failure so the lists stay exact.
@@ -177,10 +207,12 @@ def main() -> int:
             print(f"  x {name}\n      requested by: {requested_by}")
         print()
 
-    if unresolved:
-        print(f"FAIL: {len(unresolved)} configured package name(s) do not resolve to a")
-        print(f"      real package in Debian {suite}.")
-        print("      Fix the lists, or change the pinned release deliberately.")
+    if unresolved or unsatisfiable:
+        print(f"FAIL: {len(unresolved)} configured package name(s) and "
+              f"{len(unsatisfiable)} declared dependency group(s) do not resolve to a real")
+        print(f"      package in Debian {suite}.")
+        print("      Fix the lists or the control files, or change the pinned release")
+        print("      deliberately.")
         return 1
 
     print(f"OK: all {len(packages)} packages exist in Debian {suite}.")

@@ -19,6 +19,13 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- `astraos-installer` declared `Depends: kpmcore`, which is a source package in Debian 13,
+  not an installable binary (the library is `libkpmcore12`). apt resolved nothing and failed
+  the image build after every package had been downloaded. The availability verifier checked
+  only the package lists, never the dependencies the `.deb` files declare, so it now checks
+  those too — including `Recommends` and alternative groups — and reports which file and
+  field a bad name came from. AstraOS's own package names are excluded from that check
+  because they are built by this repository.
 - The AstraOS packages were staged one directory too deep. `build-packages.sh` wrote them to
   `build/live-build/live-build/config/packages.chroot`, while live-build only reads
   `config/packages.chroot` directly under its working directory. All five `.deb` files were

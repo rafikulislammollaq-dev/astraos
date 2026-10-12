@@ -49,6 +49,34 @@ def test_every_entry_is_a_valid_package_name() -> None:
     )
 
 
+def test_control_files_declare_parseable_dependencies() -> None:
+    """The `.deb` files declare dependencies too, and apt resolves them during the build.
+
+    `scripts/verify-package-availability.py` checks those names against the real archive, but
+    a parser that quietly returned nothing would make that check vacuous — and a missing
+    dependency is not caught anywhere else, which is how `Depends: kpmcore` reached a build
+    that had already downloaded every package.
+    """
+    groups = astraos_env.control_dependencies()
+    assert len(groups) >= 20, (
+        f"only {len(groups)} dependency group(s) were parsed out of the package control "
+        "files, so the availability check is not seeing them"
+    )
+
+    bad: list[str] = []
+    for alternatives, source in groups:
+        for name in alternatives:
+            if not VALID_NAME.match(name):
+                bad.append(f"{source}: {name!r}")
+    assert not bad, "these parsed dependency names are malformed:\n  " + "\n  ".join(bad)
+
+    names = {name for alternatives, _ in groups for name in alternatives}
+    assert "astraos-base" in names, (
+        "no AstraOS package declares a dependency on astraos-base, so the parser is not "
+        "reading the fields it should"
+    )
+
+
 def test_no_firmware_installer_packages_are_listed() -> None:
     """`firmware-*-installer` packages download firmware at install time.
 
