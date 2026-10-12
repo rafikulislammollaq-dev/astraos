@@ -54,7 +54,14 @@ if command -v visudo >/dev/null 2>&1; then
 fi
 
 # No passwordless rule anywhere in /etc/sudoers.d (plan §10.4).
-if grep -rqs NOPASSWD /etc/sudoers.d/ 2>/dev/null; then
+#
+# The search deliberately ignores anything behind a '#'. The shipped policy explains that
+# there is no such rule, in a comment, and a bare grep for the word matched that sentence
+# and refused the build. What matters is whether a *rule* grants passwordless privilege,
+# which is what the pattern tests: `[^#]*` cannot reach past a comment marker. The same
+# rule is applied by tests/security/test_security_config.py, which ignores comment lines for
+# exactly this reason.
+if grep -rqsE '^[[:space:]]*[^#]*NOPASSWD' /etc/sudoers.d/ 2>/dev/null; then
     fail "a passwordless sudo rule is present in /etc/sudoers.d"
 fi
 log "no passwordless sudo rules found"

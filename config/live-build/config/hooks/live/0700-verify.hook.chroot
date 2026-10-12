@@ -103,7 +103,10 @@ check "wireplumber is installed"          test -x /usr/bin/wireplumber
 # --- Security baseline --------------------------------------------------------
 check "sudo is installed"                 test -x /usr/bin/sudo
 check "ufw is installed"                  test -x /usr/sbin/ufw
-check "no passwordless sudo rule shipped" sh -c '! grep -rqs NOPASSWD /etc/sudoers /etc/sudoers.d'
+# Comment-aware, like 0500-security: the AstraOS policy documents the absence of a
+# passwordless rule in a comment, and a bare grep for the word matches the explanation.
+check "no passwordless sudo rule shipped" \
+    sh -c '! grep -rqsE "^[[:space:]]*[^#]*NOPASSWD" /etc/sudoers /etc/sudoers.d'
 # AstraOS's own policy file legitimately contains AllowUnauthenticated "false", so this
 # looks specifically for the value that would DISABLE signature verification.
 check "apt signatures are not disabled"   sh -c '! grep -rqsE "AllowUnauthenticated[[:space:]]+\"true\"" /etc/apt/apt.conf.d'

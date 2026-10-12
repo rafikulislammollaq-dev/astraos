@@ -160,3 +160,46 @@ def test_no_hook_asserts_the_absence_of_something_the_release_ships() -> None:
             f"{hook_name} no longer checks for the ssh server. docs/SECURITY.md states that "
             "an image containing /usr/sbin/sshd is refused."
         )
+
+
+PASSWORDLESS_PATTERN = r'^[[:space:]]*[^#]*NOPASSWD'
+
+SUDO_POLICY = "packages/astraos-base/root/etc/sudoers.d/00-astraos"
+
+
+def test_the_passwordless_rule_check_reads_rules_and_not_prose() -> None:
+    """The policy file explains that no passwordless rule exists, and that is not a rule.
+
+    Both hooks searched /etc/sudoers* for the word and matched the sentence that documents
+    its absence, so the build was refused with "a passwordless sudo rule is present in
+    /etc/sudoers.d" while the file it complained about grants nothing of the sort. The
+    search has to look for a *rule*, which means ignoring anything behind a '#'.
+
+    This pins the pattern in both hooks, checks that it does not match the shipped
+    explanation, and checks that it still matches a real rule — so the guard cannot be
+    weakened into something that matches nothing at all.
+    """
+    policy = _read(REPO_ROOT / SUDO_POLICY)
+    explanation = [line for line in policy.splitlines() if line.lstrip().startswith("#") and "NOPASSWD" in line]
+    assert explanation, (
+        f"{SUDO_POLICY} no longer documents the absence of a passwordless rule, so this test "
+        "is no longer checking the case it was written for"
+    )
+
+    for hook_name in ("0500-security.hook.chroot", "0700-verify.hook.chroot"):
+        body = _without_comments(_read(HOOKS_DIR / hook_name))
+        assert PASSWORDLESS_PATTERN in body, (
+            f"{hook_name} no longer uses the comment-aware passwordless-rule pattern "
+            f"{PASSWORDLESS_PATTERN!r}. A plain search for the word matches the explanatory "
+            "comment in the shipped policy and refuses a correct image."
+        )
+
+    compiled = re.compile(_as_python_pattern(PASSWORDLESS_PATTERN))
+    assert not compiled.search("\n".join(explanation)), (
+        "the passwordless-rule pattern matches the comment that documents the absence of "
+        "such a rule, which would fail the build"
+    )
+    assert compiled.search("%astra ALL=(ALL:ALL) NOPASSWD: ALL"), (
+        "the passwordless-rule pattern does not match a real passwordless rule, so it would "
+        "not catch the thing it exists to catch"
+    )

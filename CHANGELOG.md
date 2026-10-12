@@ -19,6 +19,14 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- The security hook searched `/etc/sudoers.d` for the word `NOPASSWD` and matched the
+  shipped policy's own sentence saying that no such rule exists, so a correct image was
+  refused with "a passwordless sudo rule is present in /etc/sudoers.d". Both hooks now look
+  for a *rule* — the pattern cannot reach past a comment marker — and a test pins it against
+  the shipped policy in both directions: it must ignore the explanation, and it must still
+  match a real passwordless rule. `tests/security/test_security_config.py` had always
+  ignored comment lines for exactly this reason; the hooks had not.
+
 - The installer verification hook required an *unquoted* `defaultFileSystemType: ext4` in
   the Calamares partitioning policy, while the configuration the installer package ships
   writes the value the other way YAML allows — quoted. Hooks run last, so the build died
