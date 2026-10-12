@@ -20,12 +20,25 @@ say() { printf '[astraos:auto/build] %s\n' "$*" >&2; }
 say "logging to ${LOG}"
 say "this stage downloads and installs the full package set; expect several GB"
 
-# `lb build` streams to stdout/stderr. Capture it, keep it visible, and preserve the
-# pipeline status of lb (not tee) so a failure cannot be swallowed (plan §16.2).
+# `lb build` streams to stdout/stderr. Capture it, keep it visible, and preserve lb's own
+# status rather than tee's, so a failure cannot be swallowed (plan §16.2).
+#
+# This script runs under sh, as live-build invokes it, so PIPESTATUS is not available: the
+# first attempt used it and every build died with "Bad substitution". The left-hand
+# subshell therefore writes lb's status to a file. If the file is missing or empty the
+# status is unknown, and unknown is treated as failure.
+STATUS_FILE="${ASTRAOS_REPO_ROOT}/${ASTRAOS_BUILD_DIR}/.lb-build-status"
+rm -f "$STATUS_FILE"
+
 set +e
-lb build 2>&1 | tee "$LOG"
-LB_STATUS="${PIPESTATUS[0]:-${?}}"
+{ lb build 2>&1; printf '%s\n' "$?" > "$STATUS_FILE"; } | tee "$LOG"
 set -e
+
+LB_STATUS="$(cat "$STATUS_FILE" 2>/dev/null || true)"
+if [ -z "$LB_STATUS" ]; then
+    say "FAILED: lb build left no exit status behind, so the result is unknown"
+    LB_STATUS=1
+fi
 
 if [ "${LB_STATUS:-1}" -ne 0 ]; then
     say "FAILED: lb build exited with status ${LB_STATUS}"

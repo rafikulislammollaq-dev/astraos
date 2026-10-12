@@ -295,6 +295,20 @@ def test_files_with_a_shebang_are_executable_in_git() -> None:
     )
 
 
+def _shellcheck_dialect(path: Path) -> str:
+    """Which shell dialect this file is actually run by.
+
+    Getting this wrong is not cosmetic. live-build executes `auto/config` and `auto/build`
+    with sh, whatever their shebang says, and the chroot hooks are run by sh too. Linting
+    `auto/build` as bash hid a `${PIPESTATUS[0]}` that made every image build die with
+    "auto/build: 27: Bad substitution" under dash.
+    """
+    relative = path.relative_to(REPO_ROOT).as_posix()
+    if path.suffix == ".chroot" or relative.startswith("config/live-build/auto/"):
+        return "sh"
+    return "bash"
+
+
 def test_shellcheck_when_available() -> None:
     """Run ShellCheck if it is installed, and report a skip if it is not.
 
@@ -312,8 +326,7 @@ def test_shellcheck_when_available() -> None:
     failures: list[str] = []
     for path in _scripts():
         result = subprocess.run(
-            ["shellcheck", "-S", "warning", "-s", "sh" if path.suffix == ".chroot" else "bash",
-             str(path)],
+            ["shellcheck", "-S", "warning", "-s", _shellcheck_dialect(path), str(path)],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode != 0:
