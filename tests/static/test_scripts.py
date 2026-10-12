@@ -335,6 +335,49 @@ def test_live_build_auto_scripts_do_not_recurse() -> None:
     )
 
 
+def test_every_optional_live_build_flag_is_probed() -> None:
+    """A flag passed to `lb config` without a probe is a flag that fails on some release.
+
+    live-build renames and removes options between releases: --binary-images became
+    --binary-image, --binary-compression became --chroot-squashfs-compression-type, and
+    --tasks and --syslinux-timeout are gone in the pinned release. A removed flag that is
+    passed unguarded stops the build; a removed optional one is silently dropped, which is
+    worse because nothing reports it.
+
+    The flags in ALWAYS are the ones every supported live-build accepts and the build cannot
+    proceed without, so they are asserted individually in the script instead.
+    """
+    ALWAYS = {
+        "mode", "system", "distribution", "architecture", "archive-areas", "initsystem",
+        "mirror-bootstrap", "mirror-chroot", "mirror-binary",
+    }
+
+    text = (REPO_ROOT / "config" / "live-build" / "auto" / "config").read_text(
+        encoding="utf-8"
+    )
+    code = "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+
+    unguarded: list[str] = []
+    for flag in sorted(set(re.findall(r'set -- "\$@" --([a-z0-9-]+)', code))):
+        if flag in ALWAYS:
+            continue
+        if f"supports --{flag}" not in code:
+            unguarded.append(flag)
+
+    assert not unguarded, (
+        "these live-build options are passed without a `supports` probe, so a release that "
+        "renamed or removed them would fail the build or silently ignore the setting:\n  "
+        + "\n  ".join(f"--{flag}" for flag in unguarded)
+    )
+
+    for flag in sorted(ALWAYS):
+        assert f'--{flag}' in code, (
+            f"the build no longer sets --{flag}, which every supported live-build accepts"
+        )
+
+
 def _shellcheck_dialect(path: Path) -> str:
     """Which shell dialect this file is actually run by.
 

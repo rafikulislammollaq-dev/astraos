@@ -19,6 +19,25 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- The image build ran with the option set of whichever live-build happened to be installed.
+  The pinned release (live-build 20250505 for Debian 13) renamed `--binary-images` to
+  `--binary-image` and `--binary-compression` to `--chroot-squashfs-compression-type`, and
+  removed `--tasks`, `--syslinux-timeout`, `--updates-chroot-security` and the volatile
+  mirror option. The configuration now handles both spellings, and a test rejects any option
+  passed without a `supports` probe. The option list was read out of the live-build package
+  itself rather than guessed; the pinned release is also the one that has `--bootloaders`,
+  which is what legacy BIOS boot support depends on.
+- The chroot's apt failed with "The repository 'security.debian.org/debian-security
+  trixie/updates Release' does not have a Release file", which stopped the build after
+  bootstrapping had succeeded. The security and update suites now come from the repository's
+  own archive list, which pins `trixie-security` and `trixie-updates` by name, and
+  live-build's own generation of those two lines is switched off. Having two sources for the
+  same suite had also produced a screenful of "configured multiple times" warnings on every
+  apt run inside the chroot.
+- CI assembled the image with the Ubuntu runner's older `debootstrap` and `live-build`,
+  which is what produced the two problems above. The image is now built inside a
+  `debian:trixie` container, so the toolchain is the release being assembled and the build
+  no longer depends on the runner's distribution.
 - `scripts/build-packages.sh` printed progress on stdout while `finish_package` and
   `stage_package` return a path through command substitution, so the package list captured a
   log line and the staging step looked for a file named after it. Progress goes to stderr,

@@ -10,10 +10,19 @@
 #
 # IMPORTANT DESIGN POINT
 # ----------------------
-# live-build's flag set has changed between releases (for example --bootloader became
-# --bootloaders, and the "volatile" mirror options were removed). Rather than assume
-# the installed version accepts a flag, the optional flags are probed against
-# `lb config --help` and either applied or explicitly skipped with a warning.
+# live-build's flag set has changed between releases. In the release AstraOS pins
+# (live-build 20250505, Debian 13) the differences from older ones are:
+#
+#   --binary-images   -> --binary-image (singular)      [renamed]
+#   --bootloader      -> --bootloaders                  [renamed]
+#   --binary-compression -> --chroot-squashfs-compression-type
+#   --tasks, --syslinux-timeout, --updates-chroot-security, --mirror-chroot-volatile
+#                                                       [removed]
+#
+# Rather than assume the installed version accepts a flag, every optional flag is probed
+# against `lb config --help` and either applied or explicitly skipped with a warning. The
+# option list above was read out of the live-build package itself, not guessed: see the
+# note in docs/BUILDING.md about building on the release being assembled.
 #
 # An unsupported optional flag therefore degrades to a documented, visible warning
 # instead of a hard failure halfway through configuration. Flags the project genuinely
@@ -55,8 +64,8 @@ set -- noauto --verbose
 # --- Fundamentals: the build is meaningless without these --------------------
 required --distribution
 required --architecture
-required --binary-images
 required --initsystem
+# The image type is asserted where it is set, because that option was renamed.
 
 set -- "$@" --mode debian --system live
 set -- "$@" --distribution "${ASTRAOS_BASE_SUITE}"
@@ -73,10 +82,18 @@ fi
 if supports --mirror-binary-security; then
     set -- "$@" --mirror-binary-security "${ASTRAOS_DEBIAN_SECURITY_MIRROR}"
 fi
-if supports --security; then set -- "$@" --security true; fi
-if supports --updates; then set -- "$@" --updates true; fi
+# The security and update suites come from config/archives/astraos.list.chroot, which pins
+# them by name (trixie-security, trixie-updates, verified against the real archive), so
+# live-build's own generation of those two lines is switched off.
+#
+# WHY: live-build derives them itself, and an older live-build derives the pre-bookworm
+# spelling "<suite>/updates". Debian 13 has no such suite, so apt inside the chroot failed
+# with "does not have a Release file" and the build stopped dead. Having both sources also
+# produced a screenful of "configured multiple times" warnings on every apt run. One pinned
+# list, in the repository, is easier to audit and behaves identically on every build host.
+if supports --security; then set -- "$@" --security false; fi
+if supports --updates; then set -- "$@" --updates false; fi
 if supports --backports; then set -- "$@" --backports false; fi
-if supports --updates-chroot-security; then set -- "$@" --updates-chroot-security true; fi
 
 # The "volatile" mirror concept was removed from modern live-build. Skip it when the
 # option is gone; AstraOS does not depend on it.
@@ -91,7 +108,19 @@ set -- "$@" --initsystem "${ASTRAOS_INIT}"
 if supports --initramfs; then set -- "$@" --initramfs live-boot; fi
 
 # --- Image type and bootloaders ----------------------------------------------
-set -- "$@" --binary-images iso-hybrid
+# The plural is checked first on purpose: these are substring matches, and "--binary-image"
+# is a prefix of "--binary-images". A release that only knows the old spelling therefore
+# still gets the old spelling, and the pinned release gets the new one.
+if supports --binary-images; then
+    set -- "$@" --binary-images iso-hybrid
+    say "image type   : iso-hybrid (--binary-images)"
+elif supports --binary-image; then
+    set -- "$@" --binary-image iso-hybrid
+    say "image type   : iso-hybrid (--binary-image)"
+else
+    die "this live-build documents neither --binary-image nor --binary-images, so the image type cannot be set"
+fi
+
 if supports --bootloaders; then
     set -- "$@" --bootloaders syslinux,grub-efi
     say "bootloaders: syslinux (legacy BIOS) + grub-efi (UEFI)"
@@ -128,7 +157,14 @@ LIVE_APPEND="boot=live components username=${ASTRAOS_LIVE_USER} hostname=${ASTRA
 FAILSAFE_APPEND="boot=live components username=${ASTRAOS_LIVE_USER} hostname=${ASTRAOS_LIVE_HOSTNAME} locales=en_US.UTF-8 keyboard-layouts=us timezone=UTC nolapic noapic acpi=off nomodeset"
 if supports --bootappend-live; then set -- "$@" --bootappend-live "${LIVE_APPEND}"; fi
 if supports --bootappend-live-failsafe; then set -- "$@" --bootappend-live-failsafe "${FAILSAFE_APPEND}"; fi
-if supports --syslinux-timeout; then set -- "$@" --syslinux-timeout 30; fi
+# The pinned live-build has no boot menu timeout option at all, so the menu uses its own
+# default. Recorded as skipped rather than silently ignored; see the note in
+# docs/KNOWN_LIMITATIONS.md about reaching the failsafe entry.
+if supports --syslinux-timeout; then
+    set -- "$@" --syslinux-timeout 30
+else
+    SKIPPED="${SKIPPED} --syslinux-timeout"
+fi
 
 # --- APT behaviour ------------------------------------------------------------
 # Signature verification is never disabled: AllowUnauthenticated is explicitly false.
@@ -141,7 +177,18 @@ fi
 
 # --- Output -------------------------------------------------------------------
 if supports --checksums; then set -- "$@" --checksums sha256; fi
-if supports --binary-compression; then set -- "$@" --binary-compression xz; fi
+# Root filesystem compression. NOT --compression: in the pinned release that option means the
+# compression of intermediate tarballs (bzip2|gzip|lzip|xz|none), while the squashfs
+# algorithm is --chroot-squashfs-compression-type. Older releases called the squashfs one
+# --binary-compression. Picking the wrong one would silently change something else, so both
+# are probed by their own names.
+if supports --chroot-squashfs-compression-type; then
+    set -- "$@" --chroot-squashfs-compression-type xz
+elif supports --binary-compression; then
+    set -- "$@" --binary-compression xz
+else
+    SKIPPED="${SKIPPED} --chroot-squashfs-compression-type"
+fi
 if supports --source; then set -- "$@" --source false; fi
 if supports --zsync; then set -- "$@" --zsync false; fi
 
@@ -151,8 +198,10 @@ if supports --cache-indices; then set -- "$@" --cache-indices true; fi
 if supports --cache-packages; then set -- "$@" --cache-packages true; fi
 
 # --- Tasks --------------------------------------------------------------------
-# AstraOS selects packages explicitly per category (config/package-lists/), so Debian
-# task metapackages are disabled to avoid duplicate applications.
+# AstraOS selects packages explicitly per category (config/package-lists/), so Debian task
+# metapackages are never requested. The pinned live-build does not document --tasks at all,
+# and nothing adds a task metapackage unless asked, so no action is needed there. The probe
+# stays for older releases, where the flag existed and had to be cleared explicitly.
 if supports --tasks; then set -- "$@" --tasks ""; fi
 
 say "distribution : ${ASTRAOS_BASE_DISTRIBUTION} ${ASTRAOS_BASE_RELEASE_VERSION} (${ASTRAOS_BASE_SUITE})"

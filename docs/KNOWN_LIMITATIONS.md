@@ -164,7 +164,20 @@ menu vary by firmware and resolution, and this is a common source of "the boot m
 invisible" reports. Both fall back to plain colours rather than an image, so an unreadable
 menu is unlikely — but unverified.
 
-### 3.10 No AI features
+### 3.10 The boot menu timeout is live-build's default
+
+The pinned live-build (20250505 for Debian 13) has no option for the boot menu timeout: the
+`--syslinux-timeout` option that older releases provided was removed, and the rest of its
+option list contains nothing equivalent. The configuration script probes for it, so the
+build manifest records it as a skipped option instead of silently ignoring the setting.
+
+The consequence is that the menu waits for however long live-build's own bootloader
+template says. The failsafe entry, which boots without `quiet splash` and with ACPI and
+power management disabled (plan §7.4), is therefore easier or harder to reach than intended
+depending on that default. The fix is to ship our own bootloader template with an explicit
+timeout; it is deferred because it cannot be verified without booting an image.
+
+### 3.11 No AI features
 
 AstraOS 0.1.0 includes no AI assistant and no AI component in the boot path. This is
 stated as a limitation because the project's long-term plan includes one, and because a
