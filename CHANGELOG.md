@@ -19,6 +19,12 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- The AstraOS packages were staged one directory too deep. `build-packages.sh` wrote them to
+  `build/live-build/live-build/config/packages.chroot`, while live-build only reads
+  `config/packages.chroot` directly under its working directory. All five `.deb` files were
+  built correctly and then left out of the image, so the image had no `astraos-info`, no
+  branding and no installer. The identity hook caught it by asserting that the AstraOS
+  packages are present after installation, and a test now rejects the repeated path segment.
 - The image contained every `firmware-*` package in the Debian archive, not the reviewed
   selection in `config/package-lists/20-firmware.list.chroot`: live-build scans the archive
   and installs them all unless told not to. It also pulled in the contrib packages

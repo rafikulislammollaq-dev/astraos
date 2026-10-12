@@ -19,7 +19,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tests" / "lib"))
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "lib"))
 
+import astraos_env  # noqa: E402
 from astraos_testlib import SkipTest  # noqa: E402
 
 DESCRIPTION = "shell scripts are syntactically valid and follow the project's rules"
@@ -332,6 +334,37 @@ def test_live_build_auto_scripts_do_not_recurse() -> None:
     assert (auto_dir / "config").is_file(), (
         "config/live-build/auto/config is missing, so `lb build` would run with no "
         "AstraOS configuration at all"
+    )
+
+
+def test_build_paths_do_not_repeat_the_live_build_segment() -> None:
+    """The build root is the live-build working directory; it must not appear twice.
+
+    `config/packages.chroot` only means something directly under that directory: the .deb
+    files are installed from there. One level deeper lives a directory live-build never
+    reads, so the packages are built successfully and then quietly left out of the image.
+    That is what happened once — the first symptom was the identity hook failing because
+    /usr/bin/astraos-info was not in the chroot, which is a long way from the typo.
+    """
+    document = astraos_env.distribution()
+    build_dir = document["ASTRAOS_BUILD_DIR"]
+    offenders: list[str] = []
+
+    for path in _scripts():
+        # Comments are stripped: the scripts legitimately explain this trap in prose, and
+        # the explanation has to name the path it is warning about.
+        text = "\n".join(
+            line
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        for needle in (f"{build_dir}/live-build", "live-build/live-build"):
+            if needle in text:
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: contains {needle!r}")
+
+    assert not offenders, (
+        f"{build_dir} is the live-build working directory, so appending another live-build "
+        "segment stages files where live-build will never look:\n  " + "\n  ".join(offenders)
     )
 
 

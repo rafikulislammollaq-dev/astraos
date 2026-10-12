@@ -32,7 +32,12 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PACKAGES_DIR="${REPO_ROOT}/packages"
 OUT_DIR="${REPO_ROOT}/${ASTRAOS_BUILD_DIR}/packages"
 STAGE_ROOT="${REPO_ROOT}/${ASTRAOS_BUILD_DIR}/package-stage"
-LIVE_PACKAGES_DIR="${REPO_ROOT}/${ASTRAOS_BUILD_DIR}/live-build/config/packages.chroot"
+# ASTRAOS_BUILD_DIR is already the live-build working directory (build/live-build), so the
+# staged packages go directly under its config/. An earlier version appended /live-build
+# again, which staged them into a directory live-build never reads: the .deb files were
+# built correctly and then silently left out of the image, and the first sign of it was the
+# identity hook failing because /usr/bin/astraos-info was missing from the chroot.
+LIVE_PACKAGES_DIR="${REPO_ROOT}/${ASTRAOS_BUILD_DIR}/config/packages.chroot"
 LOG_DIR="${REPO_ROOT}/${ASTRAOS_LOG_DIR}"
 
 # Progress goes to stderr, and stdout carries only data.
