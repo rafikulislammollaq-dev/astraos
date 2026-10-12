@@ -80,6 +80,13 @@ check "desktop wallpaper is seeded"       test -f /etc/skel/.config/xfce4/xfconf
 check "astraos wallpaper is installed"    sh -c 'ls /usr/share/astraos/wallpapers/*.png >/dev/null 2>&1'
 check "astraos logo is installed"         test -f /usr/share/astraos/logos/astraos-logo.svg
 check "plymouth theme is installed"       test -f /usr/share/plymouth/themes/astraos/astraos.plymouth
+# Selected by 0120-plymouth, which has to run after plymouth is configured (see
+# docs/KNOWN_LIMITATIONS.md §3.13). The initramfs carries its own copy of the theme and of
+# this setting, so both are asserted here: a splash that is selected but absent from the
+# initramfs is exactly what the user would see as a missing splash.
+grep_q "plymouth selects the AstraOS theme" /etc/plymouth/plymouthd.conf '^Theme=astraos$'
+check "the AstraOS theme is in the initramfs" \
+    sh -c 'command -v lsinitramfs >/dev/null 2>&1 && lsinitramfs /boot/initrd.img-* 2>/dev/null | grep -q "usr/share/plymouth/themes/astraos"'
 
 # --- Installer ----------------------------------------------------------------
 check "calamares is installed"            test -x /usr/bin/calamares

@@ -12,26 +12,20 @@ PREFIX='[astraos-branding]'
 warn() { echo "${PREFIX} $*" >&2; }
 
 # --- Plymouth boot splash -----------------------------------------------------
-# Set the AstraOS theme as the active one and rebuild the initramfs so the splash is
-# present from the very first boot. Without the initramfs rebuild the theme applies
-# only after the kernel hands over, which looks like a broken splash.
-if [ -d /usr/share/plymouth/themes/astraos ] && command -v plymouth-set-default-theme >/dev/null 2>&1; then
-    if plymouth-set-default-theme astraos >/dev/null 2>&1; then
-        if command -v update-initramfs >/dev/null 2>&1; then
-            update-initramfs -u >/dev/null 2>&1 \
-                || warn "the initramfs could not be rebuilt; run: sudo update-initramfs -u"
-        fi
-    else
-        warn "could not set the Plymouth theme to astraos"
-    fi
-fi
-
-# If plymouth is absent, record the theme as the default anyway so it is picked up if
-# plymouth is installed later.
-if [ -f /usr/share/plymouth/themes/astraos/astraos.plymouth ] \
-   && [ ! -e /etc/alternatives/default.plymouth ]; then
-    :
-fi
+# NOT selected here. `plymouth-set-default-theme` rewrites /etc/plymouth/plymouthd.conf,
+# which the plymouth package owns as a configuration file, and this script runs inside the
+# very same dpkg run that configures plymouth. dpkg had already unpacked its copy of that
+# file, found a different one on disk when it came to configure the package, and stopped to
+# ask which version to keep:
+#
+#   Configuration file '/etc/plymouth/plymouthd.conf'
+#   *** plymouthd.conf (Y/I/N/O/D/Z) [default=N] ? dpkg: error processing package
+#     plymouth (--configure): end of file on stdin at conffile prompt
+#
+# Nothing answers that question while an image is being built, so the build failed after
+# the whole base system had been installed. The theme is selected by
+# config/live-build/config/hooks/live/0120-plymouth.hook.chroot, which runs after every
+# package is installed and configured. See docs/KNOWN_LIMITATIONS.md §3.13.
 
 # --- Icon theme cache ---------------------------------------------------------
 # The icon theme is only found by applications once the index is registered.

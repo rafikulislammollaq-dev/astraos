@@ -19,6 +19,21 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- `astraos-branding`'s post-install script selected the boot-splash theme with
+  `plymouth-set-default-theme`, which rewrites `/etc/plymouth/plymouthd.conf` — a file the
+  `plymouth` package owns. A maintainer script runs inside the dpkg run that is configuring
+  that very package, so dpkg found a configuration file that no longer matched the copy it
+  had unpacked and stopped to ask which version to keep. Nothing answers that during a
+  build, and the image build failed at the end of the chroot stage with "end of file on
+  stdin at conffile prompt", after the entire base system had been installed. The theme is
+  now selected by `config/live-build/config/hooks/live/0120-plymouth.hook.chroot`, which
+  runs after every package is installed and configured; the hook rebuilds the initramfs,
+  since the initramfs carries its own copy of the theme, and aborts the build if the theme,
+  the tool or the rebuild is missing. The verify hook asserts both the selected theme and
+  its presence in the initramfs, and a test rejects any package maintainer script that calls
+  a tool rewriting another package's configuration file (verified to fail against the
+  postinst as it was).
+
 - The desktop defaults were installed into `/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/`,
   which belongs to Debian's Xfce packages: `libxfce4ui-common` owns the keyboard shortcuts
   file and `xfce4-settings` and `xfce4-session` own two more. Two packages cannot own the

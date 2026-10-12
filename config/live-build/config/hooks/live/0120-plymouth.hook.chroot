@@ -1,0 +1,55 @@
+#!/bin/sh
+# AstraOS boot splash hook (chroot stage, runs after every package is configured).
+#
+# WHY THIS IS A HOOK AND NOT A PACKAGE INSTALL STEP
+# ------------------------------------------------
+# `plymouth-set-default-theme` selects the default theme by editing
+# /etc/plymouth/plymouthd.conf. That file belongs to the plymouth package: plymouth ships
+# it and dpkg records its contents when the package is configured.
+#
+# A package postinst runs *inside* the same dpkg run that configures plymouth. When
+# astraos-branding's postinst called the tool, the file on disk stopped matching the copy
+# dpkg had just unpacked, so dpkg stopped to ask which version to keep, found no input on
+# stdin and failed the whole image build:
+#
+#   Configuration file '/etc/plymouth/plymouthd.conf'
+#   *** plymouthd.conf (Y/I/N/O/D/Z) [default=N] ? dpkg: error processing package
+#     plymouth (--configure): end of file on stdin at conffile prompt
+#
+# Chroot hooks run after installation and configuration are finished, so the same edit is
+# an ordinary local change to a configuration file rather than a conflict with the package
+# that owns it. The trade-off — an upgrade of plymouth may later report the file as locally
+# modified — is recorded in docs/KNOWN_LIMITATIONS.md §3.13, next to the same trade-off for
+# the identity files that 0100-identity writes.
+#
+# The initramfs carries its own copy of the theme and of this setting, so it has to be
+# rebuilt after the theme is selected. Without that rebuild the splash is missing its theme
+# and falls back to the plain text animation.
+
+set -eu
+
+PREFIX='[astraos:plymouth]'
+THEME=astraos
+CONF=/etc/plymouth/plymouthd.conf
+THEME_FILE=/usr/share/plymouth/themes/${THEME}/${THEME}.plymouth
+
+log() { printf '%s %s\n' "$PREFIX" "$*"; }
+fail() { printf '%s ERROR: %s\n' "$PREFIX" "$*" >&2; exit 1; }
+
+# A missing theme is not cosmetic: the release promises a branded splash, and an image that
+# quietly boots the upstream text animation is worse than a build that stops here.
+[ -f "$THEME_FILE" ] || fail "the AstraOS Plymouth theme is missing: ${THEME_FILE}"
+command -v plymouth-set-default-theme >/dev/null 2>&1 \
+    || fail "plymouth-set-default-theme is not installed; the plymouth package is required"
+
+log "selecting the ${THEME} theme"
+plymouth-set-default-theme "$THEME" || fail "could not select the ${THEME} theme"
+
+grep -q "^Theme=${THEME}\$" "$CONF" \
+    || fail "${CONF} does not select ${THEME} after plymouth-set-default-theme"
+log "${CONF} selects ${THEME}"
+
+log "rebuilding the initramfs so the theme is in place from the first frame"
+update-initramfs -u || fail "the initramfs could not be rebuilt; the splash would not appear"
+
+log "boot splash configured"

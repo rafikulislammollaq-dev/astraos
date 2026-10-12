@@ -201,6 +201,30 @@ stated as a limitation because the project's long-term plan includes one, and be
 future AI feature must never be required for startup, login, networking, package
 management or recovery.
 
+### 3.13 Plymouth's theme file is written at image build time
+
+`plymouth-set-default-theme` selects the boot-splash theme by editing
+`/etc/plymouth/plymouthd.conf`. That file belongs to the `plymouth` package, which ships it
+as a configuration file.
+
+AstraOS therefore does **not** call the tool from `astraos-branding`'s post-install script.
+That script runs inside the very same dpkg run that configures `plymouth`, so dpkg found a
+file that no longer matched the copy it had unpacked and stopped to ask which version to
+keep — a question that nothing answers during a build:
+
+```
+Configuration file '/etc/plymouth/plymouthd.conf'
+*** plymouthd.conf (Y/I/N/O/D/Z) [default=N] ? dpkg: error processing package plymouth
+(--configure): end of file on stdin at conffile prompt
+```
+
+The theme is selected by `config/live-build/config/hooks/live/0120-plymouth.hook.chroot`
+instead, which runs after every package has been installed and configured. The consequence
+is the same one recorded in §1.3 for the identity files: **an upgrade of `plymouth` may
+later report `/etc/plymouth/plymouthd.conf` as locally modified**, and keeping the AstraOS
+theme across such an upgrade is not guaranteed. The build aborts if the theme, the tool or
+the initramfs rebuild is missing, so an image is either branded or not built at all.
+
 ---
 
 ## 4. Reporting these

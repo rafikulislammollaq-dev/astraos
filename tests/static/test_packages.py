@@ -25,6 +25,36 @@ DESCRIPTION = "package lists are well formed and internally consistent"
 # A control field: a name, then a colon. dpkg-deb accepts nothing else at the start of a line.
 FIELD_LINE = re.compile(r"^[A-Za-z][A-Za-z0-9-]*:")
 
+# Tools that rewrite a configuration file belonging to another package, mapped to the file
+# they rewrite. A package maintainer script that calls one of these edits the file *inside*
+# the dpkg run that is configuring the package owning it, so dpkg finds a file that no longer
+# matches the copy it unpacked and stops to ask which version to keep:
+#
+#   Configuration file '/etc/plymouth/plymouthd.conf'
+#   *** plymouthd.conf (Y/I/N/O/D/Z) [default=N] ? dpkg: error processing package
+#     plymouth (--configure): end of file on stdin at conffile prompt
+#
+# Nothing answers that question during an unattended build, so the whole image build fails
+# after every package has been installed. `plymouth-set-default-theme` edits its file with
+# sed(1); the tool and the file were read out of the plymouth package itself.
+#
+# A chroot hook may call these: hooks run after installation and configuration are finished,
+# so the same edit is a local change to a configuration file rather than a conflict. See
+# docs/KNOWN_LIMITATIONS.md §3.13.
+CONFFILE_EDITING_TOOLS = {
+    "plymouth-set-default-theme": "/etc/plymouth/plymouthd.conf",
+}
+
+MAINTAINER_SCRIPTS = ("preinst", "postinst", "prerm", "postrm")
+
+PLYMOUTH_HOOK = "config/live-build/config/hooks/live/0120-plymouth.hook.chroot"
+
+
+def _without_comments(text: str) -> str:
+    return "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+
 # A Debian package name: lowercase letters, digits, plus, minus and dots; must start
 # with an alphanumeric.
 VALID_NAME = re.compile(r"^[a-z0-9][a-z0-9+.-]*$")
@@ -151,6 +181,64 @@ def test_control_files_are_valid_control_paragraphs() -> None:
     assert not offenders, (
         "dpkg-deb cannot parse these control-file lines, so the package build would fail:\n  "
         + "\n  ".join(offenders)
+    )
+
+
+def test_package_scripts_do_not_edit_configuration_owned_by_another_package() -> None:
+    """Packages may not edit a conffile that another package owns, and dpkg enforces it.
+
+    This is the third variant of one mistake: AstraOS touching a path Debian already owns.
+    The first two were file conflicts, where the second owner is refused outright. This one
+    is subtler — the edit succeeds, and the failure comes later, when dpkg configures the
+    package that owns the file and finds its contents changed. It stops at a prompt that
+    nothing answers during a build, so the image build dies at the very end of the chroot
+    stage with "end of file on stdin at conffile prompt".
+    """
+    offenders: list[str] = []
+    for suffix in MAINTAINER_SCRIPTS:
+        for script in sorted((astraos_env.REPO_ROOT / "packages").glob(f"*/{suffix}")):
+            label = script.relative_to(astraos_env.REPO_ROOT).as_posix()
+            code = _without_comments(script.read_text(encoding="utf-8"))
+            # Split on anything that cannot appear in a command name, so `$(` and quoting
+            # around a call do not hide it.
+            words = set(re.split(r"[^A-Za-z0-9_.+-]+", code))
+            for tool, conffile in CONFFILE_EDITING_TOOLS.items():
+                if tool in words:
+                    offenders.append(
+                        f"{label} calls {tool}, which rewrites {conffile} while the package "
+                        "that owns it may not be configured yet"
+                    )
+
+    assert not offenders, (
+        "these maintainer scripts would stop the image build at a dpkg conffile prompt:\n  "
+        + "\n  ".join(offenders)
+        + "\n  Move the call into a chroot hook, which runs after every package is "
+        "installed and configured."
+    )
+
+
+def test_the_plymouth_theme_is_selected_after_packages_are_configured() -> None:
+    """The theme is still selected somewhere, and the somewhere is a hook.
+
+    Without the first assertion this rule could be satisfied by deleting the theme
+    selection altogether, and the image would boot an unbranded upstream splash.
+    """
+    hook = astraos_env.REPO_ROOT / PLYMOUTH_HOOK
+    assert hook.is_file(), (
+        f"{PLYMOUTH_HOOK} does not exist. No package can select the Plymouth theme "
+        "without editing a conffile owned by the plymouth package, so this hook is the "
+        "only place the selection can happen."
+    )
+
+    body = _without_comments(hook.read_text(encoding="utf-8"))
+    assert "plymouth-set-default-theme" in body, (
+        f"{PLYMOUTH_HOOK} is expected to select the AstraOS Plymouth theme; it no longer "
+        "calls plymouth-set-default-theme"
+    )
+    assert "update-initramfs" in body, (
+        f"{PLYMOUTH_HOOK} selects a theme without rebuilding the initramfs. The initramfs "
+        "carries its own copy of the theme, so the splash would fall back to the plain "
+        "text animation."
     )
 
 
