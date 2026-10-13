@@ -42,7 +42,10 @@ mkdir -p .disk
 # repository's configure step) the release's real values are used as fallbacks.
 STAGED_ENV=../chroot/usr/share/astraos/staged/distribution.env
 if [ -f "$STAGED_ENV" ]; then
-    # shellcheck disable=SC1091
+    # The path is in a variable, so ShellCheck cannot follow it and reports SC1090. The build
+    # scripts answer that with the same directive, and every value the file can set has a
+    # default below, so nothing depends on it being read.
+    # shellcheck source=/dev/null
     . "$STAGED_ENV"
 else
     log "WARNING: ${STAGED_ENV} not found; using the release's pinned defaults"
