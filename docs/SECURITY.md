@@ -141,9 +141,25 @@ on any machine, and `KNOWN_LIMITATIONS.md` §1.2 says so explicitly.
 ## 7. Secrets
 
 - The repository is scanned for private keys, cloud keys, API tokens and password
-  assignments by `tests/static/test_repository.py`.
-- The image build scans `/etc` for private keys and fails if one is found
-  (`0500-security.hook.chroot`).
+  assignments by `tests/static/test_repository.py`. The private-key pattern recognises the
+  shape of an armored block (a bare header line followed within a few lines by base64
+  payload or by the matching footer) rather than the header text, so documentation, a
+  magic(5) entry and a parser constant are not reported as keys.
+- The image build runs `astraos-scan-secrets` and refuses to build when it finds an armored
+  private key (`0500-security.hook.chroot`, tool shipped in `astraos-base`). It scans
+  `/etc`, `/root`, `/home`, `/srv`, `/opt`, `/usr/local`, `/var/lib` and
+  `/usr/share/astraos`, and the hook fails if the tool is missing from the image, so a
+  scanner that is not there cannot pass as a clean image.
+- The scan tests for the *shape* of a key rather than for the armor header text: a line that
+  is exactly an armor header, followed before the block ends by the matching footer or by
+  base64 payload. Files that merely name the format — a magic(5) entry, a compiled-in parser
+  constant, a documentation line — are printed as notes instead of failing the build, and
+  every match is printed with its path and its dpkg owner. That distinction has a build
+  behind it: the earlier text search failed a real build on a Debian data file and reported
+  the pattern it had searched for instead of the file that matched.
+- Recognised forms: the PGP armors (including the pre-2.0 `PGP SECRET KEY` spelling),
+  PKCS#1, PKCS#8 (`-----BEGIN PRIVATE KEY-----`), encrypted PKCS#8, OpenSSH and SSH2. What
+  the scan cannot see is recorded in `KNOWN_LIMITATIONS.md` §3.14.
 - No credentials, keys or tokens are committed, embedded in the ISO, or passed to CI.
 - `astraos-info` and the other utilities deliberately do not read `/etc/shadow`,
   NetworkManager connection profiles, keyrings, or environment variables that commonly

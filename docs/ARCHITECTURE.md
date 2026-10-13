@@ -138,7 +138,7 @@ conffile semantics and appear in `dpkg -S`. Hooks do only what packages cannot:
 
 | Package | Owns | Depends on |
 |---|---|---|
-| `astraos-base` | `/etc/astraos-release`, sysctl defaults, sudo policy, APT policy, firewall policy, `astraos-info` | bash, coreutils, procps, iproute2, util-linux |
+| `astraos-base` | `/etc/astraos-release`, sysctl defaults, sudo policy, APT policy, firewall policy, `astraos-info`, `astraos-scan-secrets` | bash, coreutils, procps, iproute2, util-linux |
 | `astraos-branding` | logos, wallpapers, icon theme, Plymouth theme, GRUB theme, LightDM assets and drop-in | fonts-dejavu-core, hicolor-icon-theme |
 | `astraos-desktop` | Xfce system defaults, skeleton home, launchers, GTK theme | xfce4-*, thunar, lightdm |
 | `astraos-system-tools` | `astraos-help`, `astraos-welcome`, `astraos-release-info`, `astraos-recovery-guide` | astraos-base |

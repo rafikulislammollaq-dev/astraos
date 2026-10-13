@@ -88,6 +88,18 @@ REPORTERS = {
 }
 
 
+def _code_head(text: str, lines: int = 40) -> list[str]:
+    """The first `lines` lines of *code*, with comment-only lines removed.
+
+    The window is measured over code rather than over the file, because a script whose
+    header explains a real failure at length would otherwise fail a check about where its
+    strict mode is set. The rule being tested is "strict mode is set before anything runs",
+    not "the documentation is short" — and a check that punishes a well-documented script is
+    a check that gets a shorter comment rather than a correct script.
+    """
+    return [line for line in text.splitlines() if not line.lstrip().startswith("#")][:lines]
+
+
 def test_scripts_enable_strict_mode_or_aggregate_failures() -> None:
     """Each script must fail loudly, in one of the two documented ways.
 
@@ -100,20 +112,20 @@ def test_scripts_enable_strict_mode_or_aggregate_failures() -> None:
 
     for path in _scripts():
         text = path.read_text(encoding="utf-8", errors="replace")
-        head = "\n".join(text.splitlines()[:40])
+        head = _code_head(text)
 
         if path.name in REPORTERS:
             # A reporter must not use `set -e`; it has to survive a missing tool.
             assert not any(
                 line.strip().split()[:1] == ["set"] and "e" in line.strip().split()[1].lstrip("-")
-                for line in text.splitlines()[:40]
+                for line in head
                 if line.strip().startswith("set ")
             ), f"{path.name} is a reporter and must not use set -e"
             continue
 
         uses_e = any(
             line.strip().startswith("set ") and "e" in line.strip().split()[1].lstrip("-")
-            for line in head.splitlines()
+            for line in head
             if len(line.strip().split()) > 1
         )
         if uses_e:

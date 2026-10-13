@@ -108,13 +108,21 @@ else
 fi
 
 # --- Secrets ------------------------------------------------------------------
-# Nothing secret belongs in the image. Check for the obvious mistakes.
+# Nothing secret belongs in the image.
+#
+# This used to be a grep loop inside this hook, and it is a shipped tool now for a reason
+# that cost a build: the loop failed the build on a Debian file which merely *names* the
+# armor format, and it printed the pattern it had searched for instead of the file that
+# matched, so the log held nothing to investigate. astraos-scan-secrets tests for the shape
+# of an armored key, prints every path it matched together with its dpkg owner, and is
+# covered by tests/security/test_secret_scan.py.
 log "checking that no credentials are embedded"
-for pattern in 'BEGIN RSA PRIVATE KEY' 'BEGIN OPENSSH PRIVATE KEY' 'BEGIN PGP PRIVATE KEY' 'BEGIN EC PRIVATE KEY'; do
-    if grep -rlqs "$pattern" /etc 2>/dev/null; then
-        fail "a private key appears to be embedded in the image (${pattern})"
-    fi
-done
+if [ ! -x /usr/bin/astraos-scan-secrets ]; then
+    fail "astraos-scan-secrets is missing from the image, so credentials cannot be checked for"
+fi
+if ! /usr/bin/astraos-scan-secrets --root /; then
+    fail "the image contains an embedded credential; the paths are listed above"
+fi
 
 if grep -rqsE 'AllowUnauthenticated[[:space:]]+"true"' /etc/apt/ 2>/dev/null; then
     fail "an APT configuration file enables unauthenticated packages"

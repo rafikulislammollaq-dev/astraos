@@ -225,6 +225,30 @@ later report `/etc/plymouth/plymouthd.conf` as locally modified**, and keeping t
 theme across such an upgrade is not guaranteed. The build aborts if the theme, the tool or
 the initramfs rebuild is missing, so an image is either branded or not built at all.
 
+### 3.14 The credential scan cannot see everything
+
+`astraos-scan-secrets` runs at image build time (`0500-security.hook.chroot`) and refuses
+the build when it finds an armored private key. Three limits are known and deliberate:
+
+- **`/usr/share/doc` is out of scope.** Debian ships *example* keys in the documentation of
+  some packages — the `openvpn` examples contain a sample CA, server and client keys — and a
+  sample in a manual is not a credential. Flagging those would make the check unrunnable, so
+  the scan covers `/etc`, `/root`, `/home`, `/srv`, `/opt`, `/usr/local`, `/var/lib` and
+  `/usr/share/astraos`.
+- **A key inside an archive, a firmware blob or any other binary is not detected as a key.**
+  Binary files that mention the armor text are reported as *notes* instead of findings,
+  because a compiled-in parser constant (the one in `ssh-keygen`, for example) contains the
+  same text and nothing distinguishes them by text alone. What is detected is the shape of an
+  armored block: a line that is exactly an armor header, followed before the block ends by
+  the matching footer or by base64 payload.
+- **A key generated after the hook has run is not seen.** Nothing in AstraOS generates one
+  into the image, and the SSH host keys that OpenSSH creates on a real installation are the
+  case plan §10.4 wants: they belong to the machine, not to the image.
+
+An encrypted key is reported like any other, and so is a block that lost its last line to a
+bad copy. Files that only *mention* a format are printed with their path and dpkg owner and
+do not fail the build; that output is the audit trail for the decision to let them through.
+
 ---
 
 ## 4. Reporting these

@@ -19,6 +19,28 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- The credential scan stopped a real image build without saying what it had found. The
+  hook searched `/etc` for the text `BEGIN PGP PRIVATE KEY` and printed the pattern it had
+  searched for rather than the file that matched, so the build log held no path to
+  investigate; a text search also cannot tell a leaked key from a file that merely *names*
+  the armor format, which is what it matched. The check is now `astraos-scan-secrets`, a
+  tool shipped in `astraos-base` and run by `0500-security.hook.chroot`, and it reports
+  every match with its path and its dpkg owner. It recognises a key by its shape — a line
+  that is exactly an armor header, followed before the block ends by the matching footer or
+  by base64 payload — so magic(5) entries, compiled-in parser constants and documentation
+  lines are reported as notes instead of failing the build. The scan also covers `/root`,
+  `/home`, `/srv`, `/opt`, `/usr/local`, `/var/lib` and `/usr/share/astraos` instead of
+  `/etc` alone, and it recognises the PKCS#8 armors (`-----BEGIN PRIVATE KEY-----` and
+  `-----BEGIN ENCRYPTED PRIVATE KEY-----`) and the pre-2.0 `PGP SECRET KEY` spelling, none
+  of which was in the fixed list of patterns it replaced. The tool is exercised against
+  fixture trees by `tests/security/test_secret_scan.py`, including the magic(5) shape that
+  failed the build and the requirement that a failure names the file.
+- The repository scan in `tests/static/test_repository.py` used the same text search and had
+  the same weakness: naming an armor header in a comment or in documentation was reported as
+  a committed key. It now uses the shape rule too, so it still catches a key written into a
+  file — including one missing its final line — and no longer requires an exception list to
+  be told apart from a paragraph about keys.
+
 - The security hook searched `/etc/sudoers.d` for the word `NOPASSWD` and matched the
   shipped policy's own sentence saying that no such rule exists, so a correct image was
   refused with "a passwordless sudo rule is present in /etc/sudoers.d". Both hooks now look

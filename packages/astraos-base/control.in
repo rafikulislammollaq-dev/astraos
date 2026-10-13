@@ -10,7 +10,8 @@ Recommends: pciutils, usbutils, lm-sensors
 Description: AstraOS base system identity, policy and diagnostics
  Provides the parts of AstraOS that are not branding or desktop: the distribution
  identity file, the sysctl hardening defaults, the sudo policy, the APT signature
- policy, the documented firewall policy, and the astraos-info diagnostic command.
+ policy, the documented firewall policy, the astraos-info diagnostic command, and
+ astraos-scan-secrets, the credential scan that the image build runs before packing.
  .
  This is an independent distribution based on Debian GNU/Linux. It is not an
  official Debian release. /etc/os-release, /etc/issue and /etc/motd are written at

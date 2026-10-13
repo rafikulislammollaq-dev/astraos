@@ -423,3 +423,36 @@ def test_kpmcore_is_versioned() -> None:
         "'kpmcore' is not a real package in Debian trixie; the versioned library name "
         "must be used (see config/package-lists/60-installer.list.chroot)"
     )
+
+
+HOOK_DIR = REPO_ROOT / "config" / "live-build" / "config" / "hooks" / "live"
+TOOL_REFERENCE = re.compile(r"/usr/bin/(astraos-[a-z][a-z0-9-]*)")
+
+
+def test_tools_run_by_the_build_hooks_are_shipped_by_a_package() -> None:
+    """A hook may only run a tool that the image actually contains.
+
+    Hooks execute *inside* the chroot, where a wrong tool name is neither a syntax error nor
+    a missing file on the host: the build fails minutes in, after every package has been
+    installed, with "not found". What puts a tool in the image is the root tree of one of
+    the packages built here, so the two have to agree.
+    """
+    referenced: set[str] = set()
+    for hook in sorted(HOOK_DIR.glob("*.chroot")):
+        text = "".join(
+            line
+            for line in hook.read_text(encoding="utf-8", errors="replace").splitlines(True)
+            if not line.lstrip().startswith("#")
+        )
+        referenced.update(TOOL_REFERENCE.findall(text))
+
+    assert referenced, "no hook runs an astraos tool; this test is watching nothing"
+
+    shipped = {
+        path.name for path in (REPO_ROOT / "packages").glob("*/root/usr/bin/astraos-*")
+    }
+    missing = sorted(referenced - shipped)
+    assert not missing, (
+        "these tools are run by a build hook but are not shipped by any package, so the "
+        "hook would fail inside the chroot: " + ", ".join(missing)
+    )

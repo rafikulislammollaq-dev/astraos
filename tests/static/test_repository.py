@@ -166,10 +166,29 @@ def test_no_fixed_credentials_in_the_installer() -> None:
     )
 
 
+# A private key is recognised by the shape of an armored block, not by the armor header
+# text, for the same reason the shipped scanner (astraos-scan-secrets) is: the header text
+# also appears in documentation, in a magic(5) database and as a compiled-in parser
+# constant, and a check that fires on those is a check people learn to ignore.
+#
+# What this matches is a bare header line followed, within a few lines, by base64 payload or
+# by the matching footer — which is what a key written into a file looks like, including one
+# that lost its last line to a bad copy. Documentation that names the header is not a key,
+# and a sample key inside a test fixture is only reported when it is written the way a real
+# one would be written.
+PRIVATE_KEY_BLOCK = re.compile(
+    r"^-----BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)?-----"
+    r"(?:\r?\n[^\n]{0,80}){0,4}?\r?\n"
+    r"(?:[A-Za-z0-9+/]{16,}={0,2}$"
+    r"|-----END [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)?-----)",
+    re.MULTILINE,
+)
+
+
 def test_no_secrets_committed() -> None:
     """Scan the repository for private keys and obvious tokens."""
     patterns = {
-        "private key": re.compile(r"-{5}BEGIN [A-Z ]*PRIVATE KEY-{5}"),
+        "private key": PRIVATE_KEY_BLOCK,
         "AWS access key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
         "GitHub token": re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
         "generic api key": re.compile(r"(?i)\bapi[_-]?key\s*[:=]\s*[\"'][A-Za-z0-9_\-]{16,}[\"']"),

@@ -40,6 +40,7 @@ REMOVEUSER = "installer/calamares/modules/removeuser.conf"
 USERS_CONF = "installer/calamares/modules/users.conf"
 GREETER_DROPIN = "branding/lightdm/lightdm.conf.d/50-astraos.conf"
 ASTRAOS_INFO = "packages/astraos-base/root/usr/bin/astraos-info"
+SCAN_SECRETS = "packages/astraos-base/root/usr/bin/astraos-scan-secrets"
 
 
 def test_sudo_policy_has_no_passwordless_rule() -> None:
@@ -146,11 +147,32 @@ def test_build_locks_the_root_account() -> None:
 
 
 def test_build_fails_on_embedded_credentials() -> None:
-    """The image build must refuse to ship a private key."""
+    """The image build must refuse to ship a private key, and must be able to say why.
+
+    The check lives in a shipped tool (`test_secret_scan.py` runs it against fixture trees)
+    rather than in this hook, because the version that lived here failed a real build on a
+    file that merely names the armor format and printed the pattern instead of the path.
+    What this hook has to do is fail when the tool fails, and refuse to run at all when the
+    tool is not in the image.
+    """
     hook = read(SECURITY_HOOK)
-    for pattern in ("BEGIN RSA PRIVATE KEY", "BEGIN OPENSSH PRIVATE KEY"):
-        assert pattern in hook, (
-            f"the build does not check for {pattern!r} in the image"
+    assert "/usr/bin/astraos-scan-secrets" in hook, (
+        "the build does not scan the image for private keys"
+    )
+    assert re.search(r"^\s*if !\s+\S*astraos-scan-secrets", hook, re.M), (
+        "the build runs the credential scan but does not fail when it finds something, so "
+        "an embedded key would only appear in the log"
+    )
+    assert re.search(r"^\s*if \[ ! -x \S*astraos-scan-secrets \]", hook, re.M), (
+        "the hook does not check that the scanner is present. If astraos-base were replaced "
+        "by a version without the tool, a missing scanner would look like a clean image."
+    )
+
+    tool = read(SCAN_SECRETS)
+    for kind in ("PRIVATE", "SECRET"):
+        assert kind in tool, (
+            f"the scanner's key patterns do not mention {kind}, so a whole family of keys "
+            "would be invisible"
         )
 
 

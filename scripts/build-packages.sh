@@ -227,6 +227,14 @@ stage_package() {
         cp -a "${src}/root/." "$stage/"
     fi
 
+    # Commands shipped in /usr/bin must be executable. The mode is applied here instead of
+    # being trusted from the working tree, because a checkout on a host that has no execute
+    # bit (Windows) would otherwise install tools that cannot run; the first symptom of that
+    # was the identity hook failing because /usr/bin/astraos-info was not executable.
+    if [ -d "${stage}/usr/bin" ]; then
+        find "${stage}/usr/bin" -type f -exec chmod 0755 {} +
+    fi
+
     # conffiles list, one path per line, comments allowed.
     if [ -f "${src}/conffiles" ]; then
         grep -v '^[[:space:]]*#' "${src}/conffiles" \
@@ -260,7 +268,6 @@ mkdir -p "${BASE_STAGE}/etc/sysctl.d" "${BASE_STAGE}/usr/share/doc/astraos-base"
 substitute "${REPO_ROOT}/system/astraos-release.in" "${BASE_STAGE}/etc/astraos-release"
 cp -f "${REPO_ROOT}/system/sysctl/60-astraos.conf" "${BASE_STAGE}/etc/sysctl.d/60-astraos.conf"
 cp -f "${REPO_ROOT}/LICENSE" "${BASE_STAGE}/usr/share/doc/astraos-base/copyright"
-chmod 0755 "${BASE_STAGE}/usr/bin/astraos-info"
 
 say "assembling astraos-system-tools"
 TOOLS_STAGE="$(stage_package astraos-system-tools)"
