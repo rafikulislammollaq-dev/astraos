@@ -30,6 +30,7 @@ SHELL_GLOBS = [
     "scripts/*.sh",
     "config/live-build/auto/*",
     "config/live-build/config/hooks/live/*.hook.chroot",
+    "config/live-build/config/hooks/live/*.hook.binary",
     "packages/*/root/usr/bin/astraos-*",
     "packages/*/postinst",
     "packages/*/preinst",
@@ -127,6 +128,73 @@ def test_no_command_is_given_several_globs() -> None:
     assert not offenders, (
         "these commands are given more than one glob, so an unmatched pattern is passed to "
         "the command as literal text and fails it:\n  " + "\n  ".join(offenders)
+    )
+
+
+# A pipeline into `grep -q` in a script that enables `set -o pipefail`. `grep -q` exits as
+# soon as it matches, so the command feeding it is killed with SIGPIPE (or fails to write),
+# and pipefail then reports the *successful* match as a failed pipeline. The match is real and
+# the check says it is not, which is the worst way for a check to be wrong.
+#
+# The lookarounds exclude `||`, which is a shell operator and not a pipeline. A nested shell
+# (`sh -c '... | grep -q ...'`) is excluded separately: it does not inherit pipefail, so its
+# pipeline status is grep's and the idiom is safe there.
+PIPELINE_INTO_GREP_Q = re.compile(r"(?<!\|)\|(?!\|)\s*grep\s+-[A-Za-z]*q")
+
+
+def _pipes_into_grep_q(line: str) -> bool:
+    stripped = line.strip()
+    if stripped.startswith("#"):
+        return False
+    if "sh -c" in stripped or "bash -c" in stripped:
+        return False
+    return PIPELINE_INTO_GREP_Q.search(stripped) is not None
+
+
+def test_no_pipeline_into_grep_q_where_pipefail_is_set() -> None:
+    """A `grep -q` at the end of a pipeline must read a file, not a stream.
+
+    This is not hypothetical: `validate-iso.sh` reported a complete live filesystem as
+    missing eight of its nine components because of it. The squashfs really held everything
+    it looked for — 152556 inodes, `/usr/bin/astraos-info` among them, and the image
+    verification hook inside the chroot had found the same paths minutes earlier — but the
+    6 MB listing was piped into `grep -q`, every match before the end of that listing killed
+    `printf` with SIGPIPE, and pipefail turned each match into exit status 141. Only the one
+    pattern that happened to sit near the end survived the race, which is why the check
+    looked like it was working and the image looked like it was broken.
+
+    The rule is that the check reads a file. A file cannot race.
+    """
+    # The detector is checked against the line that failed a real build, so a guard that has
+    # stopped recognising it cannot pass quietly, and against the repairs and the false
+    # positives that must not be reported.
+    historical = '            if printf \'%s\' "$CONTENTS" | grep -q -- "$pattern"; then'
+    assert _pipes_into_grep_q(historical), (
+        "the detector no longer recognises the pipeline that failed a real ISO build"
+    )
+    assert not _pipes_into_grep_q('            if grep -q -- "$pattern" "$LIST_FILE"; then'), (
+        "the recommended form is itself reported as a pipeline into grep -q"
+    )
+    assert not _pipes_into_grep_q("    [ -d /lib/live ] || grep -qs overlay /proc/mounts"), (
+        "a `||` before grep is a shell operator, not a pipeline, and must not be reported"
+    )
+    assert not _pipes_into_grep_q(
+        "    sh -c 'command -v lsinitramfs >/dev/null 2>&1 && lsinitramfs x | grep -q y'"
+    ), "a nested shell does not inherit pipefail, so its pipeline must not be reported"
+
+    offenders: list[str] = []
+    for path in _scripts():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if "pipefail" not in text:
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            if _pipes_into_grep_q(line):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{number}: {line.strip()}")
+
+    assert not offenders, (
+        "these scripts enable `set -o pipefail` and pipe into `grep -q`, so a match can be "
+        "reported as a failed pipeline. Capture the output and match it from a variable, or "
+        "grep a file:\n  " + "\n  ".join(offenders)
     )
 
 
@@ -502,12 +570,16 @@ def _shellcheck_dialect(path: Path) -> str:
     """Which shell dialect this file is actually run by.
 
     Getting this wrong is not cosmetic. live-build executes the auto scripts with sh,
-    whatever their shebang says, and the chroot hooks are run by sh too. Linting an auto
-    script as bash once hid a `${PIPESTATUS[0]}` that made every image build die with
-    "Bad substitution" under dash.
+    whatever their shebang says, and it runs every hook — `.hook.chroot` in the chroot stage
+    and `.hook.binary` in the binary stage — through its own `#!/bin/sh`, which is dash on the
+    build host. Linting one as bash once hid a `${PIPESTATUS[0]}` that made every image build
+    die with "Bad substitution" under dash.
     """
     relative = path.relative_to(REPO_ROOT).as_posix()
-    if path.suffix == ".chroot" or relative.startswith("config/live-build/auto/"):
+    if (
+        relative.startswith("config/live-build/auto/")
+        or relative.startswith("config/live-build/config/hooks/")
+    ):
         return "sh"
     return "bash"
 

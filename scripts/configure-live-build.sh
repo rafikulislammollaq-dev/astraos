@@ -73,10 +73,13 @@ mkdir -p "${BUILD_DIR}/auto" "${BUILD_DIR}/config"
 cp -a "${REPO_ROOT}/config/live-build/auto/." "${BUILD_DIR}/auto/"
 chmod 0755 "${BUILD_DIR}/auto/config"
 
-# Hooks: only the .chroot hooks run in the chroot stage.
+# Hooks: the .chroot hooks run in the chroot stage, the .binary hooks in the binary
+# stage (0800-disk-info.hook.binary brands .disk/info after live-build writes its own
+# Debian-named copy).
 mkdir -p "${BUILD_DIR}/config/hooks/live"
 cp -a "${REPO_ROOT}/config/live-build/config/hooks/live/." "${BUILD_DIR}/config/hooks/live/"
 chmod 0755 "${BUILD_DIR}/config/hooks/live/"*.hook.chroot
+chmod 0755 "${BUILD_DIR}/config/hooks/live/"*.hook.binary 2>/dev/null || true
 
 # Archives
 mkdir -p "${BUILD_DIR}/config/archives"

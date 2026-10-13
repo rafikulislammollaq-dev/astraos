@@ -95,9 +95,13 @@ printf '  %s\n' "${PACKAGES[@]}"
 # Do not install anything that is not actually needed: check what is already present.
 MISSING=()
 for pkg in "${PACKAGES[@]}"; do
-    if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
-        continue
-    fi
+    # The status is matched from a variable, not piped into `grep -q`: this script enables
+    # `set -o pipefail`, so a `grep -q` that exits the moment it matches can kill dpkg-query
+    # with SIGPIPE and turn the match into a failed pipeline.
+    PKG_STATUS="$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null || true)"
+    case "$PKG_STATUS" in
+        *'install ok installed'*) continue ;;
+    esac
     MISSING+=("$pkg")
 done
 

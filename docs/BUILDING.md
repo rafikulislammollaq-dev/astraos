@@ -135,6 +135,25 @@ missing. Remove it from the sequence in `installer/calamares/settings.conf` if t
 functionality genuinely does not exist in the pinned release, or add the package that
 provides it to `config/package-lists/60-installer.list.chroot`.
 
+### The build stops in `scripts/validate-iso.sh`
+
+The image is built; this is the repository's own inspection of it, and the two failures seen
+so far had different causes:
+
+- **"medium identifies itself as Debian, not AstraOS"** — live-build's `binary_disk` writes
+  `.disk/info` itself and the title is a literal in that script, so the medium is named Debian
+  unless `0800-disk-info.hook.binary` runs and replaces it. Check that the hook is executable
+  *in git* (`100755`, not just on disk — a Windows checkout cannot store the bit) and that it
+  ran: `binary_hooks` executes after `binary_disk` and before `binary_checksums`, and the run
+  log lists every hook live-build executed.
+- **"live filesystem does NOT contain ..."** — either the component really is missing from the
+  image, or the validator could not read its listing. The output distinguishes them: the
+  validator prints the size it extracted, the number of entries it listed, and the extracted
+  tool's own stderr. If it reports a listing with no `squashfs-root/` paths, the extraction
+  worked and the listing format changed, which is a defect in the validator rather than in the
+  image. The in-chroot hook that asserts the component (`0700-verify.hook.chroot`) runs first
+  and names the path it wanted, so it tells you whether the image ever had it.
+
 ### "another build appears to be in progress"
 
 Two builds sharing one working directory corrupt each other. If no build is running:

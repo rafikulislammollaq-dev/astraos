@@ -27,8 +27,18 @@ deliverable, stated exactly:
   was rejected. The same build also spent ~24 minutes with apt's http method retrying one
   stalled download in a 12.7-million-line loop; the transport settings that prevent that
   are now set in the build configuration.
-- **No image has passed structural validation yet.** The next CI build is the test of
-  both fixes.
+- **2026-10-13, CI build (run 38449590880):** the earlier fixes held. The chroot hooks
+  passed, the image was packed (2.05 GB, `file(1)` reporting a bootable ISO 9660 image), and
+  this time the validator read the live filesystem: it extracted 1894 MiB, matching
+  `mksquashfs`'s own report of the filesystem it had built. It failed on nine checks, and all
+  nine were defects in the checks or in the medium's identity rather than in the image: eight
+  were a pipeline race in the validator's own component checks, and one was the medium naming
+  Debian. All of them are repaired (see the changelog), and the medium's description is now put
+  through the validator's own check by `tests/integration/test_iso_validator.py`, so the
+  branding half is verified without spending a build on it. The build log for this run is 715 KB rather than 1.9 GB, which is the apt
+  transport fix working.
+- **No image has passed structural validation yet.** The next CI build tests the pipeline
+  race repair, the medium identity hook and the corrected package check together.
 - **No ISO has ever been booted in a virtual machine;** the installer has never been run;
   no installed system has ever booted. See `docs/INSTALLATION_VIRTUALBOX.md` for the
   procedure that changes this.

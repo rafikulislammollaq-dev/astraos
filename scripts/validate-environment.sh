@@ -104,11 +104,14 @@ if command -v lb >/dev/null 2>&1; then
     say "  live-build version: $(lb --version 2>/dev/null | head -n1)"
     # AstraOS relies on a hybrid BIOS+UEFI image. Confirm the option exists rather than
     # discovering it halfway through configuration (auto/config probes the same thing).
-    if lb config --help 2>&1 | grep -q -- '--bootloaders'; then
-        ok "live-build supports --bootloaders (hybrid BIOS+UEFI)"
-    else
-        warn "live-build has no --bootloaders; the ISO will be UEFI-only"
-    fi
+    # Matched from a variable rather than piped into `grep -q`: this script enables
+    # `set -o pipefail`, and a `grep -q` that exits on its match can kill `lb` with SIGPIPE
+    # and report a successful match as a failed pipeline.
+    LB_HELP_TEXT="$(lb config --help 2>&1 || true)"
+    case "$LB_HELP_TEXT" in
+        *'--bootloaders'*) ok "live-build supports --bootloaders (hybrid BIOS+UEFI)" ;;
+        *) warn "live-build has no --bootloaders; the ISO will be UEFI-only" ;;
+    esac
 fi
 
 # ---------------------------------------------------------------------------

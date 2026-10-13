@@ -1,0 +1,73 @@
+#!/bin/sh
+# AstraOS medium identity hook (binary stage).
+#
+# WHY THIS IS A HOOK AND NOT A CONFIGURATION OPTION
+# -------------------------------------------------
+# live-build's binary_disk stage writes .disk/info itself, and the name it writes is a
+# literal in that script: both the `debian` case and the fallback case set
+# TITLE="Debian GNU/Linux", and no lb config option changes it. Only VERSION_ID is read out
+# of the chroot, which is why this project's version number appears inside a Debian
+# sentence. So the medium announced itself as
+#
+#   Debian GNU/Linux 0.1.0 "Trixie" - Snapshot amd64 LIVE Binary 20261013-18:47
+#
+# — a Debian name on an AstraOS image, and the exact string the ISO validator's
+# "medium identifies itself as Debian" check refuses.
+#
+# A binary include would not be overwritten: in the pinned live-build's own `binary` stage
+# binary_disk runs BEFORE binary_includes, so config/includes.binary/.disk/info would win.
+# A hook is used anyway because the line must carry this build's identity and build stamp,
+# which a static file in the repository cannot produce, and because the assertion at the end
+# can then fail the build with the file visible. binary_hooks runs after binary_includes and
+# before binary_checksums and binary_iso, so this is the last point at which the medium's own
+# description of itself can be corrected before it is packed and checksummed.
+#
+# The file it replaces is generated, not owned by any package, and exists only on the ISO
+# surface; nothing inside the live filesystem is touched.
+
+set -eu
+
+# Binary hooks run with the binary/ staging directory as the working directory; the
+# chroot tree it was assembled from is its sibling.
+PREFIX='[astraos:disk-info]'
+
+log() { printf '%s %s\n' "$PREFIX" "$*"; }
+fail() { printf '%s ERROR: %s\n' "$PREFIX" "$*" >&2; exit 1; }
+
+mkdir -p .disk
+
+# The identity comes from the staged configuration rather than from literals here,
+# so this hook cannot drift from config/distribution.env. The staged copy is inside
+# the chroot tree; when it is absent (an lb build run by hand, without this
+# repository's configure step) the release's real values are used as fallbacks.
+STAGED_ENV=../chroot/usr/share/astraos/staged/distribution.env
+if [ -f "$STAGED_ENV" ]; then
+    # shellcheck disable=SC1091
+    . "$STAGED_ENV"
+else
+    log "WARNING: ${STAGED_ENV} not found; using the release's pinned defaults"
+fi
+
+: "${ASTRAOS_NAME:=AstraOS}"
+: "${ASTRAOS_VERSION:=0.1.0}"
+: "${ASTRAOS_RELEASE_STAGE:=alpha}"
+: "${ASTRAOS_ARCH:=amd64}"
+: "${ASTRAOS_BASE_DISTRIBUTION:=Debian}"
+: "${ASTRAOS_BASE_RELEASE_VERSION:=13}"
+
+STAMP="$(date -u +%Y%m%d-%H:%M)"
+
+# The base distribution is named on purpose (plan §23: an independent distribution
+# based on Debian, never presented as Debian), but the line starts with AstraOS.
+printf '%s %s %s (%s, based on %s %s) %s LIVE Binary %s\n' \
+    "$ASTRAOS_NAME" "$ASTRAOS_VERSION" "$ASTRAOS_RELEASE_STAGE" \
+    "$ASTRAOS_ARCH" "$ASTRAOS_BASE_DISTRIBUTION" "$ASTRAOS_BASE_RELEASE_VERSION" \
+    "$ASTRAOS_ARCH" "$STAMP" > .disk/info
+
+# The assertion the ISO validator makes, checked here too: a build that would ship a
+# Debian-named medium fails now, in front of the maintainer, with the file visible.
+if grep -q '^Debian' .disk/info; then
+    fail ".disk/info still identifies the medium as Debian"
+fi
+
+log "medium identity: $(cat .disk/info)"

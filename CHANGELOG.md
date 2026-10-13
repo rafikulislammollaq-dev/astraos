@@ -19,6 +19,45 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- The validator then failed that image on eight "live filesystem does NOT contain" checks at
+  once, while a ninth passed. Nothing was missing: the squashfs held 152,556 inodes including
+  every path the checks looked for, and the image verification hook had already confirmed the
+  same paths inside the chroot it was built from. The defect was the shape of the check.
+  `validate-iso.sh` sets `set -o pipefail` and piped the ~6 MB `unsquashfs -l` listing into
+  `grep -q`, which exits the moment it matches: `printf` on the other side of the pipe died of
+  SIGPIPE, and pipefail reported the *successful* match as a failed pipeline — exit status
+  141. Every component whose match sat before the end of the listing was reported missing, and
+  only the one pattern that happened to land near the end survived, which is why one check
+  passing looked like evidence that the other eight were right. Listings are now written to
+  files and read from them; `grep -q` reading a file cannot race. The boot-path listing, the
+  `.disk/info` discovery and the squashfs listing all follow that rule, the listings share one
+  work directory removed by an exit trap, and a listing with no `squashfs-root/` paths is
+  reported once, as what it is, instead of nine times as a missing image. In the repository:
+  `tests/static/test_scripts.py` rejects a pipeline into `grep -q` in any script that enables
+  pipefail (the three other places with that shape — `bootstrap-build-environment.sh`,
+  `validate-environment.sh` and `astraos-welcome` — were fixed the same way), and
+  `tests/integration/test_iso_validator.py` runs the real validator against a stubbed
+  `xorriso`/`unsquashfs`: it checks that every component is found in a listing whose matches
+  come first, that a component which really is absent is still reported, and that one missing
+  component does not become eight.
+
+- The image's own `.disk/info` announced it as `Debian GNU/Linux 0.1.0 "Trixie" - Snapshot
+  amd64 LIVE Binary 20261013-18:47`, and the validator refused it as a possibly unmodified
+  Debian image — correctly, because the medium was naming Debian. The title is a literal in
+  live-build's `binary_disk` (the `debian` case and the fallback case both set
+  `TITLE="Debian GNU/Linux"`), no `lb` option changes it, and the only value that script
+  takes from the image is `VERSION_ID` — this project's version number appearing inside a
+  Debian sentence. `0800-disk-info.hook.binary` now writes the medium description in the
+  binary stage, after `binary_disk` and before `binary_checksums` and `binary_iso`, taking the
+  identity from the staged `distribution.env` so it cannot drift from the release, and it
+  fails the build if a medium would still start with `Debian`. The hook's real output is put
+  through the validator's real check by `tests/integration/test_iso_validator.py`.
+
+- The validator's "the astraos-base package" check looked for `/var/lib/dpkg/status`, which
+  exists on every Debian system: it passed on an image with no AstraOS package in it at all,
+  so it was the one check that looked healthy while proving nothing. It now looks for
+  `/var/lib/dpkg/info/astraos-base`, which dpkg writes only for a package it has installed.
+
 - The 2026-10-13 CI build assembled a complete 2.0 GB live image — boot path, kernel,
   initramfs and live filesystem all present, live-build itself reporting
   "Build completed successfully" — and then the repository's own validator failed it on

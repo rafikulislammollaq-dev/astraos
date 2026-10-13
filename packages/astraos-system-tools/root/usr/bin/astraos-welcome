@@ -23,10 +23,15 @@ is_live() {
 
 network_up() {
     if command -v ip >/dev/null 2>&1; then
-        ip route show default 2>/dev/null | grep -q 'default'
-    else
-        return 1
+        # Matched from a variable rather than piped into `grep -q`: this script enables
+        # `set -o pipefail`, so grep exiting on its match could kill `ip` and report a
+        # default route as no route at all.
+        case "$(ip route show default 2>/dev/null || true)" in
+            *default*) return 0 ;;
+            *) return 1 ;;
+        esac
     fi
+    return 1
 }
 
 printf '\n'
