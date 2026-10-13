@@ -25,18 +25,30 @@ PASS=0
 FAIL=0
 WARN=0
 
-ok()   { PASS=$((PASS + 1)); printf '  [ ok ]   %s\n' "$*"; }
-bad()  { FAIL=$((FAIL + 1)); printf '  [FAIL]   %s\n' "$*"; }
-warn() { WARN=$((WARN + 1)); printf '  [warn]   %s\n' "$*"; }
-section() { printf '\n== %s ==\n' "$*"; }
+ok()   { PASS=$((PASS + 1)); printf '  [ ok ]   %s\n' "$*" >&2; }
+bad()  { FAIL=$((FAIL + 1)); printf '  [FAIL]   %s\n' "$*" >&2; }
+warn() { WARN=$((WARN + 1)); printf '  [warn]   %s\n' "$*" >&2; }
+section() { printf '\n== %s ==\n' "$*" >&2; }
+
+# A tool's own diagnostic is the only thing that makes a failure actionable: an
+# extraction that produced nothing looks identical to a file that was never read
+# unless the tool's stderr is kept. Every extraction below captures it and calls
+# this to show it.
+describe_error() {
+    if [ -s "$1" ]; then
+        tr '\n' ' ' < "$1" | cut -c1-300
+    else
+        printf 'the tool produced no diagnostic'
+    fi
+}
 
 SIZE="$(wc -c < "$ISO")"
-printf 'Validating %s\n' "$ISO"
+printf 'Validating %s\n' "$ISO" >&2
 
 # ---------------------------------------------------------------------------
 section "File"
 # ---------------------------------------------------------------------------
-printf '  size: %s bytes (%s MiB)\n' "$SIZE" "$((SIZE / 1048576))"
+printf '  size: %s bytes (%s MiB)\n' "$SIZE" "$((SIZE / 1048576))" >&2
 
 # A live desktop image with a browser and office tools cannot be small. A file this
 # size is almost certainly a failed or truncated build.
@@ -50,7 +62,7 @@ fi
 
 if command -v file >/dev/null 2>&1; then
     FILE_OUT="$(file -b "$ISO")"
-    printf '  file(1) says: %s\n' "$FILE_OUT"
+    printf '  file(1) says: %s\n' "$FILE_OUT" >&2
     case "$FILE_OUT" in
         *ISO\ 9660*) ok "recognised as an ISO 9660 filesystem" ;;
         *) bad "file(1) does not recognise this as an ISO 9660 image" ;;
@@ -121,14 +133,27 @@ section "AstraOS customisation"
 # evidence that this image was actually produced from the AstraOS configuration.
 if command -v xorriso >/dev/null 2>&1; then
     if xorriso -indev "$ISO" -find / -name '.disk' -type d 2>/dev/null | grep -q '.disk'; then
-        INFO="$(xorriso -osirrox on -indev "$ISO" -extract /\.disk/info /dev/stdout 2>/dev/null || true)"
-        printf '  medium info: %s\n' "${INFO:-unavailable}"
+        # Extracting to /dev/stdout looked like a way to read a file straight out of the
+        # ISO, but xorriso writes a FILE at that path (and on some hosts fails outright),
+        # which left INFO empty and this check reporting a valid image as unidentified.
+        # The same destination-and-diagnostics rule as the squashfs check applies: extract
+        # to a path that does not pre-exist, verify what came out, keep the stderr.
+        DISKINFO_DIR="$(mktemp -d 2>/dev/null || echo "/tmp/astraos-diskinfo-$$")"
+        mkdir -p "$DISKINFO_DIR" 2>/dev/null || true
+        if xorriso -osirrox on -indev "$ISO" -extract /\.disk/info \
+                "${DISKINFO_DIR}/disk-info" 2>"${DISKINFO_DIR}/xorriso.err"; then
+            INFO="$(cat "${DISKINFO_DIR}/disk-info" 2>/dev/null || true)"
+        fi
+        # The diagnostic is read out before the directory goes away.
+        DISKINFO_ERR="$(describe_error "${DISKINFO_DIR}/xorriso.err" 2>/dev/null || true)"
+        rm -rf -- "$DISKINFO_DIR" 2>/dev/null || true
+        printf '  medium info: %s\n' "${INFO:-unavailable}" >&2
         case "$INFO" in
             *AstraOS*|*astraos*) ok "medium identifies itself as AstraOS" ;;
             *Debian*)
                 bad "medium identifies itself as Debian, not AstraOS; this may be an unmodified Debian image"
                 ;;
-            *) warn "medium identity could not be confirmed from .disk/info" ;;
+            *) warn "medium identity could not be confirmed from .disk/info: ${DISKINFO_ERR:-the file was not extracted}" ;;
         esac
     else
         warn "no .disk/info found; medium identity could not be confirmed"
@@ -140,11 +165,33 @@ fi
 # A squashfs full of Debian with AstraOS branding only on the ISO surface would pass
 # every check above and fail here.
 if command -v unsquashfs >/dev/null 2>&1 && command -v xorriso >/dev/null 2>&1; then
-    TMP_SQUASH="$(mktemp --suffix=-astraos.squashfs 2>/dev/null || echo "/tmp/astraos-$$.squashfs")"
     section "Live filesystem contents"
-    if xorriso -osirrox on -indev "$ISO" -extract /live/filesystem.squashfs "$TMP_SQUASH" >/dev/null 2>&1; then
+    # The listing is taken from a file this script extracts, so an empty or unreadable
+    # extraction looks exactly like an image that lacks every component. That is what
+    # happened: mktemp pre-created the destination, xorriso wrote nothing onto it and
+    # still exited 0, unsquashfs then failed on the empty file, and its complaint was
+    # discarded — nine paths reported missing for a filesystem that was never read. Each
+    # step below therefore keeps its own error and the size it produced, and a directory
+    # is used so the destination does not exist before xorriso writes it.
+    WORK_DIR="$(mktemp -d 2>/dev/null || echo "/tmp/astraos-inspect-$$")"
+    mkdir -p "$WORK_DIR" 2>/dev/null || true
+    TMP_SQUASH="${WORK_DIR}/filesystem.squashfs"
+
+    # A tool's own diagnostic is the only thing that makes a failure actionable.
+    # describe_error is defined at the top of the script, beside the pass/fail helpers.
+
+    if ! xorriso -osirrox on -indev "$ISO" -extract /live/filesystem.squashfs \
+            "$TMP_SQUASH" >/dev/null 2>"${WORK_DIR}/xorriso.err"; then
+        bad "could not extract /live/filesystem.squashfs from the ISO: $(describe_error "${WORK_DIR}/xorriso.err")"
+    elif [ ! -s "$TMP_SQUASH" ]; then
+        bad "the extracted filesystem.squashfs is empty, so the image has no readable live filesystem: $(describe_error "${WORK_DIR}/xorriso.err")"
+    else
+        printf '  extracted: %s MiB\n' "$(( $(wc -c < "$TMP_SQUASH") / 1048576 ))" >&2
         # -l lists without extracting. Filter to the paths that prove AstraOS is inside.
-        CONTENTS="$(unsquashfs -l "$TMP_SQUASH" 2>/dev/null || true)"
+        CONTENTS="$(unsquashfs -l "$TMP_SQUASH" 2>"${WORK_DIR}/unsquashfs.err")"
+        if [ -z "$CONTENTS" ]; then
+            bad "unsquashfs could not list the live filesystem: $(describe_error "${WORK_DIR}/unsquashfs.err")"
+        else
         check_in_squashfs() {
             description="$1"; pattern="$2"
             if printf '%s' "$CONTENTS" | grep -q -- "$pattern"; then
@@ -162,10 +209,9 @@ if command -v unsquashfs >/dev/null 2>&1 && command -v xorriso >/dev/null 2>&1; 
         check_in_squashfs "the AstraOS Plymouth theme"      'squashfs-root/usr/share/plymouth/themes/astraos'
         check_in_squashfs "the AstraOS wallpaper"           'squashfs-root/usr/share/astraos/wallpapers'
         check_in_squashfs "the astraos-base package"        'squashfs-root/var/lib/dpkg/status'
-    else
-        warn "could not extract filesystem.squashfs from the ISO; contents were not inspected"
+        fi
     fi
-    rm -f "$TMP_SQUASH" 2>/dev/null || true
+    rm -rf -- "$WORK_DIR" 2>/dev/null || true
 else
     warn "unsquashfs or xorriso is missing; the live filesystem contents were NOT inspected"
 fi
@@ -175,7 +221,7 @@ section "Checksums"
 # ---------------------------------------------------------------------------
 if command -v sha256sum >/dev/null 2>&1; then
     COMPUTED="$(sha256sum "$ISO" | cut -d' ' -f1)"
-    printf '  sha256: %s\n' "$COMPUTED"
+    printf '  sha256: %s\n' "$COMPUTED" >&2
     if [ -f "${ISO}.sha256" ]; then
         if ( cd "$(dirname "$ISO")" && sha256sum -c "$(basename "$ISO").sha256" >/dev/null 2>&1 ); then
             ok "the published checksum file matches the image"
@@ -190,15 +236,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-printf '\n%s\n' "-------------------------------------------------------"
-printf 'passed: %s   warnings: %s   failures: %s\n' "$PASS" "$WARN" "$FAIL"
+printf '\n%s\n' "-------------------------------------------------------" >&2
+printf 'passed: %s   warnings: %s   failures: %s\n' "$PASS" "$WARN" "$FAIL" >&2
 
 if [ "$FAIL" -gt 0 ]; then
-    printf '\nRESULT: the image FAILED structural validation.\n'
+    printf '\nRESULT: the image FAILED structural validation.\n' >&2
     exit 1
 fi
 
-printf '\nRESULT: the image passed STRUCTURAL validation.\n'
-printf 'It has NOT been booted. Structural validity is not evidence that the OS boots.\n'
-printf 'Next step: docs/INSTALLATION_VIRTUALBOX.md\n'
+printf '\nRESULT: the image passed STRUCTURAL validation.\n' >&2
+printf 'It has NOT been booted. Structural validity is not evidence that the OS boots.\n' >&2
+printf 'Next step: docs/INSTALLATION_VIRTUALBOX.md\n' >&2
 exit 0
