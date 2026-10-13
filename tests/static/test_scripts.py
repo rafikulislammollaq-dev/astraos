@@ -76,6 +76,60 @@ def test_shell_syntax() -> None:
     assert not failures, "shell syntax errors:\n  " + "\n  ".join(failures)
 
 
+# The command may be quoted (`sh -c 'ls …'`) and may follow a shell operator, so the
+# boundary class includes quotes and the operators that end one command and start the next.
+LS_COMMAND = re.compile(r"""(?:^|[\s;&|(='\"])ls\s""")
+
+
+def _globs_on_ls_command(line: str) -> list[str]:
+    """The globs a single `ls` command on this line is given, comments excluded."""
+    stripped = line.strip()
+    if stripped.startswith("#") or not LS_COMMAND.search(stripped):
+        return []
+    return re.findall(r"\S*\*\S*", stripped)
+
+
+def test_no_command_is_given_several_globs() -> None:
+    """`ls a-* b-*` fails when only one of the patterns matches, and the shell hands it over.
+
+    With nullglob off — and it is off in dash, which is /bin/sh inside the image — an
+    unmatched pattern reaches the command as its own literal text, so `ls` reports
+    "cannot access '/boot/initrd-*'" and exits non-zero. That is how the image verification
+    hook reported "an initramfs is in /boot" as FAIL for an image that had one: the plymouth
+    assertion in the same hook then opened that initramfs and found the AstraOS theme inside
+    it. A loop over the patterns — or one command per pattern — has no such failure mode.
+    """
+    # The detector is checked against the command this rule was written for, so a guard that
+    # has stopped recognising it cannot pass quietly, and against its own fix, so the rule
+    # cannot start rejecting the shape it recommends.
+    historical = (
+        'check "an initramfs is in /boot"          '
+        "sh -c 'ls /boot/initrd.img-* /boot/initrd-* >/dev/null 2>&1'"
+    )
+    assert len(_globs_on_ls_command(historical)) >= 2, (
+        "the glob detector no longer recognises the command that failed a real build"
+    )
+    repaired = (
+        'check "an initramfs is in /boot" \\\n'
+        "    sh -c 'for f in /boot/initrd.img-* /boot/initrd-*; do [ -f \"$f\" ] && exit 0; done; exit 1'"
+    )
+    assert not _globs_on_ls_command(repaired), (
+        "the recommended form is itself reported as a multi-glob command"
+    )
+
+    offenders: list[str] = []
+    for path in _scripts():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for number, line in enumerate(text.splitlines(), 1):
+            if len(_globs_on_ls_command(line)) >= 2:
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{number}: {line.strip()}")
+
+    assert not offenders, (
+        "these commands are given more than one glob, so an unmatched pattern is passed to "
+        "the command as literal text and fails it:\n  " + "\n  ".join(offenders)
+    )
+
+
 # Scripts whose whole job is to REPORT, not to act. These deliberately avoid `set -e`
 # (and some avoid `-u`) so that a missing optional tool prints "unknown" and the rest of
 # the report still appears. Aborting would leave the user with no output at all, which

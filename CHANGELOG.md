@@ -19,6 +19,24 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- The image verification hook reported "an initramfs is in /boot" as FAIL for an image that
+  had one, one assertion before the ISO would have been packed. The check asked
+  `ls /boot/initrd.img-* /boot/initrd-*`: with nullglob off — it is off in dash, which is
+  /bin/sh in this image — the pattern that matches nothing is passed on as its own literal
+  text, `ls` reports "cannot access '/boot/initrd-*'" and the whole assertion fails. The same
+  hook then opened that initramfs and found the AstraOS theme inside it. The check now loops
+  over both names and tests each one, and `tests/static/test_scripts.py` rejects a command
+  that is handed more than one glob — verified against the line that failed, and against the
+  loop that replaced it.
+
+- The chroot's apt configuration listed the pinned release suite in
+  `config/archives/astraos.list.chroot` while live-build also wrote it from the mirror
+  options, so every apt run reported each target as "configured multiple times" — inside the
+  build and on any live system, where a user would see the warning without being able to act
+  on it. The file now pins only the update and security suites, which live-build cannot add
+  for this base release (it writes the pre-2017 "<suite>/updates" spelling, which Debian 13
+  does not have).
+
 - The credential scan stopped a real image build without saying what it had found. The
   hook searched `/etc` for the text `BEGIN PGP PRIVATE KEY` and printed the pattern it had
   searched for rather than the file that matched, so the build log held no path to

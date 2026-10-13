@@ -2,18 +2,28 @@
 #
 # Format: "<deb-line> <pin-priority or empty>"
 #
-# Every entry is an authenticated Debian archive over HTTPS or the official
-# deb.debian.org mirror. AstraOS does not add third-party repositories, PPAs, or
-# unsigned sources (plan §2.3, §13.3).
+# The pinned *release* suite is deliberately not repeated here. live-build writes it from the
+# mirror options in config/live-build/auto/config (--mirror-chroot and --archive-areas) and
+# installs that file as /etc/apt/sources.list.d/zz-sources.list. Listing the same suite again
+# here made every apt run inside the chroot report each target as "configured multiple times",
+# which is noise a reviewer then has to explain away:
 #
-# debian-archive-keyring is part of the base system, so APT signature verification
-# remains enabled. The build explicitly passes
-# APT::Get::AllowUnauthenticated=false (see auto/config).
+#   W: Target Packages (main/binary-amd64/Packages) is configured multiple times in
+#      /etc/apt/sources.list.d/astraos.list:13 and /etc/apt/sources.list.d/zz-sources.list:1
+#
+# What live-build cannot add for this base release are the update and security suites: with
+# --updates true / --security true it writes the pre-2017 "<suite>/updates" spelling, and
+# Debian 13 has no such suite, so apt inside the chroot could not refresh it. Those two are
+# therefore pinned by name here, and were verified against the real archive.
+#
+# Every entry is an authenticated Debian archive over the official mirror. AstraOS adds no
+# third-party repository, PPA or unsigned source (plan §2.3, §13.3). debian-archive-keyring is
+# part of the base system, so APT signature verification stays enabled, and the build also
+# passes APT::Get::AllowUnauthenticated=false (see auto/config).
 
-deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware
 deb http://deb.debian.org/debian trixie-updates main contrib non-free non-free-firmware
 deb http://security.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
 
-# NOTE: no backports. AstraOS 0.1.0 Alpha ships only packages from the pinned stable
-# release plus its security and update suites, so a released image cannot silently
-# pick up a newer ABI from an unrelated suite (plan §5).
+# NOTE: no backports. AstraOS 0.1.0 Alpha ships only packages from the pinned stable release
+# plus its security and update suites, so a released image cannot silently pick up a newer ABI
+# from an unrelated suite (plan §5).

@@ -240,7 +240,10 @@ the build when it finds an armored private key. Three limits are known and delib
   because a compiled-in parser constant (the one in `ssh-keygen`, for example) contains the
   same text and nothing distinguishes them by text alone. What is detected is the shape of an
   armored block: a line that is exactly an armor header, followed before the block ends by
-  the matching footer or by base64 payload.
+  the matching footer or by base64 payload. A key pasted into the *middle* of a line —
+  inside a string literal, say — is therefore not detected either: both the image scan and
+  the repository scan require the header to be a line of its own, which is how a key is
+  written into a file.
 - **A key generated after the hook has run is not seen.** Nothing in AstraOS generates one
   into the image, and the SSH host keys that OpenSSH creates on a real installation are the
   case plan §10.4 wants: they belong to the machine, not to the image.

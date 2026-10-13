@@ -47,7 +47,14 @@ check "astraos-info command is installed" test -x /usr/bin/astraos-info
 
 # --- Kernel and initramfs -----------------------------------------------------
 check "a compressed kernel is in /boot"   sh -c 'ls /boot/vmlinuz-* >/dev/null 2>&1'
-check "an initramfs is in /boot"          sh -c 'ls /boot/initrd.img-* /boot/initrd-* >/dev/null 2>&1'
+# Both conventional initramfs names are accepted, and the check is a loop rather than
+# `ls /boot/initrd.img-* /boot/initrd-*` for a reason: with nullglob off — it is off in dash,
+# which is /bin/sh in this image — an unmatched pattern is passed on as its own literal text,
+# so `ls` reports "cannot access '/boot/initrd-*'" and exits non-zero. That is how this
+# assertion failed an image that had an initramfs: the plymouth assertion further down opened
+# that same initramfs and found the AstraOS theme inside it.
+check "an initramfs is in /boot" \
+    sh -c 'for f in /boot/initrd.img-* /boot/initrd-*; do [ -f "$f" ] && exit 0; done; exit 1'
 check "update-initramfs is available"     sh -c 'command -v update-initramfs'
 
 # --- Boot chain ---------------------------------------------------------------
