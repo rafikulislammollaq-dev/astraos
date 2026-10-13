@@ -172,7 +172,20 @@ if supports --apt-recommends; then set -- "$@" --apt-recommends true; fi
 if supports --apt-indices; then set -- "$@" --apt-indices false; fi
 if supports --apt-secure; then set -- "$@" --apt-secure true; fi
 if supports --apt-options; then
-    set -- "$@" --apt-options "--yes --option APT::Get::AllowUnauthenticated=false"
+    # The Acquire options are transport-only: they change how the download is fetched,
+    # never what is fetched or whether signatures are checked. They exist because of the
+    # 2026-10-13 CI build: during the chroot package install, apt's http method printed
+    #
+    #   W: Tried to start delayed item http://security.debian.org/... gstreamer1.0-gl, but failed
+    #
+    # 12.7 million times over ~24 minutes (a 1.9 GB build log) while every other item on
+    # both mirrors fetched normally. One queued item kept failing to *start* — a stuck
+    # pipelined connection to the security mirror — and the method retried it in a hot
+    # loop with no backoff. Pipeline-Depth 0 removes the pipelined queue that put the item
+    # in that state, ForceIPv4 removes the instant-failure IPv6 connect path that can
+    # poison one, and Retries gives transient fetch failures a bounded retry instead of
+    # an unbounded loop. The image contents are unaffected.
+    set -- "$@" --apt-options "--yes --option APT::Get::AllowUnauthenticated=false --option Acquire::http::Pipeline-Depth=0 --option Acquire::https::Pipeline-Depth=0 --option Acquire::ForceIPv4=true --option Acquire::Retries=3"
 fi
 
 # --- Output -------------------------------------------------------------------

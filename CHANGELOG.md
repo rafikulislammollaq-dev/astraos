@@ -19,6 +19,31 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- The 2026-10-13 CI build assembled a complete 2.0 GB live image — boot path, kernel,
+  initramfs and live filesystem all present, live-build itself reporting
+  "Build completed successfully" — and then the repository's own validator failed it on
+  nine "live filesystem does NOT contain" checks at once. The validator, not the image,
+  was wrong: it extracted the squashfs onto a path `mktemp --suffix=` had already created,
+  xorriso wrote nothing onto the existing file and still exited 0, and the empty result
+  was then listed by `unsquashfs`, which failed, whose error was discarded. Nine components
+  were reported missing from a filesystem that was never read. The extraction now targets
+  a directory that does not pre-exist, keeps each tool's stderr, verifies the size it got,
+  and reports the tool's own diagnostic when something fails — and the `.disk/info`
+  check beside it, which had the same shape (extract to `/dev/stdout`, discard the
+  diagnostic, report "unavailable"), extracts to a real file the same way. Every
+  extraction in the validator now produces either the data or the reason it could not.
+
+- The same CI build spent ~24 of its 31 minutes, and 1.9 GB of its log, inside apt's http
+  method: one queued item (`gstreamer1.0-gl` from the security mirror) printed
+  `W: Tried to start delayed item ..., but failed` 12.7 million times in a hot loop while
+  every other item on both mirrors fetched normally — a stuck pipelined connection, with
+  the method retrying the start attempt without backoff. The build's `--apt-options` now
+  carry transport-only Acquire settings (`http`/`https` `Pipeline-Depth=0`,
+  `ForceIPv4=true`, `Retries=3`), which remove the pipelined queue that can strand an
+  item, the instant-failing IPv6 connect path that can poison one, and turn transient
+  fetch failures into a bounded retry. These change how a download is fetched, never what
+  is fetched or whether signatures are verified.
+
 - The image verification hook reported "an initramfs is in /boot" as FAIL for an image that
   had one, one assertion before the ISO would have been packed. The check asked
   `ls /boot/initrd.img-* /boot/initrd-*`: with nullglob off — it is off in dash, which is
@@ -213,7 +238,8 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ## [0.1.0] Alpha — codename Nova — unreleased
 
-The first development release. **No image has been built or booted yet.** The status of
+The first development release. **No image has passed structural validation or been
+booted yet.** The status of
 every deliverable is recorded in `README.md` and `docs/KNOWN_LIMITATIONS.md`.
 
 ### Added
@@ -287,7 +313,7 @@ every deliverable is recorded in `README.md` and `docs/KNOWN_LIMITATIONS.md`.
 
 See `docs/KNOWN_LIMITATIONS.md` for the complete list. The most significant:
 
-- No image has been built or booted.
+- No image has passed structural validation, and none has been booted.
 - Secure Boot is not supported and not claimed.
 - `/etc/os-release` can be overwritten by an upgrade of Debian's `base-files`.
 - The desktop theme does not include window decorations.

@@ -16,8 +16,11 @@ applied to an existing distribution.
 
 ## Current status — read this first
 
-**The repository is complete and its static checks pass. No ISO has been built yet, and
-no ISO has been booted.**
+**The repository is complete and its static checks pass. No ISO has been built yet that
+passes structural validation, and no ISO has ever been booted. One CI build assembled a
+complete 2.0 GB image on 2026-10-13, but the validator's own extraction defect failed it
+before its contents could be inspected; the fix is committed and the next CI build is
+the test of it.**
 
 That sentence is the most important one in this file, and it is deliberately blunt. The
 project's own rules (`project astra main plan.txt`, §28 Rule 4) forbid reporting a build,
@@ -29,9 +32,9 @@ boot or installation that did not happen.
 | Package selection verified against the real Debian archive | **Done** | 283 packages checked against `dists/trixie/*/Packages.xz` |
 | Branding assets generated | **Done** | `branding/generated/*.png`, valid PNGs with verified CRCs |
 | Build scripts implemented | **Done** | `scripts/` — see `docs/BUILDING.md` |
-| ISO built | **NOT DONE** | Requires a Linux build host; see below |
-| ISO booted in a VM | **NOT DONE** | Requires the ISO |
-| Installer run | **NOT DONE** | Requires the ISO |
+| ISO built | **NOT DONE** | CI assembled an image on 2026-10-13, but the validator's own extraction defect failed it before its contents could be inspected; fixed, and the next CI build is the test |
+| ISO booted in a VM | **NOT DONE** | Requires a validated ISO |
+| Installer run | **NOT DONE** | Requires a validated ISO |
 | Installed system booted | **NOT DONE** | Requires the installer run |
 | Physical hardware | **NOT DONE** | Not attempted, and not recommended yet |
 
@@ -133,7 +136,7 @@ python3 scripts/verify-package-availability.py
 
 AstraOS 0.1.0 Alpha is an early release. The significant limitations are:
 
-- **No image has been built or booted yet**, as described above.
+- **No image has passed structural validation or been booted yet**, as described above.
 - **Secure Boot is not supported or claimed.** It is disabled in the live image's own
   boot configuration.
 - **`/etc/os-release` can be overwritten** by a future upgrade of Debian's `base-files`

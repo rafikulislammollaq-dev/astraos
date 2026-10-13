@@ -11,19 +11,27 @@ and it should not be installed on a machine holding data you cannot lose.**
 
 ## 1. Release-level limitations
 
-### 1.1 No image has been built or booted
+### 1.1 No image has been built that passed validation, and none has been booted
 
-At the time of writing, the repository is complete and its static checks pass, but:
+The development machine is a Windows host whose WSL2 Linux environment cannot start, so
+image building happens in CI (`.github/workflows/build-iso.yml`). The state of the first
+deliverable, stated exactly:
 
-- no ISO has been produced;
-- no ISO has been booted in a virtual machine;
-- the installer has never been run;
-- no installed system has ever booted.
-
-This is a limitation of the *development environment*, not a claim about the code: the
-machine this project was developed on is a Windows host whose WSL2 Linux environment
-cannot start. The measurements and the exact steps required to unblock it are in
-[`ENVIRONMENT.md`](ENVIRONMENT.md).
+- **No image has been built that passed structural validation.**
+- **2026-10-13, CI build (run 38411369641):** live-build completed successfully and
+  produced a 2.0 GB `astraos-0.1.0-alpha-amd64.iso` with the UEFI loader, the legacy BIOS
+  loader, GRUB configuration, kernel, initramfs and live filesystem all present. The build
+  was then failed by the repository's own structural validator, which could not read the
+  squashfs it had extracted (a defect in the validator's extraction, fixed the same day —
+  see the changelog). The image contents were therefore never inspected and the artifact
+  was rejected. The same build also spent ~24 minutes with apt's http method retrying one
+  stalled download in a 12.7-million-line loop; the transport settings that prevent that
+  are now set in the build configuration.
+- **No image has passed structural validation yet.** The next CI build is the test of
+  both fixes.
+- **No ISO has ever been booted in a virtual machine;** the installer has never been run;
+  no installed system has ever booted. See `docs/INSTALLATION_VIRTUALBOX.md` for the
+  procedure that changes this.
 
 **Consequence:** every statement in this repository about booting or installing is a
 statement of *intent backed by configuration*, not a report of a test. The build manifest
