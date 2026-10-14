@@ -1,116 +1,166 @@
 # AstraOS
 
-**An independent, lightweight Linux desktop operating system.**
-Version 0.1.0 Alpha — codename **Nova** — target architecture **amd64** (x86_64).
+An independent, lightweight Linux desktop distribution built from Debian packages.
+**Version 0.1.0 Alpha, codename Nova, architecture amd64 (x86_64).**
 
-AstraOS is a real, bootable, installable Linux distribution built from Debian packages
-with its own identity, package selection, desktop configuration, installer
-configuration and reproducible build pipeline. It is intended to be delivered as a
-bootable ISO, run in a virtual machine, installed to a disk, and eventually installed on
-compatible physical hardware.
-
-It is **not** a website pretending to be an operating system, and it is **not** a theme
-applied to an existing distribution.
+AstraOS is a Debian 13 (trixie) derivative with its own package selection, Xfce desktop
+configuration, branding, installer configuration and automated ISO build pipeline.
+It uses the Debian Linux kernel. It is not a from-scratch kernel, not an official
+Debian release, and not a website pretending to be an operating system.
 
 ---
 
-## Current status — read this first
+## Maturity level: early alpha (live image boots in a VM)
 
-**The repository is complete and its static checks pass. No ISO has been built yet that
-passes structural validation, and no ISO has ever been booted. One CI build assembled a
-complete 2.0 GB image on 2026-10-13, but the validator's own extraction defect failed it
-before its contents could be inspected; the fix is committed and the next CI build is
-the test of it.**
-
-That sentence is the most important one in this file, and it is deliberately blunt. The
-project's own rules (`project astra main plan.txt`, §28 Rule 4) forbid reporting a build,
-boot or installation that did not happen.
-
-| Stage | Status | Evidence |
+| Level | Meaning | Reached? |
 |---|---|---|
-| Repository structure and configuration | **Done** | `tests/run.py` passes |
-| Package selection verified against the real Debian archive | **Done** | 283 packages checked against `dists/trixie/*/Packages.xz` |
-| Branding assets generated | **Done** | `branding/generated/*.png`, valid PNGs with verified CRCs |
-| Build scripts implemented | **Done** | `scripts/` — see `docs/BUILDING.md` |
-| ISO built | **NOT DONE** | CI assembled an image on 2026-10-13, but the validator's own extraction defect failed it before its contents could be inspected; fixed, and the next CI build is the test |
-| ISO booted in a VM | **NOT DONE** | Requires a validated ISO |
-| Installer run | **NOT DONE** | Requires a validated ISO |
-| Installed system booted | **NOT DONE** | Requires the installer run |
-| Physical hardware | **NOT DONE** | Not attempted, and not recommended yet |
+| 1 | Source tree and static checks pass | Yes |
+| 2 | ISO builds in CI | Yes (Build ISO run #26, 2026-10-13, about 13 minutes, ISO about 2.15 GB) |
+| 3 | ISO boots in a virtual machine | **Yes** (VirtualBox, live session, 2026-10-15) |
+| 4 | Network and browser work out of the box | **Partly.** Browser works after a DNS workaround (see Known issues) |
+| 5 | Installer runs and installed system boots | Not tested yet |
+| 6 | Tested on physical hardware | Not tested yet |
+| 7 | Secure Boot, signed images, stable release | Not supported |
 
-### Why no ISO was built in this session
-
-The development machine this project started on is a **Windows host**, and its only
-Linux environment (WSL2) **cannot start**: Windows' "Virtual Machine Platform" feature is
-not enabled. VirtualBox is not installed either. This is measured and recorded in
-[`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md), including the exact commands needed to
-unblock it.
-
-The project is therefore built **CI-first**: the ISO is produced by
-[`.github/workflows/build-iso.yml`](.github/workflows/build-iso.yml), and the identical
-scripts run on any Debian or Ubuntu machine.
+This is a learning and prototype build. Do not use it as your main system.
 
 ---
 
-## What AstraOS is
+## What has been tested
 
-| Component | Choice | Why |
-|---|---|---|
-| Base | Debian 13 (trixie), pinned per release branch | Maintenance, security updates, package quality |
-| Kernel | Debian's `linux-image-amd64` (6.12 LTS series) | Supported and security-updated; no hand-rolled kernel |
-| Init | systemd | The base distribution's init system |
-| Desktop | Xfce, configured and branded | Responsive on modest hardware, mature, upgradable |
-| Display server | X11 (Wayland-ready, not claimed) | Predictable compatibility for the first release |
-| Display manager | LightDM with the GTK greeter | Brandable, simple |
-| Installer | Calamares, configured and branded | Maintained upstream installer, real disk safety workflow |
-| Bootloader | GRUB, hybrid BIOS + UEFI | Compatibility |
-| Package format | `.deb`, managed by APT and dpkg | Base-distribution native |
-| Filesystem | ext4 for the root filesystem | Well supported and recoverable |
-| Firewall | ufw, policy documented and shipped, not enabled by default | Nothing listens by default; see `docs/SECURITY.md` |
+Tested by hand on 2026-10-15 in Oracle VirtualBox on a Windows 11 host
+(Intel Core i5-2500S, 16 GB RAM):
 
-AstraOS uses the Linux kernel. It does **not** claim to be a from-scratch kernel or a
-kernel-independent operating system, and it does **not** present itself as an official
-Debian release.
+- ISO boots from the live menu ("Live system (amd64)").
+- Reaches the Xfce desktop with the AstraOS wallpaper and a bottom dock
+  (terminal, file manager, browser, search).
+- Live user is `astra`, hostname is `astra-live`.
+- Network link works: `ping 8.8.8.8` replies with 0% loss.
+- Firefox loads websites once DNS is configured (YouTube loaded in the test).
+
+Not tested: the installer, installing to disk, Wi-Fi, GPUs, physical machines,
+UEFI boot, audio, printing, Bluetooth.
 
 ---
 
-## Repository layout
+## What is included
 
-```
-astraos/
-├── VERSION                     flagship release identity, one line per field
-├── Makefile                    make check / build / validate / checksums / clean
-├── config/
-│   ├── distribution.env        the pinned base, repositories, image and desktop settings
-│   ├── branding.env            the brand palette, fonts and asset dimensions
-│   ├── package-lists/          the reviewed package selection, split by category
-│   └── live-build/             Debian Live configuration, hooks and archive definitions
-├── branding/                   original artwork: SVG marks, themes and an asset renderer
-├── desktop/                    Xfce configuration, launchers, autostart, GTK theme
-├── packages/                   the five AstraOS .deb packages and their sources
-├── system/                     templates for identity files and kernel/security defaults
-├── installer/                  Calamares configuration and branding
-├── scripts/                    validation, packaging, building and release tooling
-├── tests/                      the static test suite (runs on any host)
-├── docs/                       architecture, build, installation, recovery, limitations
-└── build/  dist/               generated output; both ignored by git
-```
+Built from Debian 13 (trixie). The CI build log shows about 1,569 packages unpacked
+into the image, which come from 283 reviewed core selections plus their dependencies
+and recommended packages.
+
+| Component | Choice |
+|---|---|
+| Base | Debian 13 (trixie) |
+| Kernel | Debian `linux-image-amd64` (6.12 series), plus kernel headers |
+| Init | systemd |
+| Desktop | Xfce, configured and branded |
+| Display manager | LightDM (GTK greeter) |
+| Display server | X11 |
+| Boot splash | Plymouth, AstraOS theme |
+| Installer | Calamares, configured and branded (not yet tested) |
+| Bootloader | GRUB (UEFI) and syslinux (BIOS), hybrid ISO. Secure Boot disabled |
+| Networking | NetworkManager with applet, wpa_supplicant |
+| Browser | Firefox ESR |
+| Office | LibreOffice |
+| Firewall | ufw installed, not enabled by default |
+| Firmware | Broad set of non-free firmware (about 390 MB compressed) |
+| Package format | `.deb` with APT and dpkg |
+| Root filesystem | ext4 |
+
+Largest contributors to ISO size (approximate compressed download sizes):
+kernel about 108 MB, firmware packages about 390 MB in total, Firefox ESR about 80 MB,
+LibreOffice about 80 MB, graphics libraries (LLVM, Mesa, WebKitGTK), fonts and speech data.
+
+The ISO is about 2.15 GB. Installed size will be larger, because the ISO stores the
+system as a compressed squashfs.
 
 ---
 
-## Building
+## Known issues
+
+1. **DNS does not work out of the box in the live session.**
+   `/etc/resolv.conf` is empty, so names do not resolve (pinging an IP works,
+   pinging `google.com` fails).
+   Workaround, run in the AstraOS terminal (note the `v` in `resolv`):
+
+   ```
+   echo "nameserver 10.0.2.3" | sudo tee /etc/resolv.conf
+   ```
+
+   `10.0.2.3` is VirtualBox NAT's DNS server. On other hosts or on real networks use
+   your router's address or `8.8.8.8`. The change is lost on reboot (live session).
+
+   Suspected cause (not yet confirmed): the image installs `resolvconf` alongside
+   NetworkManager, and `/etc/resolv.conf` may not be the symlink that `resolvconf`
+   expects, because live-build's resolv.conf handling replaces it during the build.
+   NetworkManager itself is installed and enabled.
+
+2. ISO structural validation has not been confirmed. The validator had an extraction
+   defect in the first CI run. The boot test script reports BLOCKED when no ISO is in
+   `dist/`, which is not a pass.
+3. Copy and paste between the host and the VM needs VirtualBox Guest Additions, which
+   are not part of the image.
+4. The ISO is larger than it needs to be (APT recommends enabled, much firmware,
+   LibreOffice, compilers).
+5. Secure Boot is not supported.
+6. `/etc/os-release` may be overwritten by a future upgrade of Debian's `base-files`.
+7. Only a colour GTK theme ships, with the upstream xfwm4 window theme.
+
+See `docs/KNOWN_LIMITATIONS.md` for the full list.
+
+---
+
+## Requirements to run it
+
+**Virtual machine (recommended):**
+
+- Host: Windows, Linux or macOS with VirtualBox, VMware or QEMU
+- 2 or more CPU cores, 4 GB RAM (2 GB minimum), 25 GB virtual disk
+- 64-bit x86 host with hardware virtualization enabled
+- ISO type: Linux, Debian (64-bit). Skip Unattended Installation.
+  Try EFI off first, and turn it on if the VM will not boot.
+
+**Physical hardware:** not tested and not recommended yet.
+
+---
+
+## Quick start in VirtualBox
+
+1. Download the ISO, `.sha256` and `.manifest` from the Build ISO run's artifacts
+   (GitHub Actions, `astraos-iso`) and unzip.
+2. Verify the download in PowerShell:
+   ```powershell
+   Get-FileHash .\astraos-0.1.0-alpha-amd64.iso -Algorithm SHA256
+   Get-Content .\astraos-0.1.0-alpha-amd64.iso.sha256
+   ```
+   The two hashes should match.
+3. VirtualBox: New. Set name `AstraOS`, pick the ISO, Type Linux, Version Debian (64-bit),
+   tick Skip Unattended Installation.
+4. Hardware: 4096 MB RAM, 2 CPUs, 25 GB disk. Finish.
+5. Start the VM, choose **Live system (amd64)**, wait for the desktop.
+6. In the terminal, run the DNS workaround above, then open Firefox.
+7. Press Right Ctrl to release the mouse from the VM.
+   In the terminal, copy is Ctrl+Shift+C and paste is Ctrl+Shift+V.
+
+---
+
+## Building the ISO
+
+Without a Linux machine, use CI: run the **Build ISO** workflow manually from the
+Actions tab. It takes about 13 minutes and produces the `astraos-iso` and
+`astraos-build-logs` artifacts.
+
+On a Debian or Ubuntu host:
 
 ```bash
-# On a Debian or Ubuntu host:
 ./scripts/validate-environment.sh        # can this host build AstraOS?
 ./scripts/bootstrap-build-environment.sh # install build dependencies
 ./scripts/build-iso.sh                   # build the image
 ```
 
-The ISO is written to `dist/`, together with a `.sha256` checksum and a `.manifest`
-recording exactly what was built. See [`docs/BUILDING.md`](docs/BUILDING.md).
-
-Or build in CI, without a Linux machine: run the **Build ISO** workflow manually.
+The ISO is written to `dist/` with a `.sha256` checksum and a `.manifest`.
+See `docs/BUILDING.md`.
 
 ## Testing
 
@@ -118,71 +168,55 @@ Or build in CI, without a Linux machine: run the **Build ISO** workflow manually
 make check          # or: python3 tests/run.py
 ```
 
-The static suite validates configuration, package lists, assets, desktop entries,
-Calamares safety settings and shell script syntax. It runs on any host with Python 3.
+The static suite checks configuration, package lists, assets, desktop entries,
+Calamares safety settings and shell syntax. A green run means the repository is
+consistent, not that AstraOS works. Booting the ISO in a VM is the real test.
 
-**It does not build or boot the OS.** A green run means the repository is internally
-consistent, not that AstraOS works.
+---
 
-To verify the package selection against the live Debian archive (needs network):
+## Repository layout
 
-```bash
-python3 scripts/verify-package-availability.py
+```
+astraos/
+├── VERSION           release identity
+├── Makefile          make check / build / validate / checksums / clean
+├── config/           distribution settings, branding, package lists, live-build config and hooks
+├── branding/         original artwork and the asset renderer
+├── desktop/          Xfce configuration, launchers, autostart, GTK theme
+├── packages/         AstraOS .deb packages and their sources
+├── system/           identity files and kernel/security default templates
+├── installer/        Calamares configuration and branding
+├── scripts/          validation, packaging, build and release tooling
+├── tests/            static test suite
+├── docs/             architecture, build, installation, recovery, limitations
+└── build/  dist/     generated output (git-ignored)
 ```
 
----
-
-## Known limitations
-
-AstraOS 0.1.0 Alpha is an early release. The significant limitations are:
-
-- **No image has passed structural validation or been booted yet**, as described above.
-- **Secure Boot is not supported or claimed.** It is disabled in the live image's own
-  boot configuration.
-- **`/etc/os-release` can be overwritten** by a future upgrade of Debian's `base-files`
-  package, because that package owns the path and AstraOS does not yet ship a forked
-  `base-files`.
-- **The desktop ships a colour-only GTK theme.** Window decorations use the upstream
-  xfwm4 `Default` theme rather than a custom AstraOS titlebar theme.
-- **No physical hardware has been tested.** Nothing is claimed about Wi-Fi chipsets,
-  GPUs or laptops.
-- **AI features are not part of this release** and are not in the boot path.
-
-The complete, honest list is in
-[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
+The code is mostly build tooling: about half Python and half Shell, with a small amount
+of HTML, CSS and Make. The operating system itself comes from Debian packages.
 
 ---
 
-## The visual identity
+## Roadmap
 
-AstraOS has two deliberate visual layers, described in
-[`docs/DESIGN.md`](docs/DESIGN.md) and in [`branding/README.md`](branding/README.md):
-
-- **Brand layer** — the neon ring, gradients and bloom, on the boot splash, the login
-  screen, the installer and the wallpapers. This is the identity the project was
-  designed around.
-- **Desktop layer** — flat graphite and cyan, no blur, no transparency in panel and
-  window chrome. The desktop must stay responsive on modest hardware, so the expensive
-  effects live where the user only sees them briefly.
-
-Every bitmap is generated from `config/branding.env` by
-`branding/tools/render_assets.py`, which uses only the Python standard library. The
-palette therefore has one source of truth, and the assets are reproducible.
-
-Open `branding/preview.html` in a browser to see all of them.
+1. Fix DNS so networking works out of the box, and add a validator check for it.
+2. Confirm the ISO passes structural validation in CI.
+3. Test the Calamares installer: install to a VM disk and boot the installed system.
+4. Reduce ISO size (turn off APT recommends, trim firmware and large optional apps).
+5. Add Guest Additions support for VMs.
+6. Test on physical hardware.
+7. Decide what makes AstraOS different from other Xfce distros.
 
 ---
 
-## Licensing and upstream attribution
+## Licensing and attribution
 
-AstraOS is distributed under the **GNU General Public License, version 3 or later**.
-See [`LICENSE`](LICENSE).
+AstraOS is distributed under the GNU General Public License, version 3 or later. See `LICENSE`.
 
-AstraOS is an independent distribution based on **Debian GNU/Linux**. It is not
-affiliated with, endorsed by, or an official release of the Debian Project. It includes
-software from Debian, the Linux kernel, Xfce, LightDM, Plymouth, GRUB, Calamares and
-many other projects; each retains its own copyright and licence, recorded in
+AstraOS is an independent distribution based on Debian GNU/Linux and is not affiliated
+with, endorsed by, or an official release of the Debian Project. It includes software
+from Debian, the Linux kernel, Xfce, LightDM, Plymouth, GRUB, Calamares, Firefox and many
+other projects; each keeps its own copyright and licence, recorded in
 `/usr/share/doc/<package>/copyright` on an installed system.
 
-All AstraOS artwork is original to this project. No third-party logo or trademark is
-redistributed, and no proprietary asset is included.
+All AstraOS artwork is original to this project.
