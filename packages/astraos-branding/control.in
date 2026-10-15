@@ -11,7 +11,12 @@ Suggests: inkscape
 Description: AstraOS visual identity
  The AstraOS brand assets and the configuration that points system components at them:
  wallpapers, the AstraOS ring logo in colour and monochrome, the AstraOS icon theme,
- the Plymouth boot splash, the GRUB theme, and the LightDM greeter assets.
+ the AstraOS cursor theme, the Plymouth boot splash, the GRUB theme, and the LightDM
+ greeter theme and assets.
+ .
+ The cursor theme is installed as an icon theme that carries cursors, which is the
+ layout libXcursor reads. It is generated rather than drawn so that every cursor name
+ it claims to provide exists on disk.
  .
  All artwork is original to the AstraOS project. No asset is copied from another
  distribution and no third-party logo or trademark is redistributed. The palette and

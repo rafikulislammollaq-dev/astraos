@@ -1,0 +1,403 @@
+#!/bin/bash
+# astra - the AstraOS all-in-one command.
+#
+# Windows has one mental model: Settings, Windows Update, and the Microsoft
+# Store. Linux spreads the same jobs across apt, dpkg, systemctl and friends.
+# This command keeps the one mental model:
+#
+#     astra update     refresh app sources and install updates (Windows Update)
+#     astra install X  install an app (like the Store)
+#     astra doctor     run a health check and explain anything that failed
+#     astra help       the Windows-to-Linux cheat sheet
+#
+# Design rules:
+#   * It runs the real tools (apt, systemctl); it never reimplements them.
+#   * Anything destructive asks first. Nothing here deletes, disables or
+#     downgrades without an explicit yes.
+#   * It must work over SSH and on the console: colour only on a terminal,
+#     no GUI dependency anywhere.
+#   * Exit codes follow the underlying tool.
+
+set -u
+
+# --------------------------------------------------------------------------
+# Output
+# --------------------------------------------------------------------------
+if [ -t 1 ] && [ "${TERM:-dumb}" != "dumb" ] && [ -z "${NO_COLOR:-}" ]; then
+    B="\033[1m"; MAG="\033[95m"; CY="\033[96m"; GRN="\033[92m"
+    YLW="\033[93m"; RED="\033[91m"; DIM="\033[2m"; E="\033[0m"
+else
+    B=""; MAG=""; CY=""; GRN=""; YLW=""; RED=""; DIM=""; E=""
+fi
+
+banner() {
+    printf "${MAG}${B}"
+    cat <<'BANNER'
+     ___   ____ _  ______ _ ___
+    / _ | / /  ' |/ / __/ / _  |      A S T R A
+   / __ |/ / /|  / / _// / __ |      one command for everything
+  /_/ |_/_/_/ |_/_/___/_/_/ |_|      astra help  ·  astra doctor
+BANNER
+    printf "${E}\n"
+}
+
+# need_root COMMAND...
+# Re-exec with sudo when the action needs administrator rights, mirroring the
+# UAC prompt a Windows user already knows. Skips the prompt when already root.
+need_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        printf "${DIM}[astra] asking for your password (like a Windows UAC prompt)${E}\n"
+        sudo "$@"
+    else
+        printf "${RED}This action needs administrator rights, but sudo is not available.${E}\n"
+        return 1
+    fi
+}
+
+ask() {
+    [ -t 0 ] || return 1
+    printf "${CY}%s [y/N] ${E}" "$1"
+    read -r _ans
+    case "$_ans" in
+        [Yy]*) return 0 ;;
+        *)     return 1 ;;
+    esac
+}
+
+# --------------------------------------------------------------------------
+# Subcommands
+# --------------------------------------------------------------------------
+do_update() {
+    banner
+    printf "${B}Checking for updates...${E}\n\n"
+    need_root apt-get update || return $?
+    _count="$(apt-get -s dist-upgrade 2>/dev/null | grep -c '^Inst' || true)"
+    if [ "${_count:-0}" -eq 0 ]; then
+        printf "\n${GRN}AstraOS is up to date.${E}\n"
+        return 0
+    fi
+    printf "\n${YLW}%s update(s) available.${E}\n" "$_count"
+    if ask "Install them now?"; then
+        need_root apt-get full-upgrade -y
+        _rc=$?
+        printf "\n"
+        if [ "$_rc" -eq 0 ]; then
+            printf "${GRN}Done. A restart applies kernel updates:  astra reboot${E}\n"
+        fi
+        return "$_rc"
+    fi
+    printf "${DIM}Skipped. Run 'astra update' again any time.${E}\n"
+    return 0
+}
+
+do_install() {
+    [ $# -gt 0 ] || { printf 'Usage: astra install APP [APP...]\nTry:   astra search <name>  first\n'; return 2; }
+    printf "${B}Installing: %s${E}\n" "$*"
+    need_root apt-get install -y "$@"
+}
+
+do_remove() {
+    [ $# -gt 0 ] || { printf 'Usage: astra remove APP [APP...]\n'; return 2; }
+    if ask "Remove: $* (this cannot be undone)?"; then
+        need_root apt-get purge -y "$@"
+    else
+        printf "${DIM}Cancelled - nothing was removed.${E}\n"
+    fi
+}
+
+do_search() {
+    [ $# -gt 0 ] || { printf 'Usage: astra search NAME\n'; return 2; }
+    apt-cache search "$@"
+}
+
+do_apps() {
+    printf "${B}Installed applications:${E}\n\n"
+    for _f in /usr/share/applications/*.desktop; do
+        [ -f "$_f" ] || continue
+        _name="$(grep -m1 '^Name=' "$_f" | cut -d= -f2-)"
+        [ -n "${_name:-}" ] && printf '  %s\n' "$_name"
+    done | sort | head -80
+    printf "\n${DIM}Full list: the Start button, or: astra search <name>${E}\n"
+}
+
+do_cleanup() {
+    printf "${B}Cleaning up: unused packages and cached downloads.${E}\n\n"
+    if ask "Remove packages that are no longer needed (autoremove)?"; then
+        need_root apt-get autoremove --purge -y || return $?
+    fi
+    need_root apt-get clean || true
+    printf "\n${GRN}Cleaned.${E}\n"
+}
+
+do_repair() {
+    printf "${B}Repairing the package database (the equivalent of System File Repair).${E}\n\n"
+    need_root dpkg --configure -a || return $?
+    need_root apt-get install -f -y || return $?
+    printf "\n${GRN}Repair finished.${E}\nVerify file integrity with:  sfc${E}\n"
+}
+
+do_trim() {
+    printf "${B}TRIM (the SSD maintenance Windows runs weekly).${E}\n\n"
+    need_root fstrim -av
+}
+
+# do_effects on|off|status - the smooth-window toggle.
+#
+# ON:  copies /etc/astraos/picom.conf to ~/.config/picom/picom.conf, puts the
+#      autostart entry in ~/.config/autostart/, switches the xfwm4 compositor
+#      off (two compositors fighting is flicker), and starts picom now.
+# OFF: removes the autostart entry, stops picom, switches the xfwm4
+#      compositor back on.
+#
+# Deliberately per-user and reversible: effects live in the home directory,
+# nothing is written system-wide, and the default session never starts picom
+# (see desktop/compositor/picom.conf for why the default is the safe one).
+do_effects() {
+    _what="${1:-status}"
+    _conf_src="/etc/astraos/picom.conf"
+    _conf_dst="${HOME}/.config/picom/picom.conf"
+    _auto_dst="${HOME}/.config/autostart/astraos-picom.desktop"
+
+    case "$_what" in
+        status)
+            if [ -e "$_auto_dst" ] || pgrep -x picom >/dev/null 2>&1; then
+                printf "${GRN}Effects are ON${E} ${DIM}(fading windows, picom compositor)${E}\n"
+                printf "Turn off with:  astra effects off\n"
+            else
+                printf "${DIM}Effects are OFF ${E}${DIM}(default: the reliable xfwm4 compositor)${E}\n"
+                printf "Turn on with:   astra effects on\n"
+            fi
+            return 0
+            ;;
+        on)
+            command -v picom >/dev/null 2>&1 \
+                || { printf "${RED}picom is not installed:${E} astra install picom\n"; return 1; }
+            [ -f "$_conf_src" ] \
+                || { printf "${RED}missing ${_conf_src}${E} (reinstall astraos-desktop)\n"; return 1; }
+            mkdir -p "${HOME}/.config/picom" "${HOME}/.config/autostart"
+            cp -f "$_conf_src" "$_conf_dst"
+            cp -f /etc/astraos/autostart/astraos-picom.desktop "$_auto_dst" 2>/dev/null \
+                || { printf "${RED}autostart template missing${E} (reinstall astraos-desktop)\n"; return 1; }
+            # One compositor at a time: xfwm4's must yield.
+            if command -v xfconf-query >/dev/null 2>&1; then
+                xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false 2>/dev/null || true
+            fi
+            pkill -x picom 2>/dev/null || true
+            picom --daemon >/dev/null 2>&1 &
+            printf "${GRN}Effects are on:${E} windows now fade in and out.\n"
+            printf "${DIM}They start automatically at login. Undo anytime:  astra effects off${E}\n"
+            return 0
+            ;;
+        off)
+            rm -f "$_auto_dst"
+            pkill -x picom 2>/dev/null || true
+            if command -v xfconf-query >/dev/null 2>&1; then
+                xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s true 2>/dev/null || true
+            fi
+            printf "${GRN}Effects are off.${E} ${DIM}The default xfwm4 compositor is back; shadows and translucency stay.${E}\n"
+            return 0
+            ;;
+        *)
+            printf 'Usage: astra effects on|off|status\n'
+            return 2
+            ;;
+    esac
+}
+
+do_reboot() {
+    if ask "Restart the computer now?"; then
+        exec systemctl reboot
+    fi
+    printf "${DIM}Cancelled.${E}\n"
+}
+
+do_repair_menu() { do_repair "$@"; }
+
+do_info() {
+    if command -v fastfetch >/dev/null 2>&1; then
+        exec fastfetch
+    fi
+    exec astraos-info
+}
+
+do_about() {
+    exec /usr/lib/astraos/winbin/bridge winver
+}
+
+# do_doctor - the health check. Every check prints PASS/FAIL with a fix line.
+# All checks are read-only: doctor never changes anything.
+do_doctor() {
+    banner
+    printf "${B}AstraOS health check${E}\n\n"
+    _problems=0
+    _fail() { printf "  ${RED}FAIL${E} %s\n" "$1"; [ -n "${2:-}" ] && printf "        ${DIM}fix: %s${E}\n" "$2"; _problems=$((_problems + 1)); }
+    _pass() { printf "  ${GRN} ok ${E} %s\n" "$1"; }
+    _warn() { printf "  ${YLW}WARN${E} %s\n" "$1"; [ -n "${2:-}" ] && printf "        ${DIM}see: %s${E}\n" "$2"; }
+
+    # disk space
+    _pct="$(df -P / | awk 'NR==2 { gsub(/%/,""); print $5 }')"
+    if [ "${_pct:-100}" -ge 90 ]; then
+        _fail "root disk is ${_pct}% full" "astra cleanup"
+    else
+        _pass "root disk ${_pct}% used"
+    fi
+
+    # memory
+    _mem="$(free | awk '/^Mem:/ { printf "%.0f", $3/$2*100 }')"
+    if [ "${_mem:-0}" -ge 95 ]; then
+        _warn "memory ${_mem}% in use" "taskmgr"
+    else
+        _pass "memory ${_mem:-?}% in use"
+    fi
+
+    # failed systemd units
+    _failed="$(systemctl --failed --no-legend --no-pager 2>/dev/null | grep -c . || true)"
+    if [ "${_failed:-0}" -gt 0 ]; then
+        _fail "${_failed} system service(s) failed" "systemctl --failed, then: astra repair"
+        systemctl --failed --no-legend --no-pager 2>/dev/null | head -5 | sed 's/^/        /'
+    else
+        _pass "no failed system services"
+    fi
+
+    # package database
+    if _audit="$(dpkg --audit 2>&1)" && [ -z "$_audit" ]; then
+        _pass "package database consistent"
+    else
+        _fail "package database needs repair" "astra repair"
+    fi
+
+    # network
+    if ip route show default 2>/dev/null | grep -q default; then
+        _pass "network connected (default route present)"
+    else
+        _warn "no network connection" "click the network icon in the taskbar"
+    fi
+
+    # time sync
+    if command -v timedatectl >/dev/null 2>&1; then
+        if timedatectl show -p NTPSynchronized 2>/dev/null | grep -q yes; then
+            _pass "clock synchronised"
+        else
+            _warn "clock not synchronised" "sudo systemctl restart systemd-timesyncd"
+        fi
+    fi
+
+    # firewall (informational; needs root to query)
+    if [ "$(id -u)" -eq 0 ]; then
+        _ufw="$(ufw status 2>/dev/null | head -1)"
+        case "$_ufw" in
+            *"active"*) _pass "firewall active (ufw)" ;;
+            *) _warn "firewall inactive" "sudo ufw enable  (policy: docs/SECURITY.md)" ;;
+        esac
+    else
+        printf "  ${DIM}firewall: run  sudo astra doctor  to check ufw${E}\n"
+    fi
+
+    printf "\n"
+    if [ "$_problems" -eq 0 ]; then
+        printf "${GRN}${B}AstraOS looks healthy.${E}\n"
+        return 0
+    fi
+    printf "${RED}${B}%s problem(s) found.${E} Work through the fixes above, then run 'astra doctor' again.\n" "$_problems"
+    return 1
+}
+
+# do_help - the cheat sheet, generated from winmap.txt (single source of truth).
+do_help() {
+    banner
+    cat <<'INTRO'
+  New here? Everything you knew on Windows still works, by name:
+
+    dir, cls, copy, move, del, ren, md, rd, type, notepad, explorer,
+    ipconfig, tasklist, taskkill, taskmgr, ping, tracert, netstat,
+    systeminfo, sfc, chkdsk, defrag, shutdown, control, regedit...
+
+  Type them exactly as you always did. This is how they map:
+
+INTRO
+    if [ -f /usr/lib/astraos/winbin/winmap.txt ]; then
+        awk -F'|' '
+            /^#/ || /^[[:space:]]*$/ { next }
+            { printf "    %-12s -> %s\n", $1, ($3 != "" ? $3 : $2) }
+        ' /usr/lib/astraos/winbin/winmap.txt
+    fi
+    cat <<'COMMANDS'
+
+  One command for everything:
+
+    astra update            check and install updates (like Windows Update)
+    astra install NAME      install an app (like the Store)
+    astra remove NAME       remove an app
+    astra search NAME       find an app by name
+    astra apps              list installed apps
+    astra doctor            health check with fixes for anything wrong
+    astra cleanup           remove unused packages and caches
+    astra repair            repair the package database
+    astra trim              TRIM the SSDs (SSD maintenance)
+    astra effects on|off    fade animations on windows (off = default)
+    astra reboot            restart
+    astra info              system summary
+    astra help              this cheat sheet
+
+  Tips for a Windows refugee:
+    * Paths use / not \.  "C:\Users" does not exist - there is one filesystem,
+      and your files are in /home/YOU (Documents, Downloads, Desktop...).
+      Backslash paths are translated automatically when you quote them.
+    * Ctrl+C stops a command; Alt+F4 closes a window.
+    * Software installs through 'astra install' or the Synaptic app -
+      never download .exe files from the internet.
+COMMANDS
+    return 0
+}
+
+usage() {
+    banner
+    cat <<'USAGE'
+  Usage:
+
+    astra update            check for and install updates
+    astra install APP...    install apps
+    astra remove APP...     remove apps (asks first)
+    astra search NAME       search the app catalogue
+    astra apps              list installed applications
+    astra doctor            run the health check
+    astra cleanup           remove unused packages and caches
+    astra repair            repair the package database
+    astra trim              TRIM the SSDs
+    astra effects on|off    window fade animations
+    astra reboot            restart the computer (asks first)
+    astra info              system summary
+    astra help              the Windows-to-Linux cheat sheet
+    astra about             version and release information
+
+  Everything runs the real system tools underneath; destructive steps ask
+  first. Documentation: /usr/share/doc/astraos/  -  start with WINDOWS_USERS.md
+USAGE
+    return 0
+}
+
+# --------------------------------------------------------------------------
+# Dispatch. Aliases so both vocabularies land in the same place.
+# --------------------------------------------------------------------------
+CMD="${1:-help}"
+shift 2>/dev/null || true
+
+case "$CMD" in
+    update|upgrade)          do_update "$@" ;;
+    install|add)             do_install "$@" ;;
+    remove|uninstall|purge)  do_remove "$@" ;;
+    search|find)             do_search "$@" ;;
+    apps|list-apps)          do_apps ;;
+    cleanup|clean)           do_cleanup ;;
+    repair|fix)              do_repair "$@" ;;
+    trim|ssd)                do_trim ;;
+    effects|compositor)      do_effects "$@" ;;
+    reboot|restart)          do_reboot ;;
+    doctor|check)            do_doctor ;;
+    info|neofetch|fetch)     do_info ;;
+    about|version|--version|-V) do_about ;;
+    help|--help|-h)          do_help ;;
+    *)                       printf "Unknown command: %s\n\n" "$CMD"; usage; exit 2 ;;
+esac

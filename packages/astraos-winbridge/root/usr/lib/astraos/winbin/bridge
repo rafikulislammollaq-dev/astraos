@@ -1,0 +1,1189 @@
+#!/bin/sh
+# astraos bridge - the Windows command bridge.
+#
+# Every command in /usr/lib/astraos/winbin/ is a two-line entry point that calls
+# this script with its own name:
+#
+#     dir /w             ->  bridge dir /w            ->  ls -Fh
+#     ipconfig /all      ->  bridge ipconfig /all     ->  ip + routes + DNS
+#     taskkill /IM x /F  ->  bridge taskkill /IM x /F ->  pkill -KILL -x x
+#
+# WHY A DISPATCHER AND NOT 40 INDEPENDENT SCRIPTS
+# -----------------------------------------------
+# One file carries every translation rule, so a behaviour change is one edit in
+# one place, the Windows switch vocabulary is defined exactly once, and the
+# test suite has a single file to parse. The entry points stay trivial enough
+# to audit at a glance.
+#
+# RULES THE TRANSLATIONS FOLLOW
+# -----------------------------
+#  * The real Linux command does the work. The bridge translates vocabulary,
+#    never reimplements a tool (plan 2.3).
+#  * A Windows switch is recognised only when the command's own switch-matcher
+#    says so. "/y" is a switch for copy; "/etc/hosts" is always a path. An
+#    argument that matches nothing is treated as a path, never silently
+#    dropped.
+#  * Backslash paths ("Docs\Notes\todo.txt", "C:\Users\me") are converted to
+#    forward-slash paths before they reach Linux, and a lone drive-letter
+#    prefix is dropped: AstraOS has one filesystem and no drive letters.
+#  * Behaviour that would surprise a Windows user is called out in one printed
+#    hint (for example: ping stops after 4 pings by default, like Windows).
+#  * Nothing destructive is automatic: 'del' trashes files when gvfs is
+#    available, 'defrag' never trims without a confirmation, 'diskpart' does
+#    not partition anything.
+#
+# Scripts may call these commands too: colour is used only on a terminal, and
+# the underlying command's exit status is always propagated.
+#
+# POSIX SHELL NOTE
+# ----------------
+# dash has no arrays, and a function's `set --` does not survive the return to
+# its caller. Translated paths are therefore carried in the global $_PATHS
+# (newline-separated) and expanded into the caller's "$@" by the EXPAND_PATHS
+# block: `set -f` disables globbing, IFS is reduced to a newline so spaces
+# inside a path stay intact, and the original IFS is restored. Every command
+# that takes paths uses exactly this sequence.
+
+set -u
+
+WINBIN_DIR="/usr/lib/astraos/winbin"
+WINMAP="$WINBIN_DIR/winmap.txt"
+
+# --------------------------------------------------------------------------
+# Output helpers
+# --------------------------------------------------------------------------
+if [ -t 1 ] && [ "${TERM:-dumb}" != "dumb" ]; then
+    ESC="$(printf '\033')"
+    C_DIM="${ESC}[2m"; C_OK="${ESC}[92m"; C_WARN="${ESC}[93m"
+    C_ERR="${ESC}[91m"; C_END="${ESC}[0m"
+else
+    C_DIM=""; C_OK=""; C_WARN=""; C_ERR=""; C_END=""
+fi
+
+say()  { printf '%s\n' "$*"; }
+hint() { printf '%s[astraos]%s %s\n' "$C_DIM" "$C_END" "$*"; }
+ok()   { printf '%s%s%s\n' "$C_OK" "$*" "$C_END"; }
+warn() { printf '%s%s%s\n' "$C_WARN" "$*" "$C_END"; }
+fail() { printf '%s%s%s\n' "$C_ERR" "$*" "$C_END" >&2; }
+
+usage() {
+    say "AstraOS Windows bridge. Every command maps to the real Linux tool underneath."
+    say ""
+    say "  bridge --list            all bridged commands"
+    say "  bridge <name> ...        run one (this is what the winbin wrappers call)"
+    say ""
+    say "The full cheat sheet:  astra help  (or  help  in any shell)"
+}
+
+# --------------------------------------------------------------------------
+# Path translation
+#
+# winpath ARG - prints ARG as a Unix path:
+#   "Docs\Notes\todo.txt" -> Docs/Notes/todo.txt
+#   "C:\Users\me"         -> Users/me        (drive letter dropped)
+#   "~\Documents"         -> $HOME/Documents
+# --------------------------------------------------------------------------
+winpath() {
+    _p="$1"
+    case "$_p" in
+        '~'*) _p="$HOME${_p#~}" ;;
+    esac
+    _p="$(printf '%s' "$_p" | sed -e 's#^[A-Za-z]:[/\\]$#/#' \
+                                  -e 's#^[A-Za-z]:[/\\]##' \
+                                  -e 's#\\#/#g')"
+    printf '%s' "$_p"
+}
+
+# collect_paths IS_SWITCH_FUNC ARGS...
+# Prints the arguments that are NOT switches, translated to Unix paths, one
+# per line. A path containing a newline is refused rather than mangled.
+collect_paths() {
+    _is_switch="$1"; shift
+    for _a in "$@"; do
+        if "$_is_switch" "$_a"; then
+            continue
+        fi
+        case "$_a" in
+            *'
+'*) fail "refusing to handle an argument containing a newline"; return 2 ;;
+        esac
+        winpath "$_a"
+    done
+}
+
+# lookup NAME - print the winmap line for a Windows command name, if any.
+lookup() {
+    [ -f "$WINMAP" ] || return 1
+    awk -F'|' -v name="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" \
+        'tolower($1) == name && !found { print; found=1 }' "$WINMAP"
+}
+
+# --------------------------------------------------------------------------
+# Switch matchers. One per command; anything they do not accept is a path.
+# --------------------------------------------------------------------------
+dir_switch()      { case "$1" in /[WwBbSsPpQq]|/[Oo]*|/[Aa][:+-]*|/[Aa]*|/[Tt]*) return 0 ;; esac; return 1; }
+copy_switch()     { case "$1" in /[Yy]|/-[Yy]|/[VvZzAaBbDdNn]) return 0 ;; esac; return 1; }
+xcopy_switch()    { case "$1" in /[A-Za-z][A-Za-z]*|/-[Yy]) return 0 ;; esac; return 1; }
+robocopy_switch() { case "$1" in /[A-Za-z.]*) return 0 ;; esac; return 1; }
+move_switch()     { case "$1" in /[Yy]|/-[Yy]|/[Nn]) return 0 ;; esac; return 1; }
+ren_switch()      { case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
+rd_switch()       { case "$1" in /[SsQq]) return 0 ;; esac; return 1; }
+del_switch()      { case "$1" in /[FfPpSsQq]|/[Aa][:+-]*|/[Aa]*) return 0 ;; esac; return 1; }
+type_switch()     { case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
+tree_switch()     { case "$1" in /[FfAa]) return 0 ;; esac; return 1; }
+comp_switch()     { case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
+explorer_switch() { case "$1" in /[A-Za-z,]*) return 0 ;; esac; return 1; }
+simple_path_switch() { case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
+
+# --------------------------------------------------------------------------
+# Command implementations
+# --------------------------------------------------------------------------
+cmd_dir() {
+    _ls_opts="-Fh --group-directories-first --color=auto"
+    _bare=""; _paths=""; _one_path=""
+    for _a in "$@"; do
+        if dir_switch "$_a"; then
+            case "$_a" in
+                /[Ww]) _ls_opts="$_ls_opts -C" ;;
+                /[Bb]) _bare=1 ;;
+                /[Ss]) _ls_opts="$_ls_opts -R" ;;
+            esac
+        else
+            _p="$(winpath "$_a")"
+            _paths="$_paths
+$_p"
+            _one_path="$_p"
+        fi
+    done
+    [ -n "$_bare" ] && _ls_opts="$_ls_opts -1"
+    if [ -n "$_paths" ] && [ -z "$_bare" ] && [ -t 1 ]; then
+        say "${C_DIM} Directory of ${_one_path:-.}${C_END}"
+    fi
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_paths
+    IFS=$_ifs_old; set +f
+    # shellcheck disable=SC2086
+    ls $_ls_opts "$@"
+}
+
+cmd_cls() {
+    if command -v clear >/dev/null 2>&1; then
+        exec clear
+    fi
+    printf '\033[2J\033[H'
+}
+
+cmd_copy() {
+    _cp=""
+    for _a in "$@"; do
+        case "$_a" in
+            /[Yy]) _cp="-f" ;;
+            /-y)   _cp="-i" ;;
+        esac
+    done
+    _PATHS="$(collect_paths copy_switch "$@")" || return $?
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_PATHS
+    IFS=$_ifs_old; set +f
+    [ $# -lt 2 ] && { say "copy SRC [SRC...] DEST"; return 2; }
+    # shellcheck disable=SC2086
+    exec cp -p $_cp "$@"
+}
+
+cmd_xcopy() {
+    _cp="-r"
+    for _a in "$@"; do
+        case "$_a" in
+            /[Yy]) _cp="$_cp -f" ;;
+            /-y)   _cp="$_cp -i" ;;
+        esac
+    done
+    _PATHS="$(collect_paths xcopy_switch "$@")" || return $?
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_PATHS
+    IFS=$_ifs_old; set +f
+    [ $# -lt 2 ] && { say "xcopy SRC DEST  (copies directories recursively)"; return 2; }
+    hint "xcopy -> cp -r"
+    # shellcheck disable=SC2086
+    exec cp -p $_cp "$@"
+}
+
+cmd_robocopy() {
+    _rs=""
+    for _a in "$@"; do
+        case "$_a" in
+            /[Mm][Ii][Rr]) _rs="--delete" ;;
+        esac
+    done
+    _PATHS="$(collect_paths robocopy_switch "$@")" || return $?
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_PATHS
+    IFS=$_ifs_old; set +f
+    [ $# -lt 2 ] && { say "robocopy SRC DEST [/MIR]"; return 2; }
+    hint "robocopy -> rsync -a (a /MIR mirror includes --delete)"
+    command -v rsync >/dev/null 2>&1 || { fail "rsync is not installed"; return 127; }
+    # shellcheck disable=SC2086
+    exec rsync -a $_rs "$@"
+}
+
+cmd_move() {
+    _mv=""
+    for _a in "$@"; do
+        case "$_a" in
+            /[Yy]) _mv="-f" ;;
+            /-y)   _mv="-i" ;;
+        esac
+    done
+    _PATHS="$(collect_paths move_switch "$@")" || return $?
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_PATHS
+    IFS=$_ifs_old; set +f
+    [ $# -lt 2 ] && { say "move SRC DEST"; return 2; }
+    # shellcheck disable=SC2086
+    exec mv $_mv "$@"
+}
+
+cmd_ren() {
+    _PATHS="$(collect_paths ren_switch "$@")" || return $?
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_PATHS
+    IFS=$_ifs_old; set +f
+    [ $# -eq 2 ] || { say "ren OLDNAME NEWNAME"; return 2; }
+    exec mv "$@"
+}
+
+cmd_md() {
+    _PATHS="$(collect_paths simple_path_switch "$@")" || return $?
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_PATHS
+    IFS=$_ifs_old; set +f
+    [ $# -eq 0 ] && { say "md DIR [DIR...]"; return 2; }
+    hint "md -> mkdir -p (parent directories are created too)"
+    exec mkdir -p "$@"
+}
+
+cmd_rd() {
+    _r=""; _f=""
+    for _a in "$@"; do
+        case "$_a" in
+            /[Ss]) _r=1 ;;
+            /[Qq]) _f=1 ;;
+        esac
+    done
+    _PATHS="$(collect_paths rd_switch "$@")" || return $?
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_PATHS
+    IFS=$_ifs_old; set +f
+    [ $# -eq 0 ] && { say "rd DIR   (rd /s /q DIR removes a whole tree)"; return 2; }
+    if [ -n "$_r" ]; then
+        [ -n "$_f" ] || warn "rd /s removes directories permanently (the Recycle Bin does not apply)."
+        # shellcheck disable=SC2086
+        exec rm -r ${_f:+-f} "$@"
+    fi
+    exec rmdir "$@"
+}
+
+cmd_del() {
+    _force=""; _ask=""
+    for _a in "$@"; do
+        case "$_a" in
+            /[Ff]) _force=1 ;;
+            /[Pp]) _ask=1 ;;
+        esac
+    done
+    _PATHS="$(collect_paths del_switch "$@")" || return $?
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_PATHS
+    IFS=$_ifs_old; set +f
+    [ $# -eq 0 ] && { say "del FILE [FILE...]   (/f = permanent, otherwise moved to trash)"; return 2; }
+    if [ -z "$_force" ] && command -v gio >/dev/null 2>&1; then
+        # Recycle-Bin behaviour: trash, do not unlink. If the trash refuses
+        # (unusual mount), fall through to rm with a note.
+        if gio trash "$@" 2>/dev/null; then
+            hint "moved to trash (empty it from the Files app to free space)"
+            return 0
+        fi
+        hint "trash unavailable; deleting permanently"
+    fi
+    # shellcheck disable=SC2086
+    exec rm ${_ask:+-i} ${_force:+-f} "$@"
+}
+
+cmd_type() {
+    _PATHS="$(collect_paths type_switch "$@")" || return $?
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_PATHS
+    IFS=$_ifs_old; set +f
+    [ $# -eq 0 ] && { say "type FILE"; return 2; }
+    exec cat "$@"
+}
+
+cmd_edit() {
+    if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v mousepad >/dev/null 2>&1; then
+        _PATHS="$(collect_paths type_switch "$@")" || return $?
+        set -f; _ifs_old=$IFS; IFS="
+"
+        set -- $_PATHS
+        IFS=$_ifs_old; set +f
+        exec mousepad "$@"
+    fi
+    hint "edit -> nano (arrows to move, Ctrl+O saves, Ctrl+X exits)"
+    exec nano "$@"
+}
+
+cmd_where() {
+    _rc=1
+    for _a in "$@"; do
+        case "$_a" in
+            /[A-Za-z]*) continue ;;
+            *)
+                _ifs_old=$IFS; IFS=":"
+                for _dir in $PATH; do
+                    [ -x "$_dir/$_a" ] && { say "$_dir/$_a"; _rc=0; }
+                done
+                IFS="$_ifs_old"
+                ;;
+        esac
+    done
+    return "$_rc"
+}
+
+cmd_findstr() {
+    _g=""; _rec=""; _pat=""; _paths=""; _have_pat=""
+    for _a in "$@"; do
+        case "$_a" in
+            /[Ii]) _g="$_g -i" ;;
+            /[Vv]) _g="$_g -v" ;;
+            /[Nn]) _g="$_g -n" ;;
+            /[Mm]) _g="$_g -l" ;;
+            /[Ss]) _rec=1 ;;
+            /[Cc]:*) _pat="${_a#/[Cc]:}"; _have_pat=1 ;;
+            /[LlRrOoXxEeGgDdPp]|/[A-Za-z]:*) : ;;
+            *)
+                if [ -z "$_have_pat" ]; then
+                    _pat="$_a"; _have_pat=1
+                else
+                    _paths="$_paths
+$(winpath "$_a")"
+                fi
+                ;;
+        esac
+    done
+    [ -n "$_pat" ] || { say "findstr [/i] [/s] [/n] PATTERN [FILE...]"; return 2; }
+    hint "findstr -> grep (patterns are regular expressions)"
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_paths
+    IFS=$_ifs_old; set +f
+    if [ -n "$_rec" ]; then
+        [ $# -eq 0 ] && set -- .
+        # shellcheck disable=SC2086
+        exec grep -r $_g -e "$_pat" "$@"
+    fi
+    # shellcheck disable=SC2086
+    exec grep $_g -e "$_pat" "$@"
+}
+
+cmd_attrib() {
+    _mode=""; _paths=""
+    for _a in "$@"; do
+        case "$_a" in
+            '+R'|'+r') _mode="$_mode a-w" ;;
+            '-R'|'-r') _mode="$_mode u+w" ;;
+            '+H'|'-H'|'+S'|'-S'|'+A'|'-A') : ;;
+            *) _paths="$_paths
+$(winpath "$_a")" ;;
+        esac
+    done
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_paths
+    IFS=$_ifs_old; set +f
+    if [ -n "$_mode" ] && [ $# -gt 0 ]; then
+        hint "attrib -> chmod (Linux permission bits replace the R/S/H attributes)"
+        # shellcheck disable=SC2086
+        exec chmod $_mode "$@"
+    fi
+    [ $# -gt 0 ] && ls -ld -- "$@"
+    hint "read-only = no 'w' bit. Examples:  chmod +w FILE   chmod a-w FILE"
+    return 0
+}
+
+cmd_tree() {
+    _files=""; _ascii=""; _paths=""
+    for _a in "$@"; do
+        case "$_a" in
+            /[Ff]) _files=1 ;;
+            /[Aa]) _ascii=1 ;;
+            *) _paths="$_paths
+$(winpath "$_a")" ;;
+        esac
+    done
+    command -v tree >/dev/null 2>&1 || { fail "tree is not installed"; return 127; }
+    hint "tree -> tree (directories only, like Windows; /f adds files)"
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_paths
+    IFS=$_ifs_old; set +f
+    if [ -z "$_files" ]; then
+        # shellcheck disable=SC2086
+        exec tree -d ${_ascii:+--charset ascii} "$@"
+    fi
+    # shellcheck disable=SC2086
+    exec tree ${_ascii:+--charset ascii} "$@"
+}
+
+cmd_comp() {
+    _PATHS="$(collect_paths comp_switch "$@")" || return $?
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_PATHS
+    IFS=$_ifs_old; set +f
+    [ $# -eq 2 ] || { say "comp FILE1 FILE2"; return 2; }
+    hint "comp -> cmp (prints the first differing bytes)"
+    cmp -l "$1" "$2" 2>&1 | head -20
+    return 0
+}
+
+cmd_tasklist() {
+    _img=""; _pid=""; _verbose=""
+    _next="none"
+    for _a in "$@"; do
+        case "$_next" in
+            filter)
+                _next="none"
+                case "$_a" in
+                    *[Ii][Mm][Aa][Gg][Ee][Nn][Aa][Mm][Ee]*[Ee][Qq]*)
+                        _img="$(printf '%s' "$_a" | sed 's/.*[Ee][Qq] *//')" ;;
+                    *[Pp][Ii][Dd]*[Ee][Qq]*)
+                        _pid="$(printf '%s' "$_a" | sed 's/.*[Ee][Qq] *//')" ;;
+                    *) : ;;
+                esac
+                continue
+                ;;
+        esac
+        case "$_a" in
+            /[Ff][Ii]) _next="filter" ;;
+            /v|/V) _verbose=1 ;;
+            *) : ;;
+        esac
+    done
+    hint "tasklist -> ps (the PID column is what taskkill needs)"
+    _fmt='{ pid=$1; img=$2; cpu=$3; mem=$4; $1=$2=$3=$4="";
+           sub(/^ */,"");
+           printf "%-8s %-24s %6s%% %6s%%  %s\n", pid, img, cpu, mem, $0 }'
+    _out="$(ps -eo pid=,comm=,pcpu=,pmem=,args= --sort=-pcpu | awk "$_fmt")"
+    if [ -n "$_img" ]; then
+        _out="$(printf '%s\n' "$_out" | grep -i -- "$_img")" || {
+            fail "INFO: no tasks match the given criteria."; return 1; }
+    fi
+    if [ -n "$_pid" ]; then
+        case "$_pid" in *[!0-9]*) fail "invalid PID: $_pid"; return 2 ;; esac
+        _out="$(printf '%s\n' "$_out" | awk -v p="$_pid" '$1==p')"
+    fi
+    [ -z "$_out" ] && { fail "INFO: no tasks match the given criteria."; return 1; }
+    if [ -n "$_verbose" ]; then
+        printf '%s\n' "$_out"
+    else
+        printf '%s\n' "$_out" | head -40
+    fi
+    return 0
+}
+
+cmd_taskkill() {
+    _img=""; _pid=""; _force=""; _tree=""
+    _next="none"
+    for _a in "$@"; do
+        case "$_next" in
+            image) _img="$(printf '%s' "$_a" | sed 's/\.exe$//')"; _next="none"; continue ;;
+            pid)   _pid="$_a"; _next="none"; continue ;;
+        esac
+        case "$_a" in
+            /[Ff]) _force=1 ;;
+            /[Tt]) _tree=1 ;;
+            /[Ii][Mm]) _next="image" ;;
+            /[Pp][Ii][Dd]) _next="pid" ;;
+            *) : ;;
+        esac
+    done
+    [ -z "$_img" ] && [ -z "$_pid" ] && { say "taskkill /IM name | /PID number  (/F = force, /T = tree)"; return 2; }
+    _sig="TERM"; [ -n "$_force" ] && _sig="KILL"
+    _rc=0
+    if [ -n "$_pid" ]; then
+        case "$_pid" in *[!0-9]*) fail "invalid PID: $_pid"; return 2 ;; esac
+        if [ -n "$_tree" ]; then
+            for _c in $(pgrep -P "$_pid" 2>/dev/null); do
+                kill -"$_sig" "$_c" 2>/dev/null || _rc=1
+            done
+        fi
+        if kill -"$_sig" "$_pid" 2>/dev/null; then
+            ok "SUCCESS: sent $_sig to the process with PID $_pid."
+        else
+            fail "ERROR: could not signal PID $_pid."
+            _rc=1
+        fi
+        return "$_rc"
+    fi
+    _pids="$(pgrep -x -- "$_img")"
+    if [ -z "$_pids" ]; then
+        fail "ERROR: the process \"$_img\" was not found."
+        return 128
+    fi
+    for _p in $_pids; do
+        if [ -n "$_tree" ]; then
+            for _c in $(pgrep -P "$_p" 2>/dev/null); do
+                kill -"$_sig" "$_c" 2>/dev/null || _rc=1
+            done
+        fi
+        if kill -"$_sig" "$_p" 2>/dev/null; then
+            ok "SUCCESS: sent $_sig to process \"$_img\" with PID $_p."
+        else
+            fail "ERROR: could not signal PID $_p."
+            _rc=1
+        fi
+    done
+    return "$_rc"
+}
+
+cmd_taskmgr() {
+    if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xfce4-taskmanager >/dev/null 2>&1; then
+        exec xfce4-taskmanager
+    fi
+    hint "taskmgr -> btop (q quits; arrows navigate)"
+    if command -v btop >/dev/null 2>&1; then
+        exec btop
+    fi
+    if command -v htop >/dev/null 2>&1; then
+        exec htop
+    fi
+    exec top
+}
+
+cmd_systeminfo() {
+    hint "systeminfo -> /etc/os-release + lscpu + free + df   (health check: astra doctor)"
+    . /etc/os-release 2>/dev/null || true
+    say "Host Name:                 $(hostname 2>/dev/null || printf 'unknown')"
+    say "OS Name:                   ${PRETTY_NAME:-AstraOS}"
+    say "OS Version:                $(head -1 /etc/astraos-release 2>/dev/null || printf 'n/a')"
+    say "OS Build:                  Debian ${VERSION_ID:-?} (${VERSION_CODENAME:-?}) base"
+    say "Kernel:                    $(uname -r)"
+    say "System Type:               $(uname -m)"
+    say "System Boot Time:          $(uptime -s 2>/dev/null || printf 'n/a')"
+    say "Uptime:                    $(uptime -p 2>/dev/null | sed 's/^up //')"
+    say "Shell:                     ${SHELL:-unknown}"
+    say ""
+    lscpu 2>/dev/null | awk -F': *' '
+        /Model name/ { printf "Processor:                 %s\n", $2 }
+        /^CPU\(s\)/  { printf "Logical processors:        %s\n", $2 }
+    '
+    free -h 2>/dev/null | awk 'NR==2 { printf "Total Physical Memory:     %s\n", $2 }'
+    df -h / 2>/dev/null | awk 'NR==2 { printf "Root disk:                 %s used of %s\n", $3, $2 }'
+    lspci 2>/dev/null | grep -Ei 'vga|3d|display' \
+        | sed 's/^[0-9a-f:.]* //; s/(rev[^)]*)//' | sed 's/^/Graphics:                   /'
+    ip -4 -o addr show scope global 2>/dev/null \
+        | awk '{printf "IP Address (%s):       %s\n", $2, $4}'
+    return 0
+}
+
+cmd_ipconfig() {
+    _all=""; _action=""
+    for _a in "$@"; do
+        case "$_a" in
+            /[Aa][Ll][Ll]) _all=1 ;;
+            /[Ff][Ll][Uu][Ss][Hh][Dd][Nn][Ss]) _action="flush" ;;
+            /[Rr][Ee][Ll][Ee][Aa][Ss][Ee]) _action="release" ;;
+            /[Rr][Ee][Nn][Ee][Ww]) _action="renew" ;;
+            *) : ;;
+        esac
+    done
+    if [ "$_action" = "flush" ]; then
+        if command -v resolvectl >/dev/null 2>&1; then
+            if resolvectl flush-caches 2>/dev/null; then
+                ok "Successfully flushed the DNS resolver cache."
+                return 0
+            fi
+        fi
+        warn "No systemd-resolved cache found; nothing to flush."
+        return 0
+    fi
+    if [ -n "$_action" ]; then
+        hint "ipconfig ${_action} -> NetworkManager. Use the network icon in the taskbar, or:"
+        hint "  nmcli device connect DEVICE   (device list below)"
+        nmcli device status 2>/dev/null
+        return 0
+    fi
+    ip -4 -o addr show scope global 2>/dev/null | awk -F'  *' '
+        {
+            if ($2 != dev) { dev=$2; printf "\nEthernet adapter %s:\n", dev }
+            ip=$4
+            plen=ip; sub(/^.*\//, "", plen); sub(/\/.*$/, "", ip)
+            printf "   IPv4 Address. . . . : %s   (network /%s)\n", ip, plen
+        }'
+    _gw="$(ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="via") print $(i+1)}' | head -1)"
+    if [ -n "$_gw" ]; then
+        printf '\nDefault Gateway . . . . . : %s\n' "$_gw"
+    else
+        printf '\nDefault Gateway . . . . . : none (offline?)\n'
+    fi
+    if [ -n "$_all" ]; then
+        printf '\nDNS Servers . . . . . . . :\n'
+        grep -hs '^nameserver' /etc/resolv.conf /run/systemd/resolve/resolv.conf 2>/dev/null \
+            | awk '{printf "   %s\n", $2}' | sort -u
+        ip -o link show 2>/dev/null | awk -F': ' '/ether/ {
+            dev=$2; line=$0
+            if (match(line, /ether [0-9a-f:]+/)) {
+                printf "Physical Address (%s): %s\n", dev, substr(line, RSTART+6, RLENGTH-6)
+            }
+        }'
+    fi
+    return 0
+}
+
+cmd_getmac() {
+    ip -o link show 2>/dev/null | awk -F': ' '/ether/ {
+        dev=$2; line=$0
+        if (match(line, /ether [0-9a-f:]+/)) {
+            printf "%-14s %s\n", dev, substr(line, RSTART+6, RLENGTH-6)
+        }
+    }'
+    return 0
+}
+
+cmd_ping() {
+    _args=""; _count="4"; _infinite=""
+    _next="none"
+    for _a in "$@"; do
+        case "$_next" in
+            count) _count="$_a"; _next="none"; continue ;;
+            wait)  _args="$_args -W $(( (_a + 999) / 1000 ))"; _next="none"; continue ;;
+            size)  _args="$_args -s $_a"; _next="none"; continue ;;
+        esac
+        case "$_a" in
+            /[Nn]|-[Nn]) _next="count" ;;
+            /[Tt]|-[Tt]) _infinite=1 ;;
+            /[Ww]|-[Ww]) _next="wait" ;;
+            /[Ll]|-[Ll]) _next="size" ;;
+            /[Aa]|/[Ff]|-4|/[44]) : ;;
+            -6|/[66]) _args="$_args -6" ;;
+            *) _args="$_args $(winpath "$_a")" ;;
+        esac
+    done
+    [ -n "$_infinite" ] || _args="$_args -c ${_count:-4}"
+    [ -n "$_infinite" ] || hint "like Windows: 4 pings, then it stops. Use  ping -t HOST  for continuous, Ctrl+C to stop."
+    # shellcheck disable=SC2086
+    exec ping $_args
+}
+
+cmd_tracert() {
+    _args=""; _next="none"
+    for _a in "$@"; do
+        case "$_next" in
+            hops) _args="$_args -m $_a"; _next="none"; continue ;;
+            wait) _args="$_args -w $((_a / 1000)).$((_a % 1000))"; _next="none"; continue ;;
+        esac
+        case "$_a" in
+            /[Hh]|-[Hh]) _next="hops" ;;
+            /[Ww]|-[Ww]) _next="wait" ;;
+            /[Dd]) _args="$_args -n" ;;
+            /[Jj]|/[Kk]|/[Rr]|/[Ss]|-4|/[44]|-6|/[66]) : ;;
+            *) _args="$_args $(winpath "$_a")" ;;
+        esac
+    done
+    hint "tracert -> traceroute"
+    command -v traceroute >/dev/null 2>&1 || { fail "traceroute is not installed"; return 127; }
+    # shellcheck disable=SC2086
+    exec traceroute $_args
+}
+
+cmd_netstat() {
+    _flags=""
+    _next="none"
+    for _a in "$@"; do
+        case "$_next" in
+            proto)
+                _next="none"
+                case "$_a" in
+                    [Tt][Cc][Pp]) _flags="$_flags -t" ;;
+                    [Uu][Dd][Pp]) _flags="$_flags -u" ;;
+                esac
+                continue
+                ;;
+        esac
+        case "$_a" in
+            -[A-Za-z]*|/[A-Za-z]*)
+                _letters="$(printf '%s' "$_a" | sed 's/^[-/]//')"
+                _j=1
+                while [ "$_j" -le "${#_letters}" ]; do
+                    _c="$(printf '%s' "$_letters" | cut -c "$_j")"
+                    case "$_c" in
+                        [Aa]) _flags="$_flags -a" ;;
+                        [Nn]) _flags="$_flags -n" ;;
+                        [Oo]|[Bb]) _flags="$_flags -p" ;;
+                        [Rr]) _flags="$_flags -r" ;;
+                        [Ss]) _flags="$_flags -s" ;;
+                        [Ee]) _flags="$_flags -e" ;;
+                        [Tt]) _flags="$_flags -t" ;;
+                        [Uu]) _flags="$_flags -u" ;;
+                        [Pp]) _next="proto" ;;
+                    esac
+                    _j=$((_j + 1))
+                done
+                ;;
+            *) : ;;
+        esac
+    done
+    [ -z "$_flags" ] && _flags="-a -n"
+    hint "netstat -> netstat (-p shows the owning process; use sudo for other users' processes)"
+    # shellcheck disable=SC2086
+    exec netstat $_flags
+}
+
+cmd_net() {
+    _sub="${1:-}"
+    case "$_sub" in
+        [Ss][Tt][Aa][Rr][Tt])
+            shift
+            [ -n "${1:-}" ] || { say "net start SERVICE"; return 2; }
+            hint "net start -> systemctl start"
+            exec sudo systemctl start "$@"
+            ;;
+        [Ss][Tt][Oo][Pp])
+            shift
+            [ -n "${1:-}" ] || { say "net stop SERVICE"; return 2; }
+            hint "net stop -> systemctl stop"
+            exec sudo systemctl stop "$@"
+            ;;
+        [Uu][Ss][Ee][Rr])
+            hint "net user -> accounts live in /etc/passwd; create users in Settings > Users"
+            cut -d: -f1 /etc/passwd
+            return 0
+            ;;
+        [Ss][Hh][Aa][Rr][Ee]|[Uu][Ss][Ee])
+            hint "network shares: open Files, press Ctrl+L, type  smb://server/share"
+            return 0
+            ;;
+        *)
+            say "net start|stop SERVICE   net user   net use"
+            return 2
+            ;;
+    esac
+}
+
+cmd_sfc() {
+    hint "sfc -> dpkg --verify (checks installed files against recorded checksums)"
+    _out=""; _audit=""
+    if [ "$(id -u)" -eq 0 ]; then
+        _out="$(dpkg --verify 2>&1)" || true
+    elif command -v sudo >/dev/null 2>&1 && [ -t 0 ]; then
+        say "sfc needs administrator rights, like on Windows. Asking for your password..."
+        _out="$(sudo dpkg --verify 2>&1)" || true
+    else
+        _out="$(dpkg --verify 2>&1)" || true
+    fi
+    _audit="$(dpkg --audit 2>&1)" || true
+    if [ -z "$_out" ] && [ -z "$_audit" ]; then
+        ok "AstraOS Resource Protection did not find any integrity violations."
+        return 0
+    fi
+    warn "Files that differ from their package checksums (config files you edited are normal):"
+    printf '%s\n' "$_out"
+    if [ -n "$_audit" ]; then
+        say ""
+        say "Packages needing repair:"
+        printf '%s\n' "$_audit"
+        say ""
+        say "Run:  astra repair"
+    fi
+    return 0
+}
+
+cmd_chkdsk() {
+    _src="$(findmnt -no SOURCE / 2>/dev/null || printf 'unknown')"
+    _fst="$(findmnt -no FSTYPE / 2>/dev/null || printf 'unknown')"
+    say "Root filesystem:  ${_src}  (${_fst})"
+    say ""
+    say "Linux cannot check a filesystem that is mounted - the same rule Windows"
+    say "follows for the system drive. To check the root disk:"
+    say "  1. Reboot and pick the recovery entry in the boot menu."
+    say "  2. fsck runs before the disk is mounted."
+    say ""
+    if command -v smartctl >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
+        for _d in /dev/sda /dev/nvme0; do
+            if [ -e "$_d" ]; then
+                say "Drive health ($_d):"
+                smartctl -H "$_d" 2>/dev/null | grep -Ei 'result|overall'
+            fi
+        done
+    else
+        say "Drive health (SMART):  sudo smartctl -H /dev/sda"
+    fi
+    return 0
+}
+
+cmd_defrag() {
+    say "Linux filesystems (ext4) place data continuously as they write; a scheduled"
+    say "defragmentation is not needed."
+    say ""
+    if lsblk -d -n -o ROTA 2>/dev/null | grep -q '^0$'; then
+        say "You have SSD(s). What keeps them fast is TRIM (Windows schedules it weekly):"
+        if [ -t 0 ]; then
+            printf 'Run  fstrim -av  now? [y/N] '
+            read -r _ans
+            case "$_ans" in
+                [Yy]*)
+                    if [ "$(id -u)" -eq 0 ]; then
+                        exec fstrim -av
+                    fi
+                    exec sudo fstrim -av
+                    ;;
+            esac
+            say "Skipped. You can run it later with:  astra trim"
+        else
+            say "Run it with:  astra trim   (or: sudo fstrim -av)"
+        fi
+    else
+        say "Your disks are spinning HDDs; Linux does not need a scheduled defrag for them."
+    fi
+    return 0
+}
+
+cmd_diskpart() {
+    say "diskpart does not script disk changes here. This is what is installed:"
+    say ""
+    lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL 2>/dev/null || lsblk
+    say ""
+    say "To partition or format a disk, open 'Disks' or run gparted."
+    say "AstraOS never touches a disk unless you confirm the target in the"
+    say "installer or in Disks."
+    return 0
+}
+
+cmd_dxdiag() {
+    hint "dxdiag -> lspci + glxinfo"
+    lspci 2>/dev/null | grep -Ei 'vga|3d|display' | sed 's/^[0-9a-f:.]* //; s/(rev[^)]*)//'
+    if command -v glxinfo >/dev/null 2>&1; then
+        glxinfo 2>/dev/null \
+            | grep -E 'OpenGL renderer|OpenGL version' | sed 's/^OpenGL /  /'
+    else
+        say "  (install mesa-utils for renderer details: astra install mesa-utils)"
+    fi
+    if [ -n "${DISPLAY:-}" ] && command -v xrandr >/dev/null 2>&1; then
+        xrandr --current 2>/dev/null | awk '/\*/ {printf "  Display mode: %s\n", $1}'
+    fi
+    return 0
+}
+
+cmd_driverquery() {
+    hint "driverquery -> lspci -k (the kernel module in use, per device)"
+    lspci -k 2>/dev/null | awk '
+        /^[0-9]/ { dev=$0 }
+        /Kernel driver/ { printf "%-56s %s\n", substr(dev, 1, 56), $NF }
+    '
+    return 0
+}
+
+cmd_winver() {
+    if [ -f /etc/astraos-release ]; then
+        sed -n '1,4p' /etc/astraos-release
+    fi
+    say "Kernel $(uname -r) - $(uname -m)"
+    hint "full report: astraos-info   (or 'astra info')"
+    return 0
+}
+
+cmd_ver() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        say "${PRETTY_NAME:-AstraOS} [Version $(uname -r)]"
+    else
+        say "AstraOS [Version $(uname -r)]"
+    fi
+    return 0
+}
+
+cmd_control() {
+    hint "control -> Xfce Settings"
+    exec xfce4-settings "$@"
+}
+
+cmd_explorer() {
+    _target="$HOME"
+    for _a in "$@"; do
+        if ! explorer_switch "$_a"; then
+            _target="$(winpath "$_a")"
+        fi
+    done
+    exec thunar "$_target"
+}
+
+cmd_notepad() {
+    _PATHS="$(collect_paths type_switch "$@")" || return $?
+    set -f; _ifs_old=$IFS; IFS="
+"
+    set -- $_PATHS
+    IFS=$_ifs_old; set +f
+    exec mousepad "$@"
+}
+
+cmd_calc() {
+    if command -v galculator >/dev/null 2>&1; then
+        exec galculator
+    fi
+    command -v xcalc >/dev/null 2>&1 && exec xcalc
+    fail "no calculator found:  astra install galculator"
+    return 127
+}
+
+cmd_mspaint() {
+    hint "mspaint -> Drawing (a simple paint app, like Paint)"
+    if command -v drawing >/dev/null 2>&1; then
+        exec drawing
+    fi
+    fail "Drawing is not installed:  astra install drawing"
+    return 127
+}
+
+cmd_services() {
+    hint "services -> systemctl (the service name is column 1)"
+    systemctl list-units --type=service --state=running --no-pager --no-legend 2>/dev/null \
+        | awk '{ printf "%-42s %s\n", $1, $4 }'
+    say ""
+    say "start/stop one:   sudo systemctl start|stop NAME"
+    say "enable at boot:   sudo systemctl enable NAME"
+    return 0
+}
+
+cmd_msconfig() {
+    hint "msconfig -> what starts at boot"
+    say "Services enabled at boot:"
+    systemctl list-unit-files --state=enabled --no-pager --no-legend 2>/dev/null | head -30
+    say ""
+    say "Session startup apps:  Settings > Session and Startup > Application Autostart"
+    return 0
+}
+
+cmd_regedit() {
+    say "There is no registry. Configuration lives in plain files:"
+    say "  /etc/               system-wide settings (one text file per service)"
+    say "  ~/.config/          your user's application settings"
+    say "  xfconf-query -l     desktop settings (wallpaper, panel, shortcuts)"
+    say "  gsettings list-recursively   GTK application settings"
+    return 0
+}
+
+cmd_shutdown() {
+    _action=""; _delay=0; _abort=""
+    _next="none"
+    for _a in "$@"; do
+        case "$_next" in
+            seconds) _delay="$_a"; _next="none"; continue ;;
+        esac
+        case "$_a" in
+            /[Ss]) _action="poweroff" ;;
+            /[Rr]) _action="reboot" ;;
+            /[Hh]) _action="suspend" ;;
+            /[Ll]) _action="logoff" ;;
+            /[Aa]) _abort=1 ;;
+            /[Tt]) _next="seconds" ;;
+            *) : ;;
+        esac
+    done
+    if [ -n "$_abort" ]; then
+        _pidfile="/run/astraos-shutdown.pid"
+        [ -r "$_pidfile" ] || _pidfile="${TMPDIR:-/tmp}/astraos-shutdown.pid"
+        if [ -r "$_pidfile" ] && kill "$(cat "$_pidfile" 2>/dev/null)" 2>/dev/null; then
+            ok "The scheduled shutdown was aborted."
+            return 0
+        fi
+        warn "No shutdown scheduled by this bridge is pending."
+        return 0
+    fi
+    if [ -z "$_action" ]; then
+        say "shutdown /s | /r | /l   (/t seconds to wait, /a aborts a scheduled one)"
+        return 2
+    fi
+    if [ "$_action" = "logoff" ]; then
+        exec xfce4-session-logout --logout --fast
+    fi
+    case "$_delay" in
+        ''|*[!0-9]*) _delay=0 ;;
+    esac
+    if [ "$_delay" -gt 0 ]; then
+        say "Shutting down ($_action) in ${_delay}s. Run  shutdown /a  to abort."
+        printf '%s' "$$" > "${TMPDIR:-/tmp}/astraos-shutdown.pid" 2>/dev/null || true
+        sleep "$_delay"
+    fi
+    case "$_action" in
+        suspend) exec systemctl suspend ;;
+        *)       exec systemctl "$_action" ;;
+    esac
+}
+
+cmd_logoff() {
+    exec xfce4-session-logout --logout --fast
+}
+
+cmd_runas() {
+    _user=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            /[Uu][Ss][Ee][Rr]:*) _user="${1#/[Uu][Ss][Ee][Rr]:}" ;;
+            /[Nn][Oo][Pp][Rr][Oo][Ff][Ii][Ll][Ee]|/[Ss][Aa][Vv][Ee][Cc][Rr][Ee][Dd]|/[Ee][Nn][Vv]) : ;;
+            *) break ;;
+        esac
+        shift
+    done
+    if [ -z "$_user" ]; then
+        say "runas /user:NAME COMMAND"
+        return 2
+    fi
+    hint "runas -> sudo (the administrator account is 'root'; your account uses sudo)"
+    case "$_user" in
+        [Aa][Dd][Mm][Ii][Nn][Ii][Ss][Tt][Rr][Aa][Tt][Oo][Rr]|[Rr][Oo][Oo][Tt])
+            exec sudo "$@"
+            ;;
+        *) exec sudo -u "$_user" "$@" ;;
+    esac
+}
+
+cmd_winget() {
+    _sub="${1:-install}"
+    shift 2>/dev/null || true
+    case "$_sub" in
+        [Ii][Nn][Ss][Tt][Aa][Ll][Ll])    exec astra install "$@" ;;
+        [Uu][Nn][Ii][Nn][Ss][Tt][Aa][Ll][Ll]) exec astra remove "$@" ;;
+        [Ss][Ee][Aa][Rr][Cc][Hh]|[Ss][Hh][Oo][Ww]) exec astra search "$@" ;;
+        [Uu][Pp][Gg][Rr][Aa][Dd][Ee]|[Uu][Pp]) exec astra update ;;
+        *) hint "winget -> astra"; exec astra "$_sub" "$@" ;;
+    esac
+}
+
+cmd_choco() {
+    _sub="${1:-install}"
+    shift 2>/dev/null || true
+    case "$_sub" in
+        [Ii][Nn][Ss][Tt][Aa][Ll][Ll])    exec astra install "$@" ;;
+        [Uu][Nn][Ii][Nn][Ss][Tt][Aa][Ll][Ll]) exec astra remove "$@" ;;
+        [Ss][Ee][Aa][Rr][Cc][Hh]|[Ll][Ii][Ss][Tt]) exec astra search "$@" ;;
+        [Uu][Pp][Gg][Rr][Aa][Dd][Ee]|[Uu][Pp]) exec astra update ;;
+        *) hint "choco -> astra"; exec astra "$_sub" "$@" ;;
+    esac
+}
+
+cmd_start() {
+    # start "" "TARGET": the empty first argument is the window title on
+    # Windows; drop it here.
+    if [ "${1:-}" = "" ] && [ $# -gt 1 ]; then
+        shift
+    fi
+    [ $# -eq 0 ] && exec thunar "$HOME"
+    _t="$1"
+    shift
+    case "$_t" in
+        [Hh][Tt][Tt][Pp]*|[Ff][Ii][Ll][Ee]:*) exec xdg-open "$_t" ;;
+        /*|~*) exec xdg-open "$(winpath "$_t")" ;;
+        *\\*) exec xdg-open "$(winpath "$_t")" ;;
+        *)
+            if command -v "$_t" >/dev/null 2>&1; then
+                setsid "$_t" "$@" >/dev/null 2>&1 &
+                return 0
+            fi
+            if [ -e "$_t" ]; then
+                exec xdg-open "$_t"
+            fi
+            exec xdg-open "$(winpath "$_t")"
+            ;;
+    esac
+}
+
+# --------------------------------------------------------------------------
+# Dispatch
+# --------------------------------------------------------------------------
+CMD="${1:-}"
+shift 2>/dev/null || true
+
+case "$CMD" in
+    -h|--help) usage; exit 0 ;;
+esac
+
+case "$CMD" in
+    --list)
+        printf '%-14s %s\n' "dir"         "directory listing (ls)"
+        printf '%-14s %s\n' "cls"         "clear the screen"
+        printf '%-14s %s\n' "copy"        "copy files"
+        printf '%-14s %s\n' "xcopy"       "copy directories"
+        printf '%-14s %s\n' "robocopy"    "robust copy (rsync)"
+        printf '%-14s %s\n' "move"        "move/rename"
+        printf '%-14s %s\n' "del/erase"   "delete (to trash; /f = permanent)"
+        printf '%-14s %s\n' "ren"         "rename"
+        printf '%-14s %s\n' "md"          "make directory"
+        printf '%-14s %s\n' "rd"          "remove directory (/s /q = tree)"
+        printf '%-14s %s\n' "type"        "print a file (cat)"
+        printf '%-14s %s\n' "edit"        "edit a file (nano/mousepad)"
+        printf '%-14s %s\n' "where"       "find a command on PATH"
+        printf '%-14s %s\n' "findstr"     "search text (grep)"
+        printf '%-14s %s\n' "comp"        "compare two files"
+        printf '%-14s %s\n' "attrib"      "show/change permissions"
+        printf '%-14s %s\n' "tree"        "directory tree"
+        printf '%-14s %s\n' "tasklist"    "running processes"
+        printf '%-14s %s\n' "taskkill"    "end a process"
+        printf '%-14s %s\n' "taskmgr"     "task manager"
+        printf '%-14s %s\n' "systeminfo"  "system report"
+        printf '%-14s %s\n' "msinfo32"    "system report"
+        printf '%-14s %s\n' "ipconfig"    "network addresses (/all, /flushdns)"
+        printf '%-14s %s\n' "getmac"      "MAC addresses"
+        printf '%-14s %s\n' "ping"        "ping a host (4 by default, -t forever)"
+        printf '%-14s %s\n' "tracert"     "trace the route (traceroute)"
+        printf '%-14s %s\n' "netstat"     "network connections"
+        printf '%-14s %s\n' "net"         "net start/stop SERVICE, net user"
+        printf '%-14s %s\n' "sfc"         "verify system files"
+        printf '%-14s %s\n' "chkdsk"      "disk check guidance"
+        printf '%-14s %s\n' "defrag"      "TRIM for SSDs"
+        printf '%-14s %s\n' "diskpart"    "disk overview (read-only)"
+        printf '%-14s %s\n' "dxdiag"      "graphics information"
+        printf '%-14s %s\n' "driverquery" "kernel drivers"
+        printf '%-14s %s\n' "winver/ver"  "OS version"
+        printf '%-14s %s\n' "control"     "Settings"
+        printf '%-14s %s\n' "explorer"    "Files"
+        printf '%-14s %s\n' "notepad"     "text editor"
+        printf '%-14s %s\n' "calc"        "calculator"
+        printf '%-14s %s\n' "mspaint"     "paint app"
+        printf '%-14s %s\n' "services"    "running services"
+        printf '%-14s %s\n' "msconfig"    "boot services"
+        printf '%-14s %s\n' "regedit"     "where settings live instead"
+        printf '%-14s %s\n' "shutdown"    "shutdown /s /r /l, /t N, /a"
+        printf '%-14s %s\n' "logoff"      "log out"
+        printf '%-14s %s\n' "runas"       "run as another user (sudo)"
+        printf '%-14s %s\n' "winget"      "install apps (astra)"
+        printf '%-14s %s\n' "choco"       "install apps (astra)"
+        printf '%-14s %s\n' "start"       "open a file/folder/app"
+        ;;
+    *)
+        # Not a bridged command. Is it in the Windows mapping table?
+        _mapline="$(lookup "$CMD" || true)"
+        if [ -n "$_mapline" ]; then
+            _equiv="$(printf '%s' "$_mapline" | awk -F'|' '{print $2}')"
+            _desc="$(printf '%s' "$_mapline" | awk -F'|' '{print $3}')"
+            fail "'$CMD' is a Windows command. On AstraOS: ${_equiv%% *}"
+            [ -n "$_desc" ] && hint "$_desc"
+            case "$_equiv" in
+                ''|NONE) : ;;
+                *) hint "try:  ${_equiv%% *} ${_equiv#* }" ;;
+            esac
+            exit 127
+        fi
+        fail "bridge: unknown command '$CMD'"
+        usage >&2
+        exit 127
+        ;;
+esac

@@ -18,7 +18,19 @@ wireless-tools
 avahi-daemon
 libnss-mdns
 openssh-client
-resolvconf
+# NOTE: no `resolvconf` here, and this is load-bearing. It was listed until 0.2.0 and
+# shipping it made DNS dead in the live session. Measured on the 0.1.0 ISO
+# (filesystem.squashfs): /etc/resolv.conf is a 0-byte *regular file*, because
+# live-build replaces the path during the build instead of leaving the
+# /run/resolvconf/resolv.conf symlink that resolvconf(8) manages. At boot both
+# authorities are enabled (NetworkManager.service and resolvconf.service are both in
+# multi-user.target.wants), and they each defer to the other: NetworkManager sees
+# resolvconf installed and hands DNS over to it, and resolvconf finds its symlink
+# replaced and writes nothing. Nothing owns /etc/resolv.conf, so names never resolve
+# and only raw-IP traffic works. Installing resolvconf alongside NetworkManager is
+# the whole defect; NetworkManager writes DNS itself and Debian 13 marks resolvconf
+# deprecated. Do not add it back. tests/static/test_packages.py enforces this.
+#
 # NOTE: no NTP daemon here. systemd-timesyncd (see 00-core.list.chroot) is the time
 # synchronisation service, and ntpsec, chrony or openntpd all declare Conflicts:
 # time-daemon against it, so listing one stops the build with an unsatisfiable dependency

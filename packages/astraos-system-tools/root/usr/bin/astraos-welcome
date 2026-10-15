@@ -72,11 +72,19 @@ else
     printf '       See /etc/ufw/astraos-policy.conf for the exact rules to apply.\n\n'
 fi
 
+printf '  Coming from Windows?\n'
+printf '    Your commands work here by name: dir, cls, copy, move, del, ipconfig,\n'
+printf '    tasklist, taskkill, ping, sfc, shutdown... Type "help" in a terminal\n'
+printf '    for the full cheat sheet, or "astra help".\n'
+printf '    One command does everything:  astra update | astra install APP |\n'
+printf '    astra doctor | astra effects on   (window fade animations)\n\n'
+
 printf '  Documentation\n'
 printf '    %s/\n' "$DOC_DIR"
+printf '    Coming from Windows: %s/WINDOWS_USERS.md\n' "$DOC_DIR"
 printf '    Known limitations: %s/KNOWN_LIMITATIONS.md\n' "$DOC_DIR"
 printf '\n'
-printf '  AstraOS 0.1.0 is an ALPHA release built on Debian GNU/Linux.\n'
+printf '  AstraOS is an ALPHA release built on Debian GNU/Linux.\n'
 printf '  It is not a stable product and it is not an official Debian release.\n'
 printf '  Back up your data before installing on a computer you rely on.\n'
 printf '\n'

@@ -1,0 +1,106 @@
+# AstraOS Windows command bridge - the mapping table.
+#
+# Format:  windows-name|linux-equivalent|one-line description
+#
+# This file is the single source of truth for three consumers:
+#   * bridge(8)      suggests the Linux command when a Windows command that has
+#                    no wrapper is typed (wmic, reg, format, ...)
+#   * astra help     prints the cheat sheet straight from this table
+#   * interactive.sh command_not_found_handle names the equivalent when a
+#                    complete stranger to the table is typed
+#
+# "NONE" in column 2 means there is genuinely no equivalent; the description
+# says what to use instead. Commands that ARE wrapped live in this table too -
+# 'astra help' documents the whole bridge from here, wrapped or not.
+# Keep lines sorted by column 1 for the help output.
+
+astra|astra|the AstraOS all-in-one command: update, install, doctor, help
+attrib|attrib|show or change file permissions (maps to chmod)
+bcdedit|NONE|boot configuration lives in /etc/default/grub; run: sudo update-grub
+calc|calc|calculator (galculator)
+chdir|cd|change directory (backslash paths are translated)
+chkdsk|chkdsk|disk check guidance and SMART health
+choco|choco|package installer mapped to: astra install
+choice|read -p|shell prompt: read -p "question? " answer
+cls|cls|clear the terminal
+cmd|xfce4-terminal|the terminal (Ctrl+Alt+T works too)
+color|NONE|terminal colours come from the theme; see Settings > Terminal
+comp|comp|compare two files byte by byte
+control|control|open the Settings app
+copy|copy|copy files (recycle-safe switches mapped)
+defrag|defrag|TRIM for SSDs (ext4 never needs defragmenting)
+del|del|delete files - moved to TRASH unless /f is given
+devmgmt.msc|driverquery|see drivers per device: lspci -k
+dir|dir|directory listing with Windows flags (/w, /b, /s)
+diskmgmt.msc|diskpart|disk overview; partitioning in GNOME Disks or gparted
+diskpart|diskpart|disk overview (read-only); real partitioning: gparted
+dxdiag|dxdiag|graphics card and display information
+echo|echo|print text (same as Windows)
+edit|edit|edit a file (nano in a terminal, mousepad in the desktop)
+erase|del|delete files (same as del)
+explorer|explorer|open the Files app (Thunar)
+fc|cmp|compare two files (fc is a bash builtin; use cmp)
+find|grep|search inside files: grep -i pattern file
+findstr|findstr|search text with /i /v /n /s switches
+format|NONE|formatting is done in GNOME Disks or gparted - deliberately manual
+fsutil|df|disk space: df -h;  disk info: lsblk
+ftp|lftp|install it with: astra install lftp
+getmac|getmac|list MAC addresses
+gpedit.msc|NONE|system policy is /etc files; see docs in /usr/share/doc/astraos
+help|astra help|the Windows-to-Linux cheat sheet
+hostname|hostname|the computer's name (change it: sudo hostnamectl set-hostname NAME)
+icacls|chmod|permissions: chmod, ownership: chown, list: ls -l
+ipconfig|ipconfig|network addresses; /all for DNS and MACs
+label|NONE|set a filesystem label: sudo e2label /dev/sdX1 LABEL
+logman|journalctl|logs: journalctl -f (live) or journalctl -u SERVICE
+logoff|logoff|log out of the session
+md|md|make a directory (mkdir -p: parents included)
+mkdir|md|make a directory
+more|less|page through a file (q quits)
+move|move|move or rename files
+msconfig|msconfig|see what starts at boot
+msinfo32|systeminfo|full system report
+mspaint|mspaint|simple paint app (Drawing)
+nbtstat|avahi-browse|local network discovery: avahi-browse -art
+net|net|net start or net stop SERVICE, net user
+netsh|nmcli|network: nmcli device wifi list;  nmcli radio wifi on
+netstat|netstat|network connections (-ano works, -o becomes -p)
+notepad|notepad|text editor (mousepad)
+nslookup|nslookup|DNS lookups (same name, same job)
+path|echo $PATH|the command search path
+pathping|mtr|install with: astra install mtr-tiny
+ping|ping|4 pings by default like Windows; -t for continuous
+powershell|bash|the shell here is bash - scripts end in .sh
+print|lp|printing: lp file.pdf (CUPS is running)
+reg|NONE|no registry: settings are plain files in /etc and ~/.config
+regedit|regedit|explains where settings live instead of the registry
+ren|ren|rename a file
+replace|cp|copy with overwrite: cp -f SRC DST
+robocopy|robocopy|robust copy; /MIR = rsync -a --delete
+route print|ip route|the routing table: ip route show
+runas|runas|run as another user (administrator = root)
+sc|systemctl|services: systemctl status/start/stop NAME
+schtasks|crontab -e|scheduled tasks: crontab -e (edit) or crontab -l (list)
+set|printenv|environment variables: printenv, export VAR=value
+setx|NONE|make it permanent: add 'export VAR=value' to ~/.profile
+sfc|sfc|verify system files (dpkg --verify underneath)
+shutdown|shutdown|shutdown /s now, /r restart, /a abort, /t N wait, /l log off
+subst|ln -s|map a folder to a name: ln -s /path NAME
+systeminfo|systeminfo|the full system report
+taskkill|taskkill|end a process: /IM name /F (force) or /PID number
+tasklist|tasklist|running processes with PID, CPU and memory
+taskmgr|taskmgr|the graphical task manager
+telnet|NONE|use ssh instead: ssh user@host
+title|NONE|set the terminal title from the menu: Terminal > Set Title
+tracert|tracert|trace the network route (traceroute)
+tree|tree|directory tree (dirs only; /f adds files)
+type|type|print a file's contents
+ver|ver|the OS version line
+verifier|NONE|driver verification does not apply; drivers are kernel modules
+vol|lsblk -f|filesystem labels and UUIDs: lsblk -f
+where|where|find where a command lives on PATH
+whoami|whoami|your username (same as Windows)
+winver|winver|the OS version window
+winget|winget|app installer mapped to: astra install
+wmic|astra doctor|system queries: astra doctor, astraos-info, dmidecode
+xcopy|xcopy|copy directories recursively

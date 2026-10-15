@@ -1,0 +1,46 @@
+# AstraOS light GTK theme descriptor.
+#
+# Installed to /usr/share/themes/AstraOS-Light by scripts/build-packages.sh
+# (`cp -a desktop/themes/. <stage>/usr/share/themes/`), beside AstraOS-Dark, so a
+# user can switch between the two from the XFCE appearance settings without
+# installing anything else.
+#
+# AstraOS-Dark remains the theme selected by default in
+# desktop/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml. This
+# theme is offered, not forced.
+#
+# As with the dark theme, two stylesheets are shipped, one per toolkit
+# generation, and neither imports Adwaita:
+#
+#   gtk-3.0/gtk.css   GTK 3.24 — GTK3 and GTK2 applications.
+#   gtk-4.0/gtk.css   GTK 4 — GTK4-only applications.
+
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=AstraOS-Light
+Comment=AstraOS light desktop theme: white surfaces, accent-blue focus ring, same geometry as AstraOS-Dark
+Comment[en]=AstraOS light desktop theme
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=AstraOS-Light
+
+# Fallback hint for tools that compose metathemes; see the note in
+# AstraOS-Dark/index.theme. Every widget is styled here, so this is not a
+# runtime dependency, only a guarantee against an unstyled desktop.
+Inherits=Adwaita
+
+# AstraOS runs xfwm4, whose decoration theme is chosen in the xfconf xfwm4
+# channel. No Metacity/Marco theme is installed, so a name that is not present
+# on disk is deliberately not used (docs/DESIGN.md §7).
+MetacityTheme=Adwaita
+
+IconTheme=AstraOS
+CursorTheme=Adwaita
+
+ButtonLayout=menu:minimize,maximize,close
+
+[X-AstraOS-ThemeFiles]
+# Informational only; no toolkit reads these keys.
+gtk-3.0/gtk.css=GTK 3.24 widget theme
+gtk-4.0/gtk.css=GTK 4 widget theme

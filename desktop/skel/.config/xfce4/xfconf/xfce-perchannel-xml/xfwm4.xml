@@ -4,26 +4,36 @@
 
   NOTES ON DELIBERATE CHOICES
 
-  * theme is "Default", not "AstraOS-Dark". AstraOS 0.1.0 ships a colour-only GTK
-    theme and does not ship a full xfwm4 titlebar theme. Pointing xfwm4 at a theme
-    name with no window-decoration assets installed produces missing titlebars, so the
-    name is left at the upstream "Default" theme, which is guaranteed present with the
-    xfwm4 package. Documented in docs/KNOWN_LIMITATIONS.md.
+  * theme is "AstraOS-Dark". astraos-desktop installs the decoration images that xfwm4
+    loads as <part>-<state>.png, and scripts/build-packages.sh refuses to assemble the
+    package unless every one of them is present. Pointing xfwm4 at a theme name with no
+    decoration assets installed produces missing titlebars, so the name is written here
+    only because the build now stops instead of shipping a broken theme.
 
-  * Compositing is enabled because it is needed for window shadows and for the panel's
-    own transparency to work at all, but the expensive effects are off: no window
-    zoom, no frame opacity, no blur. The desktop target is responsiveness on modest
-    hardware (plan §7.1).
+  * Compositing is enabled because it is needed for window shadows and the
+    frame translucency below, but the expensive effects stay off: no window
+    zoom, no blur. The desktop target is responsiveness on modest hardware
+    (plan §7.1).
+
+  * 0.2.0 adds the motion layer a Windows user expects as "smooth": windows
+    go translucent while they are dragged or resized (they show what is behind
+    them, instead of the contents tearing around), the window frame carries a
+    slight opacity for the HUD glass look, and live wireframe dragging is off
+    so moves are continuous. `astra effects on` upgrades the session to the
+    picom compositor for open/close fade animation; it is opt-in because
+    fade-on-open costs a repaint on every window and some VirtualBox graphics
+    backends flicker with it.
 -->
 <channel name="xfwm4" version="1.0">
   <property name="general" type="empty">
-    <property name="theme" type="string" value="Default"/>
-    <property name="title_font" type="string" value="DejaVu Sans Bold 10"/>
-    <property name="title_alignment" type="string" value="center"/>
+    <property name="theme" type="string" value="AstraOS-Dark"/>
+    <property name="title_font" type="string" value="Inter Bold 10"/>
+    <property name="title_alignment" type="string" value="left"/>
     <property name="title_shadow_active" type="string" value="false"/>
     <property name="title_shadow_inactive" type="string" value="false"/>
+    <!-- O=menu S=stick H=hide M=maximize C=close, matching docs/DESIGN.md §6. -->
     <property name="button_layout" type="string" value="O|SHMC"/>
-    <property name="button_offset" type="int" value="0"/>
+    <property name="button_offset" type="int" value="4"/>
     <property name="button_spacing" type="int" value="4"/>
     <property name="full_width_title" type="bool" value="true"/>
     <property name="maximized_offset" type="int" value="0"/>
@@ -57,6 +67,16 @@
     <property name="show_dock_shadow" type="bool" value="false"/>
     <property name="vblank_mode" type="string" value="auto"/>
     <property name="sync_to_vblank" type="bool" value="true"/>
+    <!-- 0.2.0 motion: translucent while moving/resizing, glassy frame.
+         Opacity units are percent. Frame 90 keeps text fully readable while
+         giving the floating-panel look of the reference designs. -->
+    <property name="frame_opacity" type="int" value="90"/>
+    <property name="move_opacity" type="int" value="80"/>
+    <property name="resize_opacity" type="int" value="85"/>
+    <property name="popup_opacity" type="int" value="95"/>
+    <!-- Continuous (not wireframe) drag: what "smooth" means to a new user. -->
+    <property name="box_move" type="bool" value="false"/>
+    <property name="box_resize" type="bool" value="false"/>
   </property>
 
   <property name="ui" type="empty">

@@ -30,6 +30,13 @@ xfce4-indicator-plugin
 xfce4-sensors-plugin
 xfce4-verve-plugin
 xfce4-xkb-plugin
+# Windows-11 style taskbar: one icon per app with running dots (0.2.0).
+xfce4-docklike-plugin
+# Full-colour application icons (the AstraOS theme overlays the brand marks on
+# top of them) and the UI fonts referenced by xsettings.
+papirus-icon-theme
+fonts-inter
+fonts-jetbrains-mono
 thunar
 thunar-volman
 thunar-archive-plugin

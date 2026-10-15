@@ -14,11 +14,13 @@ REPO_ROOT := $(shell cd "$(dir $(lastword $(MAKEFILE_LIST)))" && pwd)
 SCRIPTS   := $(REPO_ROOT)/scripts
 VERSION   := $(shell sed -n 's/^ASTRAOS_VERSION="\(.*\)"/\1/p' $(REPO_ROOT)/VERSION)
 
-.PHONY: help check test lint packages build iso validate checksums manifest release clean distclean verify-packages
+.PHONY: help check test lint packages build iso validate checksums manifest release clean distclean verify-packages assets
 
 help:
 	@echo "AstraOS $(VERSION) - available targets"
 	@echo ""
+	@echo "  make assets             regenerate the branding bitmaps (wallpapers, splash,"
+	@echo "                          logos, window decorations, cursors)"
 	@echo "  make check              run the static test suite (runs anywhere)"
 	@echo "  make lint               shell syntax check on every script"
 	@echo "  make verify-packages    check the package list against the Debian archive (needs network)"
@@ -45,6 +47,15 @@ help:
 check test:
 	@echo "==> static test suite"
 	@python3 $(REPO_ROOT)/tests/run.py
+
+# Two generators, because they draw different things: render_assets.py renders the
+# large scene art (wallpapers, splash, greeter backdrop, the ring mark) and
+# render_theme_assets.py renders the small theme geometry (window decorations and the
+# Xcursor pointer set). Both read the same config/branding.env palette.
+assets:
+	@echo "==> regenerating branding assets"
+	@python3 $(REPO_ROOT)/branding/tools/render_assets.py
+	@python3 $(REPO_ROOT)/branding/tools/render_theme_assets.py
 
 lint:
 	@echo "==> shell syntax check"
@@ -136,4 +147,4 @@ distclean:
 	@mkdir -p "$(REPO_ROOT)/build" "$(REPO_ROOT)/dist"
 	@touch "$(REPO_ROOT)/build/.gitkeep" "$(REPO_ROOT)/dist/.gitkeep"
 	@echo "    regenerated branding assets are NOT deleted (they are inputs to a build)"
-	@echo "    regenerate them with: python3 branding/tools/render_assets.py"
+	@echo "    regenerate them with: make assets"

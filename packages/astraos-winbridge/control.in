@@ -1,0 +1,34 @@
+Package: @@PACKAGE@@
+Version: @@VERSION@@
+Architecture: @@ARCH@@
+Maintainer: @@VENDOR@@ <maintainers@astraos.invalid>
+Section: utils
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: astraos-base (>= @@VERSION@@), bash (>= 5.0), coreutils, util-linux, procps, psmisc, iproute2, iputils-ping, net-tools, sed, gawk, grep
+Recommends: fastfetch, xfce4-taskmanager, traceroute, gvfs, mesa-utils
+Description: AstraOS Windows command bridge
+ The bridge for people arriving from Windows. It puts a set of familiar Windows
+ commands on the PATH — dir, cls, copy, move, del, ren, md, rd, type, ipconfig,
+ tasklist, taskkill, ping, tracert, netstat, sfc, chkdsk, shutdown and more — and
+ maps each one onto the real Linux tool underneath, translating Windows switches
+ (/y, /s, /t 0) and Windows-style paths as it goes.
+ .
+ Nothing here replaces a system component. Every command is a small entry point
+ that calls /usr/lib/astraos/winbin/bridge, which executes the genuine Linux
+ equivalent and prints a one-line hint the first time it differs in behaviour.
+ 'del' moves files to the trash (gvfs) instead of unlinking them, which is the
+ Recycle-Bin behaviour a new user expects.
+ .
+ Also ships:
+ .
+  * astra(1)             one friendly front end for apt, system health and help
+  * command_not_found_handle  names the Linux equivalent when a Windows command
+                          that is not wrapped is typed
+  * winmap(5) data       the single Windows-to-Linux mapping table behind the
+                          bridge, 'astra help' and the shell suggestions
+ .
+ The wrappers are placed on the PATH through /etc/profile.d and the X11 session
+ environment, never by shipping files into /usr/bin, so no package that owns a
+ Linux command of the same name (coreutils' dir, net-tools' netstat) is ever
+ overlapped at the dpkg level.

@@ -1,0 +1,769 @@
+/*
+ * AstraOS LightDM GTK greeter theme — stylesheet.
+ * ============================================================================
+ *
+ * LOADED AS: branding/lightdm/astraos-greeter/gtkrc, linked from
+ * MainWindow.html and resolved relative to it by lightdm-gtk-greeter's WebKit
+ * view. "gtkrc" is the file name greeter themes use for their CSS; it is not a
+ * GTK2 rc file and is never parsed as one.
+ *
+ * WHAT THIS STYLES
+ * ----------------
+ * A full-screen login screen for AstraOS: the neon ring hero mark, the wordmark
+ * and version line, the account list, the password field, and the session,
+ * accessibility and power controls. The element ids it targets are the greeter's
+ * own contract; they are documented in MainWindow.html.
+ *
+ * DESIGN RULES IMPLEMENTED (docs/DESIGN.md + config/branding.env)
+ * ---------------------------------------------------------------
+ *   §1 Palette   only tokens from config/branding.env. rgba() appears only as
+ *                an alpha composite of a token, which is how branding.env itself
+ *                documents COLOR_HAIRLINE_BASE ("rgba(255,255,255,.08) flattened
+ *                onto the surface"), never as a different colour.
+ *   §3 Geometry  1px hairlines, 18-22px panels, 8px controls, 999px pills, 10px
+ *                corners on the ring's bloom. Depth is the accent glow.
+ *   §6 Motion    180ms cubic-bezier(.22,.61,.36,1) for hover and focus; one
+ *                3.6s linear rotation for the ring and one 7.2s for the arc.
+ *                prefers-reduced-motion removes both and leaves a static sweep.
+ *   §2 Type      DejaVu Sans and DejaVu Sans Mono only. No webfont rule, no
+ *                external font: DejaVu is in the base image, so the greeter
+ *                never renders in an unbranded default face.
+ *
+ * HARD CONSTRAINTS HONOURED
+ * -------------------------
+ *   * No image reference of any kind, anywhere. The ring, the bloom, the
+ *     horizon grid and every border are gradients and borders, so a greeter
+ *     theme cannot fail by pointing at a file that was not packaged.
+ *   * No external font, no network fetch, no JavaScript. The greeter's own
+ *     script fills the ids; this stylesheet never depends on anything but the
+ *     engine.
+ *   * WebKit CSS only: -webkit-box-sizing, -webkit-appearance,
+ *     -webkit-transition, -webkit-transform, -webkit-mask-image, conic-gradient.
+ *   * The background image is supplied by lightdm-gtk-greeter.conf (background=),
+ *     so everything painted here is either opaque or a low-alpha wash over
+ *     whatever the greeter put underneath.
+ */
+
+/* ==========================================================================
+ * 1. TOKENS AND RESET
+ * ======================================================================== */
+
+:root {
+  --void:        #05030A;   /* COLOR_VOID           */
+  --void-2:      #0B0716;   /* COLOR_VOID_2         */
+  --surface:     #120C20;   /* COLOR_SURFACE        */
+  --raised:      #1C1430;   /* COLOR_SURFACE_RAISED */
+  --hairline:    #1F1830;   /* COLOR_HAIRLINE_BASE  */
+  --hot:         #FF2FB9;   /* COLOR_HAIRLINE_HOT / BRAND_NEON_MAGENTA */
+  --pink:        #FF5CC8;   /* BRAND_NEON_PINK      */
+  --purple:      #8B3DFF;   /* BRAND_NEON_PURPLE    */
+  --cyan:        #22E6FF;   /* BRAND_NEON_CYAN      */
+  --teal:        #2EE6C9;   /* COLOR_HUD_TEAL       */
+  --red:         #FF4D4D;   /* COLOR_HUD_RED        */
+  --text:        #F2EEFF;   /* COLOR_TEXT           */
+  --dim:         #9A93B8;   /* COLOR_TEXT_DIM       */
+  --faint:       #6B6386;   /* COLOR_TEXT_FAINT     */
+
+  /* One motion vocabulary, used by every interactive element. */
+  --motion: 180ms cubic-bezier(.22,.61,.36,1);
+}
+
+* {
+  -webkit-box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background-color: var(--void);
+  color: var(--text);
+  font-family: "DejaVu Sans", "Bitstream Vera Sans", sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* ==========================================================================
+ * 2. PAGE FIELD
+ *
+ * The greeter paints its own background image underneath this element. These
+ * layers are the AstraOS wash on top of it: two soft blooms so the panel has
+ * something to sit against even on a flat wallpaper. No blur filter is used,
+ * because docs/DESIGN.md §0 rules out compositing cost in the login path and
+ * the gradient achieves the same read for free.
+ * ======================================================================== */
+
+#greeter {
+  position: relative;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  -webkit-box-orient: vertical;
+  flex-direction: column;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 32px 24px 56px;
+  background-color: var(--void);
+  background-image:
+    radial-gradient(ellipse 60% 45% at 50% 38%,
+      rgba(139, 61, 255, 0.30) 0%,
+      rgba(139, 61, 255, 0.12) 45%,
+      rgba(5, 3, 10, 0) 78%),
+    radial-gradient(ellipse 40% 30% at 34% 30%,
+      rgba(255, 47, 185, 0.22) 0%,
+      rgba(255, 47, 185, 0.06) 55%,
+      rgba(5, 3, 10, 0) 80%),
+    radial-gradient(ellipse 40% 30% at 68% 46%,
+      rgba(34, 230, 255, 0.16) 0%,
+      rgba(34, 230, 255, 0.04) 55%,
+      rgba(5, 3, 10, 0) 80%);
+  overflow: hidden;
+}
+
+/* The horizon grid, behind everything, per docs/DESIGN.md §5. A masked
+ * perspective plane so the lines fade out with distance instead of tiling the
+ * whole screen. -webkit-mask-image is the one masked property used; where it is
+ * unsupported the grid simply tiles visibly, which is still the intended
+ * effect, just without the fade. */
+.horizon {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  bottom: 0;
+  height: 46%;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(to right,
+      rgba(255, 47, 185, 0.10) 0, rgba(255, 47, 185, 0.10) 1px,
+      rgba(5, 3, 10, 0) 1px, rgba(5, 3, 10, 0) 64px),
+    repeating-linear-gradient(to bottom,
+      rgba(34, 230, 255, 0.09) 0, rgba(34, 230, 255, 0.09) 1px,
+      rgba(5, 3, 10, 0) 1px, rgba(5, 3, 10, 0) 56px);
+  /* A mask only reads the alpha channel, so the colour is irrelevant; these
+     stops are built from branding tokens anyway so no off-palette literal
+     appears anywhere in this file. */
+  -webkit-mask-image: -webkit-linear-gradient(to bottom,
+    rgba(5, 3, 10, 0) 0%, rgba(255, 47, 185, 1) 55%, rgba(255, 47, 185, 1) 100%);
+  -webkit-transform: perspective(340px) rotateX(74deg);
+  transform: perspective(340px) rotateX(74deg);
+  -webkit-transform-origin: 50% 100%;
+  transform-origin: 50% 100%;
+}
+
+/* ==========================================================================
+ * 3. HERO — THE RING MARK
+ *
+ * Three layers, no images:
+ *   .ring      the conic sweep, rotating once every 3.6s
+ *   .ring-core an opaque inner disc that punches the middle
+ *   .ring-arc  a second, counter-scaled ring carrying the bright arc
+ *
+ * Where conic-gradient is unavailable the sweep declarations are dropped and
+ * the flat magenta background of .ring remains, so the mark is still a ring and
+ * still branded. It never degrades to nothing.
+ * ======================================================================== */
+
+.hero {
+  position: relative;
+  z-index: 2;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  -webkit-box-orient: vertical;
+  flex-direction: column;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-bottom: 26px;
+}
+
+.ring {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  border-radius: 50%;
+
+  /* Fallback first: the cascade keeps it if the gradient below is dropped. */
+  background-color: var(--hot);
+  background-image: conic-gradient(from 0deg,
+    var(--pink) 0deg,
+    var(--purple) 90deg,
+    var(--cyan) 180deg,
+    var(--purple) 270deg,
+    var(--pink) 360deg);
+
+  /* The bloom. Depth on the hero comes from glow, not from a drop shadow. */
+  box-shadow:
+    0 0 24px rgba(255, 47, 185, 0.35),
+    0 0 64px rgba(139, 61, 255, 0.28);
+
+  -webkit-animation: astra-spin 3.6s linear infinite;
+  animation: astra-spin 3.6s linear infinite;
+}
+
+.ring-core {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  border-radius: 50%;
+  background-color: var(--void);
+  /* The core is inside the rotating element, so it carries the bloom's inner
+     edge with it and the hole stays perfectly circular. */
+  box-shadow: inset 0 0 14px rgba(11, 7, 22, 0.90);
+}
+
+.ring-arc {
+  position: absolute;
+  top: -18px;
+  left: -18px;
+  right: -18px;
+  bottom: -18px;
+  border-radius: 50%;
+  background-color: transparent;
+  background-image: conic-gradient(from 0deg,
+    rgba(5, 3, 10, 0) 0deg,
+    rgba(5, 3, 10, 0) 286deg,
+    var(--cyan) 312deg,
+    var(--pink) 336deg,
+    rgba(5, 3, 10, 0) 360deg);
+  -webkit-animation: astra-spin 7.2s linear infinite;
+  animation: astra-spin 7.2s linear infinite;
+}
+
+@-webkit-keyframes astra-spin {
+  from { -webkit-transform: rotate(0deg); }
+  to   { -webkit-transform: rotate(360deg); }
+}
+
+@keyframes astra-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ==========================================================================
+ * 4. WORDMARK AND VERSION LINE
+ * ======================================================================== */
+
+.wordmark {
+  margin-top: 26px;
+  font-size: 26px;
+  font-weight: bold;
+  letter-spacing: 0.38em;
+  text-indent: 0.38em;
+  color: var(--text);
+  /* The one place a text glow is used: the wordmark is the identity, and this
+     is a login screen, not desktop chrome. */
+  text-shadow: 0 0 18px rgba(255, 47, 185, 0.45);
+}
+
+.tagline,
+.version,
+.panel-label,
+.menu-label,
+.status,
+.action {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.tagline {
+  margin-top: 6px;
+  color: var(--faint);
+}
+
+.version {
+  margin-top: 14px;
+  padding: 5px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--dim);
+  font-family: "DejaVu Sans Mono", "Bitstream Vera Sans Mono", monospace;
+}
+
+/* ==========================================================================
+ * 5. LOGIN PANEL
+ * ======================================================================== */
+
+.panel {
+  position: relative;
+  z-index: 2;
+  width: 420px;
+  max-width: 92%;
+  padding: 20px 22px 22px 22px;
+  background-color: rgba(18, 12, 32, 0.92);
+  border: 1px solid var(--hairline);
+  border-radius: 20px;
+  box-shadow: 0 0 24px rgba(255, 47, 185, 0.18);
+}
+
+.panel-label {
+  color: var(--faint);
+  margin-bottom: 14px;
+}
+
+/* --- Account list -------------------------------------------------------- */
+
+#user-list {
+  margin: 0 0 14px 0;
+  max-height: 208px;
+  overflow-y: auto;
+}
+
+/* Styled whether the greeter appends <li> to the list itself or to the <ul>
+ * inside it: both shapes render identically rather than one of them losing its
+ * layout. */
+#user-list,
+#user-list ul {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+#user-list ul {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  -webkit-box-orient: vertical;
+  flex-direction: column;
+}
+
+.user-list-item,
+#user-list > li {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  padding: 9px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background-color: rgba(28, 20, 48, 0.75);
+  color: var(--dim);
+  cursor: pointer;
+  -webkit-transition: background-color var(--motion),
+                      border-color var(--motion),
+                      color var(--motion);
+}
+
+.user-list-item:hover,
+#user-list > li:hover {
+  border-color: var(--hot);
+  background-color: rgba(255, 47, 185, 0.16);
+  color: var(--text);
+}
+
+.user-list-item:active,
+#user-list > li:active {
+  background-color: rgba(255, 47, 185, 0.28);
+}
+
+/* The greeter adds .active to the item whose account is in the password field. */
+.user-list-item.active,
+#user-list > li.active {
+  border-color: var(--hot);
+  background-color: rgba(255, 47, 185, 0.20);
+  color: var(--text);
+  box-shadow: 0 0 24px rgba(255, 47, 185, 0.35);
+}
+
+.user-list-item .user-image,
+.user-list-item img {
+  width: 28px;
+  height: 28px;
+  margin-right: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  background-color: var(--raised);
+}
+
+.user-list-item .user-name {
+  color: inherit;
+  font-size: 12px;
+}
+
+.user-list-item .user-caption {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--faint);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+/* --- Selected account ---------------------------------------------------- */
+
+#user-selection {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-bottom: 14px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+#user-image {
+  width: 36px;
+  height: 36px;
+  margin-right: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  background-color: var(--raised);
+}
+
+/* --- Password row -------------------------------------------------------- */
+
+.password-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: stretch;
+  align-items: stretch;
+}
+
+#password-entry {
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 40px;
+  padding: 0 14px;
+  font-family: "DejaVu Sans", "Bitstream Vera Sans", sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background-color: var(--void-2);
+  border: 1px solid var(--hairline);
+  /* Square left corners so it joins the login button as one control. */
+  border-radius: 10px 0 0 10px;
+  -webkit-transition: border-color var(--motion), box-shadow var(--motion);
+}
+
+#password-entry::-webkit-input-placeholder {
+  color: var(--faint);
+  letter-spacing: 0.14em;
+}
+
+#password-entry:focus {
+  outline: none;
+  border-color: var(--hot);
+  box-shadow: 0 0 24px rgba(255, 47, 185, 0.35);
+}
+
+#button {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 40px;
+  padding: 0 22px;
+  font-family: "DejaVu Sans", "Bitstream Vera Sans", sans-serif;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--void);
+  background-color: var(--hot);
+  border: 1px solid var(--hot);
+  border-radius: 0 10px 10px 0;
+  cursor: pointer;
+  -webkit-transition: background-color var(--motion),
+                      box-shadow var(--motion);
+}
+
+#button:hover {
+  background-color: var(--pink);
+  box-shadow: 0 0 24px rgba(255, 47, 185, 0.35);
+}
+
+#button:active {
+  background-color: var(--purple);
+  color: var(--text);
+}
+
+#login-attempt {
+  display: none;
+  margin-top: 12px;
+  padding: 9px 12px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--red);
+  background-color: rgba(255, 77, 77, 0.14);
+  border: 1px solid var(--red);
+  border-radius: 10px;
+}
+
+/* The greeter reveals this element on a failed authentication. */
+#login-attempt.visible,
+#login-attempt:empty {
+  display: none;
+}
+
+#login-attempt.visible {
+  display: block;
+}
+
+/* ==========================================================================
+ * 6. ACTIONS — SESSION, ACCESSIBILITY, POWER
+ * ======================================================================== */
+
+.actions {
+  position: relative;
+  z-index: 2;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-justify-content: center;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+.action-group {
+  position: relative;
+  margin: 0 5px;
+}
+
+.action {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-block;
+  height: 34px;
+  padding: 0 18px;
+  font-family: "DejaVu Sans", "Bitstream Vera Sans", sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  background-color: rgba(18, 12, 32, 0.88);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  cursor: pointer;
+  -webkit-transition: background-color var(--motion),
+                      border-color var(--motion),
+                      color var(--motion),
+                      box-shadow var(--motion);
+}
+
+.action:hover {
+  color: var(--text);
+  background-color: rgba(255, 47, 185, 0.16);
+  border-color: var(--hot);
+}
+
+.action:focus {
+  outline: none;
+  color: var(--text);
+  border-color: var(--hot);
+  box-shadow: 0 0 24px rgba(255, 47, 185, 0.35);
+}
+
+/* The greeter adds .active to a button whose menu is open. */
+.action.active {
+  color: var(--text);
+  background-color: rgba(255, 47, 185, 0.24);
+  border-color: var(--hot);
+  box-shadow: 0 0 24px rgba(255, 47, 185, 0.35);
+}
+
+/* --- Drop menus ---------------------------------------------------------- */
+
+.menu {
+  position: absolute;
+  bottom: 42px;
+  left: 50%;
+  display: none;
+  min-width: 190px;
+  padding: 10px;
+  background-color: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  box-shadow: 0 0 24px rgba(255, 47, 185, 0.18);
+  -webkit-transform: translateX(-50%);
+}
+
+.menu-right {
+  left: auto;
+  right: 0;
+  -webkit-transform: none;
+}
+
+/* The greeter reveals a menu by adding .active; the default is hidden. */
+.menu.active,
+.menu.visible {
+  display: block;
+}
+
+.menu-label {
+  margin-bottom: 8px;
+  color: var(--faint);
+}
+
+.menu ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.menu li,
+.menu ul > li {
+  margin-bottom: 4px;
+}
+
+.menu li button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 30px;
+  padding: 0 12px;
+  font-family: "DejaVu Sans", "Bitstream Vera Sans", sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--dim);
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-transition: background-color var(--motion), color var(--motion);
+}
+
+.menu li button:hover,
+.menu li:hover {
+  color: var(--text);
+  background-color: rgba(255, 47, 185, 0.16);
+  border-color: var(--hot);
+}
+
+/* Accessibility menu entries are <li>, not <button>, in some greeter builds. */
+#a11y-states li {
+  height: 30px;
+  line-height: 30px;
+  padding: 0 12px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-transition: background-color var(--motion), color var(--motion);
+}
+
+#a11y-states li:hover {
+  color: var(--text);
+  background-color: rgba(255, 47, 185, 0.16);
+  border-color: var(--hot);
+}
+
+#a11y-states li.active {
+  color: var(--teal);
+  border-color: var(--teal);
+  background-color: rgba(46, 230, 201, 0.12);
+}
+
+#session-indicators ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#session-indicators li {
+  padding: 0 12px;
+  height: 30px;
+  line-height: 30px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--dim);
+  border-radius: 8px;
+}
+
+#session-indicators li:hover {
+  color: var(--text);
+  background-color: rgba(255, 47, 185, 0.16);
+}
+
+/* ==========================================================================
+ * 7. STATUS STRIP
+ * ======================================================================== */
+
+.status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  height: 30px;
+  padding: 0 20px;
+  color: var(--faint);
+  font-family: "DejaVu Sans Mono", "Bitstream Vera Sans Mono", monospace;
+  background-color: rgba(11, 7, 22, 0.72);
+  border-top: 1px solid var(--hairline);
+}
+
+.status-spacer {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+}
+
+#clock {
+  margin-right: 18px;
+  color: var(--dim);
+}
+
+/* ==========================================================================
+ * 8. REDUCED MOTION
+ *
+ * A login screen is the last place a full-screen animation belongs. When the
+ * user asks for reduced motion the ring keeps its gradient and its bloom and
+ * simply stops turning; nothing is removed, so the mark is unchanged in every
+ * other respect.
+ * ======================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .ring,
+  .ring-arc {
+    -webkit-animation: none;
+    animation: none;
+  }
+
+  .ring {
+    -webkit-transform: rotate(24deg);
+    transform: rotate(24deg);
+  }
+
+  .ring-arc {
+    -webkit-transform: rotate(-40deg);
+    transform: rotate(-40deg);
+  }
+
+  .action,
+  .action:hover,
+  .action.active,
+  .user-list-item,
+  #user-list > li,
+  #button,
+  #password-entry,
+  .menu li button,
+  #a11y-states li {
+    -webkit-transition: none;
+    transition: none;
+  }
+}

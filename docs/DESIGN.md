@@ -1,4 +1,4 @@
-# AstraOS design language
+﻿# AstraOS design language
 
 AstraOS has **two visual layers**, and keeping them separate is a deliberate engineering
 decision rather than an aesthetic preference.
@@ -11,9 +11,9 @@ blur pass on every menu, panel repaint and window switch, which is exactly what 
 desktop feel slow on a low-end GPU, a software-rendered virtual machine, or an older
 laptop.
 
-Plan §7.1 states the desktop must "avoid excessive transparency and blur effects that may
+Plan Â§7.1 states the desktop must "avoid excessive transparency and blur effects that may
 degrade performance on low-end computers". So the identity is concentrated where the user
-sees it only briefly — boot, login, installer, wallpaper, documentation — and the desktop
+sees it only briefly â€” boot, login, installer, wallpaper, documentation â€” and the desktop
 chrome is flat, high-contrast and cheap.
 
 | Layer | Where | Technique |
@@ -37,7 +37,7 @@ and a test asserts the theme actually uses the configured accent.
 | `BRAND_NEON_PURPLE` | `#8B3DFF` | Secondary accent |
 | `BRAND_NEON_CYAN` | `#22E6FF` | Tertiary accent, links, data |
 
-Signature gradient: `#FF5CC8 → #8B3DFF → #22E6FF`.
+Signature gradient: `#FF5CC8 â†’ #8B3DFF â†’ #22E6FF`.
 
 ### Desktop layer
 
@@ -48,7 +48,7 @@ Signature gradient: `#FF5CC8 → #8B3DFF → #22E6FF`.
 | `COLOR_BG_RAISED` | `#232833` | Cards, popovers |
 | `COLOR_HAIRLINE` | `#2E3542` | Borders and separators |
 | `COLOR_TEXT_DARK_THEME` | `#E8ECF2` | Body text |
-| `COLOR_TEXT_DIM` | `#98A2B3` | Secondary text |
+| `COLOR_TEXT_DIM` | `#9A93B8` | Secondary text |
 | `COLOR_ACCENT_PRIMARY` | `#22E6FF` | Selection, focus |
 | `COLOR_ACCENT_SECONDARY` | `#3D8BFF` | Secondary actions |
 | `COLOR_ACCENT_OK` | `#2EE6C9` | Success |
@@ -68,7 +68,7 @@ inverting the dark one, so it still reads as AstraOS without becoming uncomforta
 | Greeter | DejaVu Sans 11 | Same family, so the greeter and the desktop match |
 
 DejaVu is chosen because it is redistributable under the Bitstream Vera licence, and
-because it is already in the base distribution — a bundled font would be a licence and
+because it is already in the base distribution â€” a bundled font would be a licence and
 packaging liability for no visual gain.
 
 Micro-labels are uppercase with wide tracking; numerals in clocks and metrics use a
@@ -76,9 +76,9 @@ monospace face so digits do not jitter as they change.
 
 ## 3. Geometry and depth
 
-- Radii: 8px controls, 14–22px panels, 999px pills.
-- Borders: 1px hairlines. Focus adds `outline: 1px solid @accent` — always visible, because
-  keyboard navigation is an accessibility requirement (plan §7.5).
+- Radii: 8px controls, 14â€“22px panels, 999px pills.
+- Borders: 1px hairlines. Focus adds `outline: 1px solid @accent` â€” always visible, because
+  keyboard navigation is an accessibility requirement (plan Â§7.5).
 - Depth comes from a single subtle drop shadow in the window manager's compositor, not from
   layered blur.
 - Panel backgrounds are **solid**, not translucent. This is stated explicitly in
@@ -98,7 +98,7 @@ Matching the reference designs:
 
 ## 5. The ring mark
 
-The AstraOS logo is a single ring with an angular pink→purple→cyan gradient, a soft bloom,
+The AstraOS logo is a single ring with an angular pinkâ†’purpleâ†’cyan gradient, a soft bloom,
 and one orbiting arc. It appears as:
 
 - an SVG mark, in colour and in two monochrome variants (`branding/logos/`);
@@ -106,7 +106,7 @@ and one orbiting arc. It appears as:
 - the boot splash's hero element, centred, with a faint horizon grid below it.
 
 All artwork is original to AstraOS. No third-party logo or trademark is redistributed
-(plan §7.1, §23).
+(plan Â§7.1, Â§23).
 
 ## 6. Motion
 
@@ -115,13 +115,13 @@ All artwork is original to AstraOS. No third-party logo or trademark is redistri
   access to the generated arc geometry, and a pulse avoids shipping an animation frame
   sequence that would add megabytes for a boot that lasts a few seconds.
 - No motion in panel or window chrome beyond the compositor's own transitions, for the
-  performance reason in §0.
+  performance reason in Â§0.
 
 ## 7. What is deliberately not done
 
 - **No custom window decorations.** The GTK theme is colour-only; titlebars use the
-  upstream xfwm4 `Default` theme. See `KNOWN_LIMITATIONS.md` §1.4.
-- **No blur or transparency in desktop chrome.** §0.
+  upstream xfwm4 `Default` theme. See `KNOWN_LIMITATIONS.md` Â§1.4.
+- **No blur or transparency in desktop chrome.** Â§0.
 - **No imitation of another operating system's interface.** AstraOS does not copy Windows,
   macOS or another distribution's layout, icons or trademarks.
 - **No hardcoded theme names that do not exist on disk.** A theme name with no assets

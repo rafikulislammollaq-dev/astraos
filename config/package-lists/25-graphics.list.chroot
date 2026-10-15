@@ -42,6 +42,12 @@ mesa-vulkan-drivers
 # NOTE: elogind is deliberately NOT installed. AstraOS uses systemd, and elogind is
 # the non-systemd session manager; installing both is a conflict.
 
+# --- Compositor (opt-in) ---
+# picom powers `astra effects on` (window fade-in/out animation). The default
+# session uses xfwm4's own compositor - see desktop/compositor/picom.conf -
+# so this package is only started when a user asks for the animation layer.
+picom
+
 # --- Session integration ---
 libpam-systemd
 # policykit-1 was renamed: the daemon package is polkitd in the pinned release.

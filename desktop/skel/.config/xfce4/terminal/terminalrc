@@ -1,0 +1,32 @@
+; AstraOS terminal defaults (xfce4-terminal).
+;
+; Seeded into every new account from /etc/skel. The colours implement the HUD
+; voice of docs/DESIGN.md: a void background, bright text, and the brand
+; accents in the ANSI palette. The matching selectable scheme lives next to
+; this file in colorschemes/AstraOS-Dark.theme, so a user who experiments in
+; Preferences > Colors can come back to the AstraOS look in one click.
+;
+; The menubar is hidden by default: a new user's terminal looks like a modern
+; terminal (nothing but the shell), and everything the menubar did is either a
+; right-click away or already a shortcut. MiscMenubarDefault only hides it;
+; nothing is removed.
+
+[Configuration]
+FontName=JetBrains Mono 11
+ColorFont=Inherit
+ColorBackground=#05030a
+ColorForeground=#f2eeff
+ColorPalette=#05030a;#120c20;#1c1430;#6b6386;#9a93b8;#ff5cc8;#8b3dff;#22e6ff;#2ee6c9;#ff2fb9;#ff4d4d;#ffb020;#b8f26d;#ff8a5c;#3d8bff;#f2eeff
+ColorCursor=#ff2fb9
+ColorCursorForeground=#05030a
+ColorBold=#ffffff
+ScrollingLines=10000
+ScrollingOnOutput=FALSE
+MiscMenubarDefault=FALSE
+MiscToolbarDefault=FALSE
+MiscConfirmClose=TRUE
+MiscCycleTabs=TRUE
+MiscTabCloseButtons=TRUE
+MiscRewrapOnResize=TRUE
+MiscCopyOnSelect=FALSE
+Term=xterm-256color

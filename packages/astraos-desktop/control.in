@@ -5,14 +5,15 @@ Maintainer: @@VENDOR@@ <maintainers@astraos.invalid>
 Section: x11
 Priority: optional
 Homepage: https://astraos.invalid
-Depends: astraos-base (>= @@VERSION@@), astraos-branding (>= @@VERSION@@), xfce4-session, xfce4-panel, xfconf, libgarcon-1-0, thunar, xfce4-terminal, xfce4-settings, xfce4-appfinder
-Recommends: xfce4-whiskermenu-plugin, xfce4-goodies, xfce4-power-manager, xfce4-notifyd, xfce4-screenshooter, xfce4-taskmanager, xfce4-clipman-plugin, xfce4-pulseaudio-plugin, mousepad, ristretto, xarchiver, parole, lightdm, lightdm-gtk-greeter
+Depends: astraos-base (>= @@VERSION@@), astraos-branding (>= @@VERSION@@), astraos-winbridge (>= @@VERSION@@), xfce4-session, xfce4-panel, xfconf, libgarcon-1-0, thunar, xfce4-terminal, xfce4-settings, xfce4-appfinder
+Recommends: xfce4-whiskermenu-plugin, xfce4-docklike-plugin, papirus-icon-theme, fonts-inter, fonts-jetbrains-mono, picom, xfce4-goodies, xfce4-power-manager, xfce4-notifyd, xfce4-screenshooter, xfce4-taskmanager, xfce4-clipman-plugin, xfce4-pulseaudio-plugin, mousepad, ristretto, xarchiver, parole, lightdm, lightdm-gtk-greeter
 Description: AstraOS Xfce desktop configuration
- The AstraOS desktop: the panel layout, keyboard shortcuts, window-manager and desktop
- settings, the skeleton home directory that seeds every new account, and the AstraOS
- application launchers.
+ The AstraOS desktop: the Windows-11 style taskbar layout, keyboard shortcuts,
+ window-manager and desktop settings, the skeleton home directory that seeds
+ every new account (panel, neon terminal, compositor profile), the AstraOS
+ application launchers, and the opt-in picom animation profile.
  .
- The desktop is CONFIGURED Xfce, not a replacement for it. AstraOS 0.1.0 does not
+ The desktop is CONFIGURED Xfce, not a replacement for it. AstraOS does not
  ship a custom shell, window manager or session manager (plan §7). Configuration is
  applied through /etc/skel, the mechanism Xfce uses for a new account's defaults, so
  the interface stays user-configurable and upgradable with the upstream packages.
@@ -21,6 +22,7 @@ Description: AstraOS Xfce desktop configuration
  those paths belong to Debian's Xfce packages, and dpkg refuses to let two packages own
  the same file.
  .
- Transparency and blur effects are deliberately limited. The desktop must stay
- responsive on modest hardware, so the neon identity lives in the wallpaper, splash
- and greeter, while panel and window chrome use flat, high-contrast colours.
+ The window chrome carries a light frame opacity and translucent move/resize
+ (the HUD glass look); the heavier fade-on-open animation is opt-in through
+ `astra effects on` and ships as /etc/astraos/picom.conf, because the default
+ must stay the compositor that renders correctly everywhere.

@@ -1,0 +1,11 @@
+[Scheme]
+Name=AstraOS Dark
+Name[en]=AstraOS Dark
+Comment=Void background, neon accents - the AstraOS HUD palette
+Comment[en]=Void background, neon accents - the AstraOS HUD palette
+ColorForeground=#f2eeff
+ColorBackground=#05030a
+ColorPalette=#05030a;#120c20;#1c1430;#6b6386;#9a93b8;#ff5cc8;#8b3dff;#22e6ff;#2ee6c9;#ff2fb9;#ff4d4d;#ffb020;#b8f26d;#ff8a5c;#3d8bff;#f2eeff
+ColorCursor=#ff2fb9
+ColorCursorForeground=#05030a
+ColorBold=#ffffff

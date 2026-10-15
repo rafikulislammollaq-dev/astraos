@@ -23,6 +23,18 @@
     <property name="&lt;Super&gt;space" type="string" value="xfce4-popup-whiskermenu"/>
     <property name="&lt;Primary&gt;&lt;Alt&gt;w" type="string" value="xfce4-popup-whiskermenu"/>
 
+    <!-- 0.2.0: the Windows muscle-memory keys. Super+E opens Files, Super+R
+         the run launcher, Super+T a terminal, Super+L locks (identical to
+         Windows), Super+S pops the Start menu. The Windows key alone opens
+         the Start menu through whiskermenu's own grab; these are the chord
+         fallbacks, because a modifier-only grab is not reliable across
+         keyboard layouts. -->
+    <property name="&lt;Super&gt;e" type="string" value="thunar"/>
+    <property name="&lt;Super&gt;r" type="string" value="xfce4-appfinder"/>
+    <property name="&lt;Super&gt;t" type="string" value="xfce4-terminal"/>
+    <property name="&lt;Super&gt;s" type="string" value="xfce4-popup-whiskermenu"/>
+    <property name="&lt;Super&gt;l" type="string" value="xflock4"/>
+
     <!-- Window and workspace management -->
     <property name="&lt;Super&gt;d" type="string" value="xfce4-popup-showdesktop"/>
     <property name="&lt;Primary&gt;&lt;Alt&gt;l" type="string" value="xflock4"/>

@@ -1,0 +1,14 @@
+# /etc/X11/Xsession.d/95astraos-environment
+#
+# Sourced by the X11 session wrapper when the display manager (LightDM) starts
+# a desktop session. Xsession is NOT a login shell, so /etc/profile.d never ran
+# for it; without this file the Windows command bridge would be missing from
+# the PATH of every terminal that inherits the session environment.
+#
+# Only the AstraOS bridge file is sourced here on purpose: running the whole
+# profile.d directory from Xsession would run things twice for users who then
+# open a login shell, and profile.d scripts may assume a login context.
+
+if [ -f /etc/profile.d/astraos-winbridge.sh ]; then
+    . /etc/profile.d/astraos-winbridge.sh
+fi

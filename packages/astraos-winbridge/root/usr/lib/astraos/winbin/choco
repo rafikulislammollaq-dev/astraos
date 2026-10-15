@@ -1,0 +1,3 @@
+#!/bin/sh
+# AstraOS Windows bridge: 'choco'. All logic lives in bridge(8).
+exec /usr/lib/astraos/winbin/bridge 'choco' "$@"

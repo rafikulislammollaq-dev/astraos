@@ -220,12 +220,62 @@ def test_limitations_and_procedure_agree_on_the_state_of_testing() -> None:
 
 
 def test_readme_does_not_overclaim() -> None:
-    """The README must not describe a working operating system when none has booted."""
+    """Whatever the README claims, the stages that were not performed must be marked.
+
+    This test used to assert one sentence - that no ISO had been built. That was true
+    when it was written and stopped being true the moment CI run #26 assembled an image
+    and the validator passed it (the manifest for that build records structural=PASS),
+    and the live image was booted by hand on 2026-10-15. Pinning the assertion to that
+    one sentence would have made the suite fail every time the project moved forward,
+    which is the opposite of what an anti-overclaim test is for.
+
+    So the check is now on the *shape* of the claim rather than one phrase:
+
+      * a stage that was never performed is still marked as not done, and
+      * the README does not claim the installer, an installed system or physical
+        hardware works.
+
+    Plan §28 Rule 4 forbids reporting a build, boot or installation that did not
+    happen. That rule does not expire when progress is made; only the specific facts
+    it referred to change.
+    """
     readme = read("README.md")
-    assert "No ISO has been built yet" in readme or "no ISO has been built" in readme.lower(), (
-        "README.md does not state that no ISO has been built, which would overclaim the "
-        "state of the project"
+
+    # The three stages that have demonstrably not happened. Each must be present and
+    # each must be qualified as untested, so the table cannot quietly drop a row.
+    not_performed = ("installer", "physical hardware")
+    missing = [stage for stage in not_performed if stage.lower() not in readme.lower()]
+    assert not missing, (
+        f"README.md no longer mentions {', '.join(missing)}. Those stages were never "
+        "performed, and omitting them reads as if they were."
     )
-    assert re.search(r"NOT DONE", readme), (
-        "README.md's status table does not mark the unperformed stages as NOT DONE"
+
+    # Whatever the stage table says, an untested stage must be labelled as untested.
+    # "Not tested", "NOT DONE" and "Not supported" are all honest; a bare "Yes" next
+    # to a stage nobody ran is not.
+    assert re.search(r"(not tested|NOT DONE|Not supported|no ISO|untested)", readme, re.I), (
+        "README.md has no marker anywhere that any stage is untested. Every stage it "
+        "lists must be individually qualified: only the ones actually performed may "
+        "read as reached (plan §28 Rule 4)."
+    )
+
+    # Phrases that can only be read as a claim. "stable release" is deliberately not
+    # in this list: the maturity table legitimately contains the row
+    # "Secure Boot, signed images, stable release | Not supported", where the phrase
+    # names a stage that was *not* reached. Matching it would have flagged the honest
+    # text and left the dishonest text free.
+    forbidden = (
+        "fully working operating system",
+        "production ready",
+        "production-ready",
+        "ready for everyday use",
+        "suitable for daily use",
+        "installer works",
+        "installs to disk without",
+    )
+    overclaims = [phrase for phrase in forbidden if phrase.lower() in readme.lower()]
+    assert not overclaims, (
+        "README.md makes an unqualified claim that the project has not earned: "
+        + ", ".join(overclaims)
+        + ". The installer, the installed system and physical hardware are all untested."
     )

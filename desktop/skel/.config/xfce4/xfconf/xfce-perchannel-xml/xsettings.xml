@@ -32,13 +32,25 @@
   </property>
 
   <property name="Gtk" type="empty">
-    <property name="CursorThemeName" type="string" value="Adwaita"/>
+    <!-- The AstraOS cursor theme. It is installed as an icon theme that carries
+         cursors, which is the layout libXcursor reads; setting this to a name with no
+         .xcursor files on disk leaves X11 falling back to the built-in pointers with no
+         warning, so the name and the generated set are checked by
+         tests/static/test_theme_assets.py. -->
+    <property name="CursorThemeName" type="string" value="AstraOS"/>
     <property name="CursorThemeSize" type="int" value="24"/>
-    <property name="FontName" type="string" value="DejaVu Sans 11"/>
-    <property name="MonospaceFontName" type="string" value="DejaVu Sans Mono 11"/>
+    <!-- 0.2.0 typography: Inter for UI and JetBrains Mono for data, both added
+         to 30-desktop.list.chroot. The GTK theme still references DejaVu as a
+         fallback family, so a fontless chroot (a debugging image) degrades
+         gracefully instead of rendering tofu. -->
+    <property name="FontName" type="string" value="Inter 11"/>
+    <property name="MonospaceFontName" type="string" value="JetBrains Mono 11"/>
     <property name="MenuImages" type="bool" value="true"/>
     <property name="ButtonImages" type="bool" value="true"/>
     <property name="DialogsUseHeader" type="bool" value="false"/>
+    <!-- 0.2.0: request animated widget states (GTK 3 honours this for menu
+         popups, expanders and notebook switches). -->
+    <property name="EnableAnimations" type="bool" value="true"/>
     <!-- Keep accessibility tooling available but not started by default. -->
     <property name="EnableEventSounds" type="bool" value="false"/>
     <property name="EnableInputFeedbackSounds" type="bool" value="false"/>

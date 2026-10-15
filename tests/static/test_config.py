@@ -48,6 +48,41 @@ def test_branding_env_parses() -> None:
             int(value[1:], 16)  # raises ValueError on a bad digit
 
 
+def test_no_token_is_declared_twice_in_an_env_file() -> None:
+    """A repeated key silently shadows the earlier value, and nothing reports it.
+
+    scripts/lib/astraos_env.py returns these files verbatim and the last definition
+    of a key wins, so a duplicate is a silent behaviour change rather than an error.
+    That is not hypothetical: config/branding.env carried COLOR_TEXT_DIM twice, as
+    #98A2B3 in the desktop-layer block and #9A93B8 in the HUD block. Every consumer
+    reading the token got #9A93B8, while the Light GTK themes were still written
+    against the dead #98A2B3 - a palette drift that only surfaced because a separate
+    test happened to notice a colour the other theme used.
+
+    Declaring a token once is the rule. This test makes a second declaration a build
+    failure at the point of the mistake rather than a mystery three files away.
+    """
+    for name in ("config/branding.env", "config/distribution.env"):
+        path = astraos_env.REPO_ROOT / name
+        assert path.is_file(), f"{name} is missing"
+        first_seen: dict[str, int] = {}
+        duplicates: list[str] = []
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key = stripped.partition("=")[0].strip()
+            if key in first_seen:
+                duplicates.append(f"{key} (lines {first_seen[key]} and {number})")
+            else:
+                first_seen[key] = number
+        assert not duplicates, (
+            f"{name} declares the same key twice, so the later value silently wins: "
+            + "; ".join(duplicates)
+            + ". Declare a token once and delete the stale line."
+        )
+
+
 def test_version_files_agree() -> None:
     """VERSION and config/distribution.env must not disagree about the release."""
     version = astraos_env.version()

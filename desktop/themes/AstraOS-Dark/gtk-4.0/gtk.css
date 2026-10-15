@@ -1,0 +1,1527 @@
+/*
+ * AstraOS-Dark — GTK 4 theme
+ * ============================================================================
+ *
+ * WHAT THIS IS
+ * ------------
+ * The GTK 4 half of the AstraOS dark theme. It is a sibling of gtk-3.0/gtk.css,
+ * not a copy of it: same tokens, same geometry, same motion, but written against
+ * GTK 4's node names (windowhandle, windowcontrols, columnheader, popover >
+ * contents, list) so a GTK4-only application matches the XFCE session instead of
+ * falling back to Adwaita.
+ *
+ * DESIGN RULES IMPLEMENTED (docs/DESIGN.md + config/branding.env)
+ * ---------------------------------------------------------------
+ *   §1 Palette    every colour is a token from config/branding.env. Brand
+ *                 accents appear only where the identity should be felt — focus,
+ *                 selection, meters — so the surface stays cheap to paint.
+ *   §3 Geometry   1px hairlines; 8px controls, 14px on 48px tiles, 18-22px
+ *                 panels, 999px pills. Depth is the accent glow, not a shadow.
+ *   §6 Motion     180ms cubic-bezier(.22,.61,.36,1) everywhere.
+ *   §2 Typography DejaVu Sans / DejaVu Sans Mono, both in the base system.
+ *
+ * Palette source: config/branding.env.
+ */
+
+/* ==========================================================================
+ * 1. TOKENS
+ * ======================================================================== */
+
+@define-color astra_void          #05030A;  /* COLOR_VOID           */
+@define-color astra_void_2        #0B0716;  /* COLOR_VOID_2         */
+@define-color astra_surface       #120C20;  /* COLOR_SURFACE        */
+@define-color astra_raised        #1C1430;  /* COLOR_SURFACE_RAISED */
+@define-color astra_hairline      #1F1830;  /* COLOR_HAIRLINE_BASE  */
+@define-color astra_hot           #FF2FB9;  /* COLOR_HAIRLINE_HOT   */
+
+@define-color astra_magenta       #FF2FB9;  /* BRAND_NEON_MAGENTA   */
+@define-color astra_pink          #FF5CC8;  /* BRAND_NEON_PINK      */
+@define-color astra_purple        #8B3DFF;  /* BRAND_NEON_PURPLE    */
+@define-color astra_cyan          #22E6FF;  /* BRAND_NEON_CYAN      */
+@define-color astra_blue          #3D8BFF;  /* ACCENT_SECONDARY     */
+@define-color astra_teal          #2EE6C9;  /* COLOR_HUD_TEAL / OK  */
+@define-color astra_amber         #FFB020;  /* COLOR_ACCENT_WARN    */
+@define-color astra_red           #FF4D4D;  /* COLOR_HUD_RED        */
+
+@define-color astra_text          #F2EEFF;  /* COLOR_TEXT           */
+@define-color astra_text_dim      #9A93B8;  /* COLOR_TEXT_DIM       */
+@define-color astra_text_faint    #6B6386;  /* COLOR_TEXT_FAINT     */
+
+/* --- Standard GTK names ------------------------------------------------- */
+@define-color theme_bg_color          @astra_surface;
+@define-color theme_base_color        @astra_void;
+@define-color theme_fg_color          @astra_text;
+@define-color theme_text_color        @astra_text;
+
+@define-color theme_selected_bg_color @astra_hot;
+@define-color theme_selected_fg_color @astra_void;
+
+@define-color insensitive_bg_color    @astra_raised;
+@define-color insensitive_fg_color    @astra_text_faint;
+@define-color insensitive_base_color  @astra_void_2;
+
+@define-color theme_unfocused_bg_color        @astra_surface;
+@define-color theme_unfocused_fg_color        @astra_text_dim;
+@define-color theme_unfocused_base_color      @astra_void;
+@define-color theme_unfocused_text_color      @astra_text_dim;
+@define-color theme_unfocused_selected_bg_color @astra_raised;
+@define-color theme_unfocused_selected_fg_color @astra_text_dim;
+
+@define-color borders               @astra_hairline;
+@define-color unfocused_borders     @astra_hairline;
+@define-color text_view_bg_color    @astra_void;
+
+@define-color headerbar_bg_color     @astra_raised;
+@define-color headerbar_fg_color     @astra_text;
+@define-color headerbar_border_color @astra_hairline;
+@define-color headerbar_backdrop_color @astra_surface;
+
+@define-color sidebar_bg_color       @astra_raised;
+@define-color sidebar_fg_color       @astra_text;
+@define-color sidebar_border_color   @astra_hairline;
+@define-color sidebar_backdrop_color @astra_surface;
+
+@define-color card_bg_color          @astra_raised;
+@define-color card_fg_color          @astra_text;
+@define-color popover_bg_color       @astra_raised;
+@define-color popover_fg_color       @astra_text;
+@define-color popover_border_color   @astra_hairline;
+@define-color dialog_bg_color        @astra_surface;
+@define-color dialog_fg_color        @astra_text;
+@define-color view_bg_color          @astra_void;
+@define-color view_fg_color          @astra_text;
+
+@define-color menu_bg_color          @astra_raised;
+@define-color menu_fg_color          @astra_text;
+@define-color tooltip_bg_color       @astra_raised;
+@define-color tooltip_fg_color       @astra_text;
+@define-color osd_bg_color           @astra_void_2;
+@define-color osd_fg_color           @astra_text;
+@define-color osd_borders_color      @astra_hairline;
+
+@define-color infobar_bg_color       @astra_raised;
+@define-color infobar_fg_color       @astra_text;
+@define-color scrollbar_bg_color     @astra_surface;
+@define-color scrollbar_slider_color @astra_raised;
+@define-color scrollbar_slider_hover_color @astra_hot;
+@define-color scrollbar_slider_active_color @astra_magenta;
+
+@define-color accent_color      @astra_cyan;
+@define-color accent_bg_color   @astra_cyan;
+@define-color accent_fg_color   @astra_void;
+@define-color link_color        @astra_cyan;
+@define-color link_visited_color @astra_purple;
+
+@define-color success_color     @astra_teal;
+@define-color success_bg_color  @astra_teal;
+@define-color success_fg_color  @astra_void;
+@define-color warning_color     @astra_amber;
+@define-color warning_bg_color  @astra_amber;
+@define-color warning_fg_color  @astra_void;
+@define-color error_color       @astra_red;
+@define-color error_bg_color    @astra_red;
+@define-color error_fg_color    @astra_void;
+@define-color destructive_color @astra_red;
+@define-color destructive_bg_color @astra_red;
+@define-color destructive_fg_color @astra_void;
+@define-color app_notification_bg_color @astra_raised;
+@define-color app_notification_fg_color @astra_text;
+
+/* ==========================================================================
+ * 2. BASE
+ * ======================================================================== */
+
+window,
+.background {
+  background-color: @astra_surface;
+  color: @astra_text;
+  font-family: "DejaVu Sans";
+  font-size: 11pt;
+}
+
+window.backdrop,
+.background:backdrop {
+  background-color: @astra_void_2;
+  color: @astra_text_dim;
+}
+
+window.csd,
+windowhandle {
+  background-color: @astra_surface;
+  border: 1px solid @astra_hairline;
+  border-radius: 10px;
+}
+
+windowhandle.csd {
+  box-shadow: 0 0 24px alpha(@astra_void, 0.55);
+}
+
+dialog,
+messagedialog {
+  background-color: @astra_surface;
+  color: @astra_text;
+}
+
+titlebar {
+  background-color: @astra_raised;
+  color: @astra_text;
+  border-bottom: 1px solid @astra_hairline;
+  min-height: 30px;
+  padding: 0 6px;
+}
+
+label,
+heading {
+  color: @astra_text;
+}
+
+label:disabled {
+  color: @astra_text_faint;
+}
+
+.heading {
+  font-size: 15pt;
+  font-weight: bold;
+}
+
+.subtitle {
+  font-size: 8pt;
+  color: @astra_text_dim;
+}
+
+/* Micro-label: uppercase, wide tracking, faint (docs/DESIGN.md §2). */
+.dim-label,
+.caption-heading {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: @astra_text_faint;
+}
+
+.numeric,
+.monospace {
+  font-family: "DejaVu Sans Mono";
+}
+
+.numeric {
+  font-feature-settings: "tnum";
+}
+
+.error { color: @astra_red; }
+.warning { color: @astra_amber; }
+.success { color: @astra_teal; }
+
+selection,
+selected {
+  background-color: @astra_hot;
+  color: @astra_void;
+}
+
+*:focus {
+  outline-color: @astra_hot;
+  outline-style: solid;
+  outline-width: 1px;
+  outline-offset: 1px;
+}
+
+*:disabled {
+  color: @astra_text_faint;
+}
+
+/* ==========================================================================
+ * 3. HEADER BAR AND WINDOW CONTROLS
+ * ======================================================================== */
+
+headerbar {
+  background-color: @astra_raised;
+  border-bottom: 1px solid @astra_hairline;
+  border-radius: 9px 9px 0 0;
+  min-height: 30px;
+  color: @astra_text;
+  padding: 0 4px;
+  transition: background-color 180ms cubic-bezier(.22,.61,.36,1);
+}
+
+headerbar:backdrop {
+  background-color: @astra_surface;
+  color: @astra_text_dim;
+}
+
+headerbar .title {
+  font-weight: bold;
+  color: @astra_text;
+  padding: 0 6px;
+}
+
+headerbar .subtitle {
+  font-size: 8pt;
+  color: @astra_text_dim;
+  padding: 0 6px;
+}
+
+windowcontrols {
+  spacing: 2px;
+}
+
+windowbutton,
+windowbutton.close {
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  min-width: 26px;
+  min-height: 24px;
+  margin: 2px;
+  transition: background-color 180ms cubic-bezier(.22,.61,.36,1),
+              border-color 180ms cubic-bezier(.22,.61,.36,1);
+}
+
+windowbutton:hover {
+  background-color: alpha(@astra_hot, 0.16);
+  border-color: @astra_hairline;
+  color: @astra_text;
+}
+
+windowbutton.close:hover,
+windowbutton.destructive:hover {
+  background-color: @astra_red;
+  border-color: @astra_red;
+  color: @astra_void;
+}
+
+windowbutton.close:active {
+  background-color: @astra_red;
+  border-color: @astra_red;
+}
+
+windowbutton:disabled {
+  color: @astra_text_faint;
+}
+
+.declaration {
+  margin: 8px;
+}
+
+/* ==========================================================================
+ * 4. BUTTONS
+ * ======================================================================== */
+
+button {
+  background-color: @astra_raised;
+  color: @astra_text;
+  border: 1px solid @astra_hairline;
+  border-radius: 8px;
+  min-height: 34px;
+  min-width: 34px;
+  padding: 0 14px;
+  font-family: "DejaVu Sans";
+  font-size: 11pt;
+  transition: background-color 180ms cubic-bezier(.22,.61,.36,1),
+              border-color 180ms cubic-bezier(.22,.61,.36,1),
+              color 180ms cubic-bezier(.22,.61,.36,1),
+              box-shadow 180ms cubic-bezier(.22,.61,.36,1);
+}
+
+button:hover {
+  background-color: alpha(@astra_purple, 0.28);
+  border-color: @astra_hot;
+  color: @astra_text;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.18);
+}
+
+button:active {
+  background-color: alpha(@astra_magenta, 0.30);
+  border-color: @astra_hot;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.35);
+}
+
+button:checked {
+  background-color: alpha(@astra_hot, 0.26);
+  border-color: @astra_hot;
+}
+
+button:focus {
+  border-color: @astra_hot;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.35);
+}
+
+button:disabled {
+  background-color: @astra_void_2;
+  border-color: @astra_hairline;
+  color: @astra_text_faint;
+  box-shadow: none;
+}
+
+button.flat,
+.flat button {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+button.flat:hover {
+  background-color: alpha(@astra_hot, 0.14);
+  border-color: @astra_hairline;
+  box-shadow: none;
+}
+
+button.flat:active {
+  background-color: alpha(@astra_hot, 0.24);
+}
+
+/* Linked button groups share a single outline. */
+.linked > button,
+.linked > entry {
+  border-radius: 0;
+  border-right-width: 0;
+}
+
+.linked > button:first-child,
+.linked > entry:first-child {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+  border-right-width: 1px;
+}
+
+.linked > button:last-child {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.linked > button:only-child,
+.linked > entry:only-child {
+  border-radius: 8px;
+  border-right-width: 1px;
+}
+
+button.destructive-action,
+button.destructive {
+  background-color: @astra_red;
+  color: @astra_void;
+  border-color: @astra_red;
+  font-weight: bold;
+}
+
+button.destructive-action:hover {
+  background-color: @astra_red;
+  border-color: @astra_red;
+  box-shadow: 0 0 24px alpha(@astra_red, 0.35);
+}
+
+button.destructive-action:disabled {
+  background-color: alpha(@astra_red, 0.28);
+  border-color: transparent;
+  color: @astra_text_faint;
+  box-shadow: none;
+}
+
+button.suggested-action {
+  background-image: linear-gradient(to right, @astra_pink, @astra_purple 0.45, @astra_cyan);
+  color: @astra_void;
+  border-color: @astra_hot;
+  font-weight: bold;
+}
+
+button.suggested-action:hover {
+  background-image: linear-gradient(to right, @astra_pink, @astra_magenta 0.45, @astra_cyan);
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.35);
+}
+
+button.suggested-action:disabled {
+  background-image: none;
+  background-color: @astra_raised;
+  border-color: @astra_hairline;
+  color: @astra_text_faint;
+}
+
+button.pill {
+  border-radius: 999px;
+  padding: 0 18px;
+}
+
+button.circular {
+  border-radius: 999px;
+  padding: 0;
+}
+
+button.text-button,
+button.image-button {
+  min-width: 0;
+  min-height: 0;
+  padding: 2px 6px;
+  border-color: transparent;
+  background-color: transparent;
+}
+
+button.text-button:hover {
+  background-color: alpha(@astra_hot, 0.14);
+  box-shadow: none;
+}
+
+button.link {
+  background-color: transparent;
+  border-color: transparent;
+  color: @astra_cyan;
+  padding: 0 4px;
+  min-height: 0;
+}
+
+button.link:hover {
+  color: @astra_pink;
+  box-shadow: none;
+}
+
+toolbutton {
+  min-height: 30px;
+  min-width: 30px;
+  border-radius: 8px;
+}
+
+toolbutton:hover {
+  background-color: alpha(@astra_hot, 0.14);
+}
+
+/* ==========================================================================
+ * 5. ENTRIES, SPINBUTTONS, SEARCH
+ * ======================================================================== */
+
+entry {
+  background-color: @astra_void_2;
+  color: @astra_text;
+  border: 1px solid @astra_hairline;
+  border-radius: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  caret-color: @astra_hot;
+  transition: background-color 180ms cubic-bezier(.22,.61,.36,1),
+              border-color 180ms cubic-bezier(.22,.61,.36,1),
+              box-shadow 180ms cubic-bezier(.22,.61,.36,1);
+}
+
+entry:hover {
+  border-color: @astra_purple;
+}
+
+entry:focus {
+  background-color: @astra_void;
+  border-color: @astra_hot;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.35);
+}
+
+/* A GTK 4 entry that holds a child widget (a clear button, a validation icon)
+ * is focused as a whole, so the ring has to follow the container rather than
+ * the inner text view. This is the GTK 4 idiom and has no GTK 3 equivalent. */
+entry:focus-within {
+  border-color: @astra_hot;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.35);
+}
+
+entry:disabled {
+  background-color: @astra_surface;
+  color: @astra_text_faint;
+  box-shadow: none;
+}
+
+entry.error { border-color: @astra_red; }
+entry.success { border-color: @astra_teal; }
+
+entry.flat,
+entry.flat:focus {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+spinbutton {
+  background-color: @astra_void_2;
+  color: @astra_text;
+  border: 1px solid @astra_hairline;
+  border-radius: 8px;
+  min-height: 34px;
+  padding: 0 4px;
+}
+
+spinbutton:focus {
+  border-color: @astra_hot;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.35);
+}
+
+spinbutton button {
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: @astra_text_dim;
+  min-width: 20px;
+  min-height: 20px;
+}
+
+spinbutton button:hover {
+  background-color: alpha(@astra_hot, 0.16);
+  color: @astra_text;
+}
+
+searchbar > revealer > box {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 10px;
+  padding: 6px;
+}
+
+searchbar entry {
+  border-radius: 999px;
+  padding-left: 14px;
+}
+
+/* ==========================================================================
+ * 6. CHECK, RADIO, SWITCH
+ * ======================================================================== */
+
+check,
+checkbox,
+radio {
+  min-width: 18px;
+  min-height: 18px;
+  margin: 0 6px;
+  padding: 0;
+  border: 1px solid @astra_hairline;
+  background-color: @astra_void_2;
+  transition: background-color 180ms cubic-bezier(.22,.61,.36,1),
+              border-color 180ms cubic-bezier(.22,.61,.36,1),
+              box-shadow 180ms cubic-bezier(.22,.61,.36,1);
+}
+
+check,
+checkbox {
+  border-radius: 5px;
+}
+
+radio {
+  border-radius: 999px;
+}
+
+check:hover,
+checkbox:hover,
+radio:hover {
+  border-color: @astra_hot;
+  background-color: @astra_raised;
+}
+
+check:focus,
+checkbox:focus,
+radio:focus {
+  border-color: @astra_hot;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.35);
+}
+
+check:checked,
+checkbox:checked,
+radio:checked {
+  background-color: @astra_hot;
+  border-color: @astra_hot;
+  color: @astra_void;
+}
+
+check:indeterminate,
+checkbox:indeterminate {
+  background-color: alpha(@astra_hot, 0.45);
+  border-color: @astra_hot;
+}
+
+check:disabled,
+checkbox:disabled,
+radio:disabled {
+  background-color: @astra_raised;
+  border-color: @astra_hairline;
+  color: @astra_text_faint;
+  box-shadow: none;
+}
+
+switch {
+  background-color: @astra_void_2;
+  border: 1px solid @astra_hairline;
+  border-radius: 999px;
+  color: @astra_void;
+  min-width: 46px;
+  min-height: 24px;
+  padding: 2px;
+  transition: background-color 180ms cubic-bezier(.22,.61,.36,1),
+              border-color 180ms cubic-bezier(.22,.61,.36,1),
+              box-shadow 180ms cubic-bezier(.22,.61,.36,1);
+}
+
+switch:hover {
+  border-color: @astra_purple;
+}
+
+switch:focus {
+  border-color: @astra_hot;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.35);
+}
+
+switch:checked {
+  background-color: @astra_hot;
+  border-color: @astra_hot;
+}
+
+switch:disabled {
+  background-color: @astra_surface;
+  border-color: @astra_hairline;
+  box-shadow: none;
+}
+
+switch slider {
+  background-color: @astra_text;
+  border: 1px solid @astra_hairline;
+  border-radius: 999px;
+  min-width: 20px;
+  min-height: 20px;
+}
+
+switch:checked slider {
+  background-color: @astra_void;
+}
+
+switch:disabled slider {
+  background-color: @astra_text_faint;
+}
+
+/* ==========================================================================
+ * 7. SCALE, SLIDER, PROGRESS, LEVELBAR
+ * ======================================================================== */
+
+scale {
+  min-height: 18px;
+  min-width: 18px;
+  padding: 6px 0;
+  color: @astra_text_dim;
+}
+
+scale trough {
+  background-color: @astra_void_2;
+  border: 1px solid @astra_hairline;
+  border-radius: 999px;
+  min-height: 6px;
+  min-width: 6px;
+}
+
+scale highlight {
+  background-color: @astra_hot;
+  border-radius: 999px;
+}
+
+scale slider {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hot;
+  border-radius: 999px;
+  min-width: 18px;
+  min-height: 18px;
+  transition: background-color 180ms cubic-bezier(.22,.61,.36,1),
+              box-shadow 180ms cubic-bezier(.22,.61,.36,1);
+}
+
+scale slider:hover {
+  background-color: @astra_purple;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.35);
+}
+
+scale:focus slider {
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.35);
+}
+
+scale marks,
+scale value {
+  color: @astra_text_faint;
+  font-family: "DejaVu Sans Mono";
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+progressbar {
+  color: @astra_text_faint;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  min-height: 6px;
+}
+
+progressbar trough {
+  background-color: @astra_void_2;
+  border: 1px solid @astra_hairline;
+  border-radius: 999px;
+  min-height: 6px;
+}
+
+progressbar progress {
+  background-color: @astra_cyan;
+  border-radius: 999px;
+  min-height: 6px;
+}
+
+progressbar.pulse progress {
+  background-image: linear-gradient(to right, @astra_pink, @astra_purple 0.45, @astra_cyan);
+}
+
+progressbar:disabled trough,
+progressbar:disabled progress {
+  background-color: @astra_raised;
+  border-color: @astra_hairline;
+}
+
+levelbar block {
+  border: 1px solid @astra_hairline;
+  border-radius: 999px;
+  min-height: 8px;
+  min-width: 8px;
+}
+
+levelbar block.low {
+  background-color: @astra_teal;
+}
+
+levelbar block.high {
+  background-image: linear-gradient(to right, @astra_pink, @astra_purple 0.5, @astra_cyan);
+}
+
+levelbar block.full {
+  background-color: @astra_teal;
+}
+
+levelbar block.empty {
+  background-color: @astra_void_2;
+}
+
+levelbar:disabled block {
+  background-color: @astra_raised;
+  border-color: @astra_hairline;
+}
+
+/* ==========================================================================
+ * 8. TABS
+ * ======================================================================== */
+
+tabbar > tab {
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: @astra_text_dim;
+  min-height: 30px;
+  padding: 0 16px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  transition: background-color 180ms cubic-bezier(.22,.61,.36,1),
+              color 180ms cubic-bezier(.22,.61,.36,1),
+              border-color 180ms cubic-bezier(.22,.61,.36,1);
+}
+
+tabbar > tab:hover {
+  background-color: alpha(@astra_hot, 0.12);
+  color: @astra_text;
+}
+
+tabbar > tab:checked {
+  background-color: @astra_raised;
+  border-color: @astra_hairline;
+  color: @astra_text;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.18);
+}
+
+tabbar > tab:focus {
+  border-color: @astra_hot;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.35);
+}
+
+tabbar > tab:disabled {
+  color: @astra_text_faint;
+}
+
+tabbar > tab button {
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0;
+  margin: 0 0 0 4px;
+  border-radius: 6px;
+  background-color: transparent;
+  border: 1px solid transparent;
+}
+
+tabbar > tab button:hover {
+  background-color: alpha(@astra_red, 0.30);
+  border-color: @astra_red;
+}
+
+tabbox {
+  background-color: @astra_surface;
+}
+
+tab overview {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 10px;
+  padding: 6px;
+}
+
+tab overview button {
+  border-radius: 8px;
+}
+
+tabbedsidebar {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 10px;
+  padding: 4px;
+}
+
+/* ==========================================================================
+ * 9. LISTS
+ * ======================================================================== */
+
+list,
+listview,
+treeview,
+columnview {
+  background-color: @astra_void;
+  color: @astra_text;
+  border: 1px solid @astra_hairline;
+  border-radius: 8px;
+}
+
+list:selected,
+listview:selected,
+treeview:selected,
+columnview:selected {
+  background-color: @astra_hot;
+  color: @astra_void;
+}
+
+list:hover,
+listview:hover,
+treeview:hover {
+  background-color: @astra_raised;
+}
+
+list:disabled,
+listview:disabled,
+treeview:disabled {
+  background-color: @astra_void_2;
+  color: @astra_text_faint;
+}
+
+list row:nth-child(even),
+listview row:nth-child(even),
+treeview row:nth-child(even) {
+  background-color: @astra_void_2;
+}
+
+list row:nth-child(odd),
+listview row:nth-child(odd),
+treeview row:nth-child(odd) {
+  background-color: @astra_void;
+}
+
+list row:selected,
+listview row:selected,
+treeview row:selected {
+  background-color: @astra_hot;
+  color: @astra_void;
+}
+
+list row:hover,
+listview row:hover,
+treeview row:hover {
+  background-color: @astra_raised;
+}
+
+list row.activates,
+listview row.activates,
+treeview row.activates {
+  color: @astra_hot;
+}
+
+columnheader,
+treeview header button {
+  background-color: @astra_raised;
+  border: 0;
+  border-right: 1px solid @astra_hairline;
+  border-bottom: 1px solid @astra_hairline;
+  color: @astra_text_faint;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  font-weight: bold;
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+columnheader:hover,
+treeview header button:hover {
+  background-color: alpha(@astra_hot, 0.14);
+  color: @astra_text;
+}
+
+columnheader:last-child,
+treeview header button:last-child {
+  border-right: 0;
+}
+
+rowheader {
+  background-color: @astra_raised;
+  color: @astra_text_faint;
+  border-right: 1px solid @astra_hairline;
+  font-family: "DejaVu Sans Mono";
+}
+
+dnd {
+  border: 1px solid @astra_hot;
+  border-radius: 10px;
+}
+
+/* ==========================================================================
+ * 10. MENUS
+ * ======================================================================== */
+
+menubar {
+  background-color: @astra_raised;
+  color: @astra_text;
+  border-bottom: 1px solid @astra_hairline;
+  padding: 2px;
+}
+
+menubar > menuitem {
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: @astra_text_dim;
+  min-height: 24px;
+  padding: 0 10px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+menubar > menuitem:hover {
+  background-color: alpha(@astra_hot, 0.14);
+  color: @astra_text;
+}
+
+menu,
+popover > contents > menu {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 10px;
+  color: @astra_text;
+  padding: 6px;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.18);
+}
+
+modelbutton,
+menuitem {
+  color: @astra_text;
+  padding: 6px 10px;
+  border-radius: 6px;
+  min-height: 28px;
+}
+
+modelbutton:hover,
+modelbutton:focus,
+menuitem:hover,
+menuitem:focus {
+  background-color: alpha(@astra_hot, 0.18);
+  color: @astra_text;
+}
+
+modelbutton:disabled,
+menuitem:disabled {
+  color: @astra_text_faint;
+}
+
+modelbutton arrow,
+menuitem arrow {
+  color: @astra_text_dim;
+}
+
+checkmark {
+  color: @astra_hot;
+}
+
+/* ==========================================================================
+ * 11. POPOVERS, FRAMES, TOOLTIP, OSD
+ * ======================================================================== */
+
+popover {
+  background-color: transparent;
+  padding: 0;
+}
+
+popover > contents {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 18px;
+  color: @astra_text;
+  padding: 12px;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.18);
+}
+
+popover > arrow,
+popover.background > arrow {
+  color: @astra_hairline;
+}
+
+frame,
+frame.flat {
+  border: 1px solid @astra_hairline;
+  border-radius: 10px;
+}
+
+frame.flat {
+  border-style: none;
+  border-radius: 0;
+}
+
+tooltip,
+tooltip > label {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 8px;
+  color: @astra_text;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  padding: 4px 8px;
+  box-shadow: 0 0 24px alpha(@astra_void, 0.60);
+}
+
+.osd,
+osd {
+  background-color: @astra_void_2;
+  border: 1px solid @astra_hairline;
+  border-radius: 18px;
+  color: @astra_text;
+  padding: 12px;
+  box-shadow: 0 0 24px alpha(@astra_void, 0.60);
+}
+
+/* ==========================================================================
+ * 12. SCROLLBARS
+ * ======================================================================== */
+
+scrollbar {
+  background-color: @astra_surface;
+  border: 0;
+}
+
+scrollbar.vertical { width: 10px; }
+scrollbar.horizontal { height: 10px; }
+
+scrollbar slider {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 999px;
+  min-width: 6px;
+  min-height: 6px;
+  margin: 2px;
+  transition: background-color 180ms cubic-bezier(.22,.61,.36,1),
+              box-shadow 180ms cubic-bezier(.22,.61,.36,1);
+}
+
+scrollbar slider:hover {
+  background-color: alpha(@astra_hot, 0.45);
+  border-color: @astra_hot;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.18);
+}
+
+scrollbar slider:active {
+  background-color: @astra_hot;
+  border-color: @astra_hot;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.35);
+}
+
+scrollbar:disabled slider {
+  background-color: @astra_void_2;
+  border-color: transparent;
+}
+
+scrollbar trough {
+  background-color: transparent;
+  border: 0;
+  min-width: 6px;
+  min-height: 6px;
+}
+
+/* ==========================================================================
+ * 13. INFOBAR, STATUSBAR, NOTIFICATION, TOAST
+ * ======================================================================== */
+
+infobar > revealer > box {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+infobar.warning > revealer > box {
+  background-color: @astra_amber;
+  border-color: @astra_amber;
+  color: @astra_void;
+}
+
+infobar.error > revealer > box,
+infobar.destructive > revealer > box {
+  background-color: @astra_red;
+  border-color: @astra_red;
+  color: @astra_void;
+}
+
+infobar.question > revealer > box {
+  background-color: @astra_cyan;
+  border-color: @astra_cyan;
+  color: @astra_void;
+}
+
+infobar.warning label,
+infobar.error label,
+infobar.destructive label,
+infobar.question label {
+  color: @astra_void;
+}
+
+infobar button {
+  background-color: transparent;
+  border: 1px solid alpha(@astra_void, 0.30);
+  border-radius: 999px;
+  color: inherit;
+  min-height: 26px;
+  padding: 0 14px;
+}
+
+statusbar {
+  background-color: @astra_raised;
+  border-top: 1px solid @astra_hairline;
+  color: @astra_text_dim;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  padding: 4px 10px;
+}
+
+appnotification {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 18px;
+  color: @astra_text;
+  padding: 12px;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.18);
+}
+
+appnotification .title {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: @astra_text_faint;
+}
+
+appnotification .label {
+  color: @astra_text;
+}
+
+toast {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 18px;
+  color: @astra_text;
+  padding: 12px;
+}
+
+/* ==========================================================================
+ * 14. SIDEBAR, PANED, EXPANDER, COMBOBOX
+ * ======================================================================== */
+
+sidebar {
+  background-color: @astra_raised;
+  color: @astra_text;
+  border-right: 1px solid @astra_hairline;
+}
+
+sidebar:backdrop {
+  background-color: @astra_surface;
+}
+
+sidebar label {
+  padding: 2px 6px;
+}
+
+places-sidebar,
+places-sidebar-row {
+  background-color: @astra_raised;
+}
+
+places-sidebar-row {
+  border-radius: 8px;
+  color: @astra_text_dim;
+  min-height: 30px;
+  margin: 1px 6px;
+  padding: 0 6px;
+  transition: background-color 180ms cubic-bezier(.22,.61,.36,1),
+              color 180ms cubic-bezier(.22,.61,.36,1);
+}
+
+places-sidebar-row:hover {
+  background-color: alpha(@astra_hot, 0.12);
+  color: @astra_text;
+}
+
+places-sidebar-row:selected {
+  background-color: @astra_hot;
+  color: @astra_void;
+  box-shadow: 0 0 24px alpha(@astra_hot, 0.18);
+}
+
+sidebar-row {
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+sidebar-row:hover {
+  background-color: alpha(@astra_hot, 0.12);
+}
+
+sidebar-row:selected {
+  background-color: alpha(@astra_hot, 0.22);
+  border: 1px solid @astra_hot;
+}
+
+paned > separator {
+  background-color: @astra_hairline;
+  border: 0;
+  min-width: 1px;
+  min-height: 1px;
+}
+
+paned > separator.wide {
+  min-width: 5px;
+  min-height: 5px;
+}
+
+expander title,
+expander arrow {
+  color: @astra_text_faint;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+dropdown > button {
+  border-radius: 8px;
+  min-height: 34px;
+}
+
+dropdown > button.popover {
+  padding: 0;
+}
+
+/* ==========================================================================
+ * 15. TOOLBAR, SEPARATOR, LINKS, SPINNER
+ * ======================================================================== */
+
+toolbar,
+.inline-toolbar {
+  background-color: @astra_raised;
+  border-bottom: 1px solid @astra_hairline;
+  padding: 4px;
+}
+
+toolbar.vertical {
+  border-bottom: 0;
+  border-right: 1px solid @astra_hairline;
+}
+
+.inline-toolbar {
+  background-color: transparent;
+  border-bottom: 0;
+  border-radius: 8px;
+  padding: 2px;
+}
+
+separator {
+  background-color: transparent;
+  border: 0;
+  min-width: 1px;
+  min-height: 1px;
+}
+
+separator.horizontal {
+  border-bottom: 1px solid @astra_hairline;
+  margin: 4px 0;
+}
+
+separator.vertical {
+  border-right: 1px solid @astra_hairline;
+  margin: 0 4px;
+}
+
+label.separator {
+  color: @astra_text_faint;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+*:link,
+link {
+  color: @astra_cyan;
+  text-decoration: underline;
+}
+
+*:link:hover,
+link:hover {
+  color: @astra_pink;
+}
+
+*:link:visited,
+link:visited {
+  color: @astra_purple;
+}
+
+*:link:disabled,
+link:disabled {
+  color: @astra_text_faint;
+  text-decoration: none;
+}
+
+spinner,
+.spinner {
+  background-color: transparent;
+  border: 0;
+  color: @astra_hot;
+  min-width: 16px;
+  min-height: 16px;
+}
+
+/* ==========================================================================
+ * 16. CALENDAR, COLOUR CHOOSER, FILE CHOOSER, PATHBAR
+ * ======================================================================== */
+
+calendar {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 10px;
+  padding: 2px;
+}
+
+calendar > header {
+  background-color: transparent;
+  border-bottom: 1px solid @astra_hairline;
+}
+
+calendar > header > title {
+  color: @astra_text;
+  font-weight: bold;
+  padding: 6px 0;
+}
+
+calendar > grid > label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: @astra_text_faint;
+  border-radius: 6px;
+}
+
+calendar > grid > label.today {
+  color: @astra_teal;
+  font-weight: bold;
+}
+
+calendar > grid > label:selected {
+  background-color: @astra_hot;
+  color: @astra_void;
+}
+
+calendar > grid > label:hover {
+  background-color: alpha(@astra_hot, 0.16);
+}
+
+colorset {
+  border-radius: 8px;
+  padding: 2px;
+}
+
+colorbutton {
+  border-radius: 6px;
+  min-height: 24px;
+  min-width: 24px;
+}
+
+colorchooser {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 18px;
+  padding: 12px;
+}
+
+filechooser {
+  background-color: @astra_surface;
+}
+
+filechooser #pathbarbox {
+  border-bottom: 1px solid @astra_hairline;
+  padding: 4px;
+}
+
+pathbar > button {
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: @astra_text_dim;
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+pathbar > button:hover {
+  background-color: alpha(@astra_hot, 0.14);
+  color: @astra_text;
+}
+
+pathbar > button:checked {
+  background-color: @astra_raised;
+  border-color: @astra_hairline;
+  color: @astra_text;
+}
+
+filechooser-button {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 8px;
+  color: @astra_text_dim;
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+/* ==========================================================================
+ * 17. CARDS AND LAYOUT HELPERS
+ * ======================================================================== */
+
+frame.card,
+.card {
+  background-color: @astra_raised;
+  border: 1px solid @astra_hairline;
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.background.csd,
+.background.flat {
+  background-color: @astra_surface;
+  background-image: none;
+}
+
+label.mono-label,
+.mono-label {
+  font-family: "DejaVu Sans Mono";
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: @astra_text_faint;
+}
+
+label.hot { color: @astra_hot; }
+label.cool { color: @astra_cyan; }
+
+scrolledwindow > undershoot.top,
+scrolledwindow > undershoot.bottom {
+  background-color: alpha(@astra_surface, 0.55);
+}
+
+scrolledwindow > undershoot.left,
+scrolledwindow > undershoot.right {
+  background-color: alpha(@astra_surface, 0.55);
+}

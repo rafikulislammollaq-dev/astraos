@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<!--
+  AstraOS LightDM GTK greeter theme.
+
+  Installed as a lightdm-gtk-greeter XHTML theme. The greeter loads this file and
+  binds to the element ids below from its own JavaScript, so the ids are a hard
+  contract, not styling hooks: renaming one silently removes a control from the
+  login screen. They are listed here in one place so the contract is visible.
+
+  lightdm-gtk-greeter        greeter binds / fills            role here
+  ---------------------------------------------------------------------------
+  #greeter                    root                            full-screen field
+  #user-list > ul             filled with .user-list-item      user selection list
+  #user-selection             selected user's caption         shown when a user is picked
+  #user-name                  text                            selected user name
+  #user-image                 src set from the user avatar    account avatar
+  #password-entry             value read on submit             password field
+  #button                     click = log in                   primary action
+  #login-attempt              text + shown on a failed login   error line
+  #keyboard-button            click = show layout chooser      on-screen keyboard
+  #keyboard-layouts-section   shown / hidden                  layout list
+  #keyboard-layouts-list      filled with the host's layouts  layout list
+  #a11y-button                click = open the a11y menu       accessibility
+  #a11y-states                shown / hidden                  a11y menu
+  #a11y-contrast-button       high contrast                    accessibility
+  #a11y-font-button           large fonts                     accessibility
+  #a11y-keyboard-button       on-screen keyboard              accessibility
+  #a11y-reader-button         screen reader                   accessibility
+  #session-button             click = open the session menu    session selection
+  #session-button-label       text = current session           session name
+  #session-indicators         filled with available sessions   session list
+  #power-button               click = open the power menu      power menu
+  #shutdown-button            click = shut down                power
+  #reboot-button              click = reboot                   power
+  #suspend-button             click = suspend                  power
+  #hibernate-button           click = hibernate                power
+  #hostname                   text                            status line
+  #clock                      text                            status line
+  #date                       text                            status line
+
+  DESIGN
+  -----
+  Reference screenshot 1: the neon ring mark centred over a deep violet field,
+  the login panel below it, everything on near-opaque surfaces with 1px
+  hairlines. This theme follows docs/DESIGN.md: flat panels, no blur, 8px/18px
+  radii, 999px pills, uppercase wide-tracked micro-labels, and one motion
+  vocabulary (180ms for hover, one slow rotation for the ring).
+
+  THE RING IS PURE CSS. No image element, no referenced file of any kind, no
+  external font, no
+  network fetch and no script: the mark, its bloom, its orbiting arc and the
+  horizon grid are all drawn from gradients and borders, because a greeter that
+  has to resolve a file path is a greeter that can boot to a blank screen.
+  The background image is supplied by lightdm-gtk-greeter.conf (background=),
+  so this page layers its glow on top of whatever is painted underneath.
+
+  MOTION. The ring turns once every 3.6s, the arc counter-turns every 7.2s, both
+  linear, both continuous. prefers-reduced-motion stops both and leaves the ring
+  as a static sweep, because a login screen that spins forever is a problem for
+  anyone who is sensitive to motion.
+
+  ONE KNOWN CROSS-FILE ISSUE, NOT OWNED BY THIS THEME
+  --------------------------------------------------
+  branding/lightdm/lightdm-gtk-greeter.conf currently sets
+  indicators=~host;~spacer;~clock;~spacer;~session;~power, which disables every
+  indicator. This theme deliberately does NOT put the session, power, keyboard
+  or accessibility controls inside those indicator containers: it renders them
+  in the login panel, where the greeter's own show/hide logic finds them by id
+  regardless of indicator state. If the indicators are later re-enabled the
+  duplicated ids in the status strip must be removed, or the controls will
+  appear twice.
+-->
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>AstraOS</title>
+
+    <!--
+      The main stylesheet. "gtkrc" is the file name lightdm-gtk-greeter themes
+      use for their CSS; the greeter resolves it relative to this document.
+    -->
+    <link rel="stylesheet" href="gtkrc" type="text/css">
+
+    <!--
+      Inline fallback: the page field and the reset. If gtkrc is ever missing
+      from the installed theme, the greeter still boots to the brand background
+      instead of a white flash.
+    -->
+    <style type="text/css">
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background-color: #05030A;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="greeter">
+
+      <!-- Hero: the ring mark, the wordmark, the version line. -->
+      <div class="hero">
+        <div class="ring" role="img" aria-label="AstraOS">
+          <!-- Inner disc punches the middle of the sweep, so the mark reads as
+               a ring even where conic-gradient is unsupported: without it the
+               outer circle is simply a flat magenta disc. -->
+          <div class="ring-core"></div>
+          <!-- The orbiting arc, from docs/DESIGN.md §5. -->
+          <div class="ring-arc"></div>
+        </div>
+
+        <div class="wordmark">ASTRA OS</div>
+        <div class="tagline">STELLAR DESKTOP ENVIRONMENT</div>
+
+        <!--
+          Version line. This string duplicates VERSION / os-release and must be
+          updated with it; a login screen that reports the wrong build is worse
+          than one that reports none.
+        -->
+        <div class="version" id="version">ASTRA OS 0.1.0 &middot; NOVA &middot; DEBIAN 13 TRIXIE</div>
+      </div>
+
+      <!-- Login panel. -->
+      <div class="panel">
+        <div class="panel-label">SIGN IN</div>
+
+        <!-- Account chooser. The greeter replaces the contents of the list with
+             one .user-list-item per account. -->
+        <div id="user-list">
+          <ul class="user-list"></ul>
+        </div>
+
+        <div id="user-selection">
+          <img id="user-image" class="avatar" alt="">
+          <span id="user-name"></span>
+        </div>
+
+        <div class="password-row">
+          <input type="password" id="password-entry" name="password"
+                 autocomplete="off" spellcheck="false" placeholder="PASSWORD">
+          <button id="button" type="button">LOG IN</button>
+        </div>
+
+        <!-- Filled and revealed by the greeter when authentication fails. -->
+        <div id="login-attempt"></div>
+      </div>
+
+      <!-- Session, accessibility and power controls.
+           These are in the panel, not in the indicator strip, so they stay
+           usable no matter how indicators are configured. -->
+      <div class="actions">
+
+        <div class="action-group">
+          <button id="keyboard-button" class="action" type="button"
+                  aria-label="On-screen keyboard">KEYBOARD</button>
+          <div id="keyboard-layouts-section" class="menu">
+            <div class="menu-label">KEYBOARD LAYOUT</div>
+            <ul id="keyboard-layouts-list"></ul>
+          </div>
+        </div>
+
+        <div class="action-group">
+          <button id="a11y-button" class="action" type="button"
+                  aria-label="Accessibility">ACCESSIBILITY</button>
+          <div id="a11y-states" class="menu">
+            <div class="menu-label">ACCESSIBILITY</div>
+            <ul>
+              <li id="a11y-contrast-button">HIGH CONTRAST</li>
+              <li id="a11y-font-button">LARGE FONTS</li>
+              <li id="a11y-keyboard-button">ON-SCREEN KEYBOARD</li>
+              <li id="a11y-reader-button">SCREEN READER</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="action-group">
+          <button id="session-button" class="action" type="button"
+                  aria-label="Session">
+            <span id="session-button-label">XFCE DESKTOP</span>
+            <div id="session-indicators"></div>
+          </button>
+        </div>
+
+        <div class="action-group">
+          <button id="power-button" class="action" type="button"
+                  aria-label="Power">POWER</button>
+          <div id="power-list" class="menu menu-right">
+            <div class="menu-label">POWER</div>
+            <ul>
+              <li><button id="shutdown-button" type="button">SHUT DOWN</button></li>
+              <li><button id="reboot-button" type="button">RESTART</button></li>
+              <li><button id="suspend-button" type="button">SUSPEND</button></li>
+              <li><button id="hibernate-button" type="button">HIBERNATE</button></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status strip: hostname, clock, date. -->
+      <div class="status">
+        <span id="hostname"></span>
+        <span class="status-spacer"></span>
+        <span id="clock"></span>
+        <span id="date"></span>
+      </div>
+
+      <!--
+        The faint horizon grid from docs/DESIGN.md §5, as a repeating linear
+        gradient on a fixed pseudo-element. It is the last thing painted, so it
+        sits behind the hero and behind the panel.
+      -->
+      <div class="horizon"></div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,167 @@
+# Xfwm4 theme descriptor for AstraOS-Light.
+#
+# Installed to /usr/share/themes/AstraOS-Light/xfwm4/themerc alongside the
+# generated titlebar/button/shadow bitmaps.
+#
+# WHY THIS FILE EXISTS NOW
+# -----------------------
+# The Light GTK theme shipped without one. xfwm4 reads themerc for the colours and
+# metrics it cannot measure from the PNGs, so a theme with images but no descriptor
+# falls back to xfwm4's built-in defaults: the Light theme's carefully drawn
+# titlebar was rendered with dark-theme border colours and default offsets, which is
+# the "a theme names an asset that is not on disk" failure this project has hit
+# before. The generated bitmaps for AstraOS-Light were always present in
+# branding/generated/xfwm4/AstraOS-Light (54 files); only the descriptor was missing.
+#
+# WHAT THIS FILE IS, AND WHAT IT IS NOT
+# ------------------------------------
+# This file is the *descriptor*: colours and a handful of metrics that xfwm4 reads
+# at runtime. Everything geometric that xfwm4 cannot express as a number here is
+# baked into the PNGs that the asset renderer produces from the same constants in
+# config/branding.env. The two halves therefore cannot drift apart: this file and the
+# renderer both start from that one token file.
+#
+# The metrics that have no key in this file, and must therefore be drawn at
+# these exact sizes by the renderer (section "Window decoration metrics" in
+# config/branding.env):
+#
+#   WINDOW_TITLEBAR_HEIGHT  30px  -> height of title_1.png .. title_4.png and of
+#                                      the button rows. xfwm4 has no "titlebar
+#                                      height" key; it measures the image.
+#   WINDOW_BUTTON_SIZE      18px  -> width/height of the button bitmaps
+#                                      (menu, stick, shade, hide, maximize,
+#                                      close). There is no "button size" key.
+#   WINDOW_CORNER_RADIUS    10px  -> corner geometry of the title bitmaps.
+#   WINDOW_SHADOW_RADIUS    12px  -> blur radius of the shadow_*.png / border
+#                                      bitmaps. shadow_delta_* below are the
+#                                      *offset* applied to that shadow, not its
+#                                      blur; they are zero here so the drawn
+#                                      shadow lands where the renderer drew it.
+#
+# Option names below are the ones xfwm4's theme parser actually recognises.
+# An unrecognised name is silently ignored, so no decorative or invented key is
+# used: every line here is load-bearing.
+#
+# Only titlebar/border pixels are painted by this theme. There is no
+# translucency and no blur: docs/DESIGN.md §0 forbids compositing effects in
+# desktop chrome because they are what makes a low-end machine feel slow.
+
+# --- Title text ----------------------------------------------------------
+# WINDOW_TITLE_FONT is "DejaVu Sans Bold 9"; xfwm4 takes the title font from
+# its own settings, not from here, but the text colours below are sized for it.
+# No text shadow: docs/DESIGN.md §3 and branding.env both disable title shadows.
+#
+# COLOUR INVERSION IS THE WHOLE POINT OF THIS THEME: the tokens below are the
+# dark-surface values from config/branding.env flipped for a light background, not
+# the dark theme's values reused. COLOR_TEXT (#F2EEFF, near-white) would be
+# invisible on the Light titlebar's near-white surface, so active text is
+# COLOR_TEXT_LIGHT_THEME and the inactive step is COLOR_TEXT_DIM_LIGHT_THEME.
+active_text_color=#1A1E26
+active_text_shadow_color=#FFFFFF
+inactive_text_color=#5A5568
+inactive_text_shadow_color=#FFFFFF
+
+# --- Titlebars, monitors 1 to 4 -----------------------------------------
+# Active: the same signature sweep as the dark theme, pink -> purple -> cyan. A
+# focused window is the one place on the desktop where the brand gradient is
+# painted per pixel, and it costs nothing at runtime because the gradient lives
+# in a cached pixmap.
+#
+# Inactive is the flat light surface (#F4F6FA) fading to the raised white
+# (#FFFFFF), so an unfocused window recedes against a light desktop instead of
+# becoming a dark slab.
+title_1_active_color=#FF5CC8
+title_1_active_mid_color=#8B3DFF
+title_1_active_mid_color_to_left=#FF5CC8
+title_1_active_gradient_color=#22E6FF
+title_1_active_gradient_to_left=#FF5CC8
+title_1_inactive_color=#F4F6FA
+title_1_inactive_mid_color=#F4F6FA
+title_1_inactive_mid_color_to_left=#F4F6FA
+title_1_inactive_gradient_color=#FFFFFF
+title_1_inactive_gradient_to_left=#F4F6FA
+
+title_2_active_color=#FF5CC8
+title_2_active_mid_color=#8B3DFF
+title_2_active_mid_color_to_left=#FF5CC8
+title_2_active_gradient_color=#22E6FF
+title_2_active_gradient_to_left=#FF5CC8
+title_2_inactive_color=#F4F6FA
+title_2_inactive_mid_color=#F4F6FA
+title_2_inactive_mid_color_to_left=#F4F6FA
+title_2_inactive_gradient_color=#FFFFFF
+title_2_inactive_gradient_to_left=#F4F6FA
+
+title_3_active_color=#FF5CC8
+title_3_active_mid_color=#8B3DFF
+title_3_active_mid_color_to_left=#FF5CC8
+title_3_active_gradient_color=#22E6FF
+title_3_active_gradient_to_left=#FF5CC8
+title_3_inactive_color=#F4F6FA
+title_3_inactive_mid_color=#F4F6FA
+title_3_inactive_mid_color_to_left=#F4F6FA
+title_3_inactive_gradient_color=#FFFFFF
+title_3_inactive_gradient_to_left=#F4F6FA
+
+title_4_active_color=#FF5CC8
+title_4_active_mid_color=#8B3DFF
+title_4_active_mid_color_to_left=#FF5CC8
+title_4_active_gradient_color=#22E6FF
+title_4_active_gradient_to_left=#FF5CC8
+title_4_inactive_color=#F4F6FA
+title_4_inactive_mid_color=#F4F6FA
+title_4_inactive_mid_color_to_left=#F4F6FA
+title_4_inactive_gradient_color=#FFFFFF
+title_4_inactive_gradient_to_left=#F4F6FA
+
+# --- Title placement -----------------------------------------------------
+# WINDOW_TITLE_OFFSET=8: the title text starts 8px in from the leading edge of
+# the titlebar. Both states use the same offset so a window does not appear to
+# shuffle its text when focus moves between windows. The state-less key is
+# declared as well as the two state-specific ones; see AstraOS-Dark/themerc.
+title_horizontal_offset=8
+title_horizontal_offset_active=8
+title_horizontal_offset_inactive=8
+
+# Vertically the renderer centres the text inside the 30px titlebar, so no
+# offset is applied here; a non-zero value would push it off centre.
+title_vertical_offset_active=0
+title_vertical_offset_inactive=0
+
+title_alignment=center
+
+title_shadow_active=false
+title_shadow_inactive=false
+
+# --- Borders -------------------------------------------------------------
+# WINDOW_BORDER_WIDTH=1: a single hairline pixel, not the 4px frame most
+# themes use. Depth comes from the accent glow and the drawn shadow, and a fat
+# border would eat a lot of a 1280x800 screen.
+borders_size=1
+border_color=#D8DCE6
+
+# --- Window buttons ------------------------------------------------------
+# WINDOW_BUTTON_SPACING=4: the gap between adjacent button pixmaps. button
+# offset is the distance from the button row to the titlebar edge; it mirrors the
+# same 4px so the row sits evenly inside a 30px titlebar next to an 18px button.
+button_spacing=4
+button_offset=4
+
+# The titlebar is drawn across the full window width and the title text is
+# positioned over it, rather than the titlebar being inset between two button
+# clusters. That matches the header bar in the GTK theme, where the title is a
+# label at the start of a full-width strip.
+full_width_title=true
+
+# --- Window shadow -------------------------------------------------------
+# WINDOW_SHADOW_RADIUS=12 is the blur of the generated shadow images. These
+# four keys move the *result*; all zero keeps the drawn shadow where the
+# renderer put it. shadow_opacity is only consulted when the compositor draws
+# the shadow itself instead of using the theme's shadow bitmaps. A light theme
+# needs a slightly deeper shadow than the dark theme's 40 to read as separation
+# against a bright background, where a low-alpha black shadow is nearly invisible.
+shadow_delta_x=0
+shadow_delta_y=0
+shadow_delta_height=0
+shadow_delta_width=0
+shadow_opacity=55

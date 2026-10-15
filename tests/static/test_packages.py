@@ -320,6 +320,45 @@ def test_only_one_time_synchronisation_daemon() -> None:
     )
 
 
+def test_resolvconf_is_not_installed_alongside_networkmanager() -> None:
+    """resolvconf and NetworkManager each defer DNS to the other, so DNS ends up dead.
+
+    This is a measured defect, not a theoretical one. On the 0.1.0 ISO, both units are
+    enabled (NetworkManager.service and resolvconf.service are both in
+    multi-user.target.wants) and /etc/resolv.conf is a 0-byte regular file, because
+    live-build replaces the path rather than leaving the /run/resolvconf/resolv.conf
+    symlink resolvconf(8) manages. NetworkManager sees resolvconf installed and hands
+    DNS over to it; resolvconf finds its symlink replaced and writes nothing. Nothing
+    owns the file, so no name ever resolves and the live session has a browser that
+    cannot load a page until someone types a nameserver by hand.
+
+    Unlike most package mistakes this one does not fail the build: apt resolves the set
+    happily and the image ships. It is only visible by booting, which is why the
+    exclusion needs a test. NetworkManager writes /etc/resolv.conf itself, and Debian 13
+    treats resolvconf as deprecated.
+    """
+    selected: dict[str, str] = {}
+    for filename, packages in astraos_env.package_lists().items():
+        for package in packages:
+            selected[package] = filename
+
+    assert "network-manager" in selected, (
+        "network-manager is not in any package list, so this test is no longer guarding "
+        "the DNS path it was written for. NetworkManager is the single networking "
+        "authority for the desktop session (plan §12)."
+    )
+
+    offenders = sorted(
+        f"{name} (in {selected[name]})"
+        for name in ("resolvconf", "openresolv", "unbound-anchor")
+        if name in selected
+    )
+    assert not offenders, (
+        "these DNS resolvers are listed alongside network-manager, which disables name "
+        "resolution in the live session:\n  " + "\n  ".join(offenders)
+    )
+
+
 def test_no_duplicate_entries_within_a_list() -> None:
     problems: list[str] = []
     for filename, packages in astraos_env.package_lists().items():

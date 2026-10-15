@@ -24,6 +24,12 @@ mousepad
 vim-tiny
 vim-gtk3
 
+# Windows-bridge app equivalents: mspaint -> Drawing, calc -> galculator,
+# and fastfetch for the terminal summary (astra info / first prompt).
+galculator
+drawing
+fastfetch
+
 atril
 xarchiver
 ristretto

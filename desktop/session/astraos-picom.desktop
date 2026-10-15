@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=AstraOS Effects (picom)
+Comment=Fading windows and smooth shadows; enable with: astra effects on
+Exec=picom --daemon
+TryExec=picom
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-Phase=Desktop
