@@ -61,38 +61,113 @@ CPU_FLAGS = [
     "-DGGML_BLAS=OFF",
 ]
 
-# The models that may be installed. Everything here is a 1B-3B parameter model
-# quantised to Q4, because that is what fits the reference machine's memory
-# and answers in a few seconds on its CPU. The URLs are the projects' own
-# Hugging Face repositories; upstream renames files occasionally, and the
-# failure when that happens is one line naming the URL that answered 404.
+# The models that may be installed, as a three-tier ladder rather than one
+# list. Every entry names the tier it is for, because a user "installing a
+# model" is not the decision they are actually making - they are choosing
+# whether this machine can plan, only execute, or both.
+#
+# WHY THE LADDER AND NOT ONE RECOMMENDED MODEL
+#
+# The measured finding behind the split (arXiv 2601.11327v2, v2 2026-04-13) is
+# that multi-agent systems with small models are planner-limited: an 8B
+# orchestrator scores the same across 1.7B/8B/32B sub-agents on GAIA (23.0 /
+# 23.0 / 23.6), and giving the orchestrator thinking is worth +18.2 GAIA and
+# +36.7 AIME while giving the workers thinking is worth marginal or negative
+# amounts. ProST (arXiv 2509.04508v2) reaches the same conclusion from the other
+# side: a 14B planner with 7B workers beats 7B/14B/14B at equal parameters.
+#
+# So the parameter budget goes in the brain, and the executor gets the smallest
+# model that follows one instruction. The pool in tiers.py loads one at a time,
+# because both in memory on the reference machine is the difference between an
+# assistant and a machine that swaps the desktop out.
+#
+# WHY THESE MODELS
+#
+# Tool calling at small sizes is a specific and scored capability. The Berkeley
+# Function-Calling Leaderboard (gorilla.cs.berkeley.edu/leaderboard.html, the
+# de-facto standard) ranks Qwen3-4B-Instruct-2507 (FC) at 35.68 overall and
+# Qwen3-8B at 42.57, against Gemma-3-4b-it at 19.62 and MiniCPM3-4B-FC at 25.55.
+# The Qwen3 family is also the one whose chat templates llama.cpp supports
+# natively, which matters here because this package starts llama-server rather
+# than implementing a tool-calling protocol of its own.
+#
+# The 1B-3B tier does not have to be a tool caller: it only has to classify one
+# request and read one instruction, which is why SmolLM3-3B (a strong 3B,
+# Apache 2.0, `think` and `no_think` modes) is the default executor rather than
+# another Qwen.
+#
+# THE NUMBERS ARE FILE SIZES, NOT ESTIMATES. `astra-ai setup --list` shows
+# them, and a user on a metered connection deserves a real number.
+#
+# BEIR's finding on vocabulary failure is why the router is here: dense models
+# lose to BM25 on jargon, part numbers and error codes they never trained on,
+# and a 360M classifier asked "is this one step or several?" fails the same way
+# on a command nobody expected. That is why the router is optional and the
+# executor default is a 3B.
 MODELS: dict[str, dict] = {
+    # ---- the executor: one task at a time, cheap, and never the bottleneck
+    "smollm3-3b-q4_k_m": {
+        "kind": "llm",
+        "tier": "executor",
+        "file": "smollm3-3b-q4_k_m.gguf",
+        "url": "https://huggingface.co/bartowski/SmolLM3-3B-GGUF/resolve/main/"
+               "SmollLM3-3B-Q4_K_M.gguf",
+        "size_mb": 1800,
+        "note": "the default executor: the strongest 3B that is Apache 2.0, with"
+                " a no_think mode that makes answering fast",
+    },
     "qwen2.5-1.5b-instruct-q4_k_m": {
         "kind": "llm",
+        "tier": "executor",
         "file": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/"
                "qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "size_mb": 1120,
-        "note": "recommended: the best instruction following per byte that fits 4 GB",
-    },
-    "llama-3.2-1b-instruct-q4_k_m": {
-        "kind": "llm",
-        "file": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-        "url": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/"
-               "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-        "size_mb": 810,
-        "note": "smallest of the three; use it if the machine has 4 GB or less",
+        "note": "the small executor: works on 4 GB of RAM, slower to follow a long instruction",
     },
     "qwen2.5-3b-instruct-q4_k_m": {
         "kind": "llm",
+        "tier": "executor",
         "file": "qwen2.5-3b-instruct-q4_k_m.gguf",
         "url": "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/"
                "qwen2.5-3b-instruct-q4_k_m.gguf",
         "size_mb": 1930,
-        "note": "better answers, about twice the wait per question; needs 6 GB or more",
+        "note": "a bigger executor, for a machine that can spare the wait",
+    },
+    # ---- the middle brain: the tier that decides quality
+    "qwen3-4b-instruct-2507-q4_k_m": {
+        "kind": "llm",
+        "tier": "brain",
+        "file": "qwen3-4b-instruct-2507-q4_k_m.gguf",
+        "url": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507-GGUF/resolve/main/"
+               "qwen3-4b-instruct-2507-q4_k_m.gguf",
+        "size_mb": 2500,
+        "note": "THE MIDDLE BRAIN: plans multi-step work, and is the model whose"
+                " quality decides what the assistant can do. Needs 6 GB or more.",
+    },
+    "qwen2.5-3b-instruct-q4_k_m": {
+        "kind": "llm",
+        "tier": "brain",
+        "file": "qwen2.5-3b-instruct-q4_k_m.gguf",
+        "url": "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/"
+               "qwen2.5-3b-instruct-q4_k_m.gguf",
+        "size_mb": 1930,
+        "note": "the middle brain when the machine has 4 GB: better answers than"
+                " the 1.5B, about twice the wait per question",
+    },
+    # ---- the router: only for machines that want to spend the disk on it
+    "smollm2-360m-instruct-q8_0": {
+        "kind": "llm",
+        "tier": "router",
+        "file": "smollm2-360m-instruct-q8_0.gguf",
+        "url": "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/"
+               "resolve/main/smollm2-360m-instruct-q8_0.gguf",
+        "size_mb": 400,
+        "note": "optional: sorts a request into executor, brain, or a plain answer",
     },
     "whisper-tiny.en": {
         "kind": "stt",
+        "tier": "voice",
         "file": "ggml-tiny.en.bin",
         "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin",
         "size_mb": 78,
@@ -100,14 +175,40 @@ MODELS: dict[str, dict] = {
     },
     "whisper-base.en": {
         "kind": "stt",
+        "tier": "voice",
         "file": "ggml-base.en.bin",
         "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
         "size_mb": 148,
         "note": "speech recognition: more accurate than tiny, still English only",
     },
+    "piper-voice-lessac-medium": {
+        "kind": "tts",
+        "tier": "voice",
+        "file": "en_US-lessac-medium.onnx",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/"
+               "lessac/medium/en_US-lessac-medium.onnx",
+        "size_mb": 63,
+        "note": "speaking voice for `astra-ai say` and the web page: one command",
+    },
+    "piper-voice-lessac-medium-json": {
+        "kind": "tts-json",
+        "tier": "voice",
+        "file": "en_US-lessac-medium.onnx.json",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/"
+               "lessac/medium/en_US-lessac-medium.onnx.json",
+        "size_mb": 1,
+        "note": "the matching phoneme map for the Lessac voice",
+    },
 }
 
-RECOMMENDED = "qwen2.5-1.5b-instruct-q4_k_m"
+# What `astra-ai setup` installs when given nothing to do: the executor, and
+# nothing else. The brain is a second command on purpose - a user with 4 GB who
+# installs both gets a machine that swaps, and they should get to make that
+# choice rather than discover it at the third question.
+# `astra-ai setup --tier brain` is the same thing said the other way round.
+DEFAULT_SETUP = "smollm3-3b-q4_k_m"
+
+RECOMMENDED = DEFAULT_SETUP
 
 # How long a single read may block before the download is treated as dead.
 # Not the whole-download timeout: a slow line with a 1 GB file can take an

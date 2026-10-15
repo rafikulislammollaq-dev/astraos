@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import json
 import shutil
 import subprocess
 import sys
@@ -56,7 +57,9 @@ if str(_LIB) not in sys.path:
 from astraos.ai import actions, config, llm  # noqa: E402
 from astraos.ai import prompt as ai_prompt  # noqa: E402
 from astraos.ai import setup as ai_setup  # noqa: E402
+from astraos.ai import tiers  # noqa: E402
 from astraos.ai import voice  # noqa: E402
+from astraos.ai import worker as ai_worker  # noqa: E402
 
 
 def _note(message: str) -> None:
@@ -456,6 +459,155 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# The three-tier assistant: work, journal, skills, knowledge
+# ---------------------------------------------------------------------------
+
+
+def cmd_work(args: argparse.Namespace) -> int:
+    """Answer a request with the executor and the middle brain.
+
+    This is the command that is not the old one. `ask` is one model, one
+    action, no plan; `work` is the ladder: the executor decides what the request
+    is, escalates to the middle brain when it is more than one step, and then
+    runs the plan one task at a time with every step verified and journalled.
+
+    Confirmation is interactive, and it is asked with the exact command in front
+    of the user. Nothing dangerous runs on a terminal that cannot ask, because
+    the only way to say yes is to type it.
+    """
+    settings = config.load_settings()
+    pool = tiers.TierPool(settings)
+
+    def confirm(action: str, call_args: dict) -> bool:
+        question = ai_worker.question_for(action, call_args)
+        print(f"astra-ai: {question}", file=sys.stderr)
+        print("astra-ai: run it? [y/N] ", end="", file=sys.stderr, flush=True)
+        try:
+            answer = sys.stdin.readline().strip().lower()
+        except (OSError, EOFError):
+            answer = ""
+        return answer in ("y", "yes")
+
+    agent = ai_worker.Worker(pool, confirm=confirm)
+    goal = " ".join(args.text).strip()
+    outcome = agent.handle(goal)
+
+    if args.json:
+        print(json.dumps(outcome, indent=2, sort_keys=True))
+        return 0
+
+    for step in outcome.get("plan", []):
+        print(f"astra-ai: step: {step.get('action')}({step.get('args', {})})",
+              file=sys.stderr)
+    for evidence in outcome.get("evidence", []):
+        if evidence.get("output"):
+            print(f"astra-ai:   -> {evidence['output']}")
+    if outcome.get("text"):
+        print(f"astra-ai: {outcome['text']}")
+    else:
+        print("astra-ai: nothing to report.", file=sys.stderr)
+    return 0 if outcome.get("kind") in ("action", "answer") else 1
+
+
+def cmd_journal(args: argparse.Namespace) -> int:
+    """The task journal: what ran, what failed, and what a human must decide.
+
+    The journal is the part of this assistant a person can read. It exists
+    because the two largest measured failure modes of small-model agents are
+    bookkeeping failures (repeating a step: 15.7%; not knowing they are
+    finished: 12.4% - MAST, arXiv 2503.13657), and the fix for both is a
+    written record with the budget in it.
+    """
+    from astraos.ai import journal as journal_module
+
+    journal = journal_module.journal()
+    if args.json:
+        summary = journal.summary()
+        summary["open"] = summary["open"]
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+
+    summary = journal.summary()
+    print(f"journal: {summary['path']}")
+    print(f"plan.md: {summary['plan']}")
+    for status, count in summary["tasks"].items():
+        if count:
+            print(f"  {status:12} {count}")
+    waiting = summary["pending_approvals"]
+    if waiting:
+        print("  awaiting a human:")
+        for approval in waiting:
+            print(f"    #{approval['id']} {approval['action']}: {approval['question']}")
+    if not any(summary["tasks"].values()):
+        print("  (nothing has run yet)")
+    return 0
+
+
+def cmd_skills(args: argparse.Namespace) -> int:
+    """The skills that are installed, and what is missing to run them."""
+    from astraos.ai import skills as skills_module
+
+    if args.json:
+        print(json.dumps({
+            "stats": skills_module.stats(),
+            "skills": [
+                {
+                    "name": skill.name,
+                    "title": skill.title,
+                    "when": skill.when,
+                    "keywords": skill.keywords,
+                    "requires": skill.requires,
+                    "missing": skill.missing(),
+                    "steps": len(skill.steps),
+                }
+                for skill in skills_module.load_all()
+            ],
+        }, indent=2, sort_keys=True))
+        return 0
+
+    stats = skills_module.stats()
+    print(f"skills: {stats['count']} installed, {stats['usable']} usable here")
+    print(f"yours:   {stats['user_dir']}")
+    print("A skill is one SKILL.md file in one of those directories. Write one and")
+    print("it is usable on the next question.")
+    print()
+    for skill in skills_module.load_all():
+        missing = skill.missing()
+        flag = " (needs " + ", ".join(missing) + ")" if missing else ""
+        print(f"  {skill.name}{flag}")
+        if skill.when:
+            print(f"      {skill.when}")
+        print(f"      {len(skill.steps)} steps")
+    if not skills_module.load_all():
+        print("  (none installed)")
+    return 0
+
+
+def cmd_knowledge(args: argparse.Namespace) -> int:
+    """Search the machine's own documentation, or show what it holds."""
+    from astraos.ai import knowledge as knowledge_module
+
+    if not args.query:
+        stats = knowledge_module.stats()
+        print(f"knowledge: {stats['entries']} entries "
+              f"({stats['knowledge']} documents, {stats['skills']} skills)")
+        print(f"index:    {stats['index']}")
+        print(f"in:       {stats['share_dir']}")
+        return 0
+
+    passages = knowledge_module.search(" ".join(args.query))
+    if not passages:
+        print("astra-ai: the machine's own documentation does not cover that.")
+        print("astra-ai: (nothing is guessed in the gap)")
+        return 1
+    for passage in passages:
+        print(f"--- {passage['id']}")
+        print(passage["title"])
+        print(passage["body"].strip())
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -519,6 +671,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("stop", help="stop the model server this account started")
     p.set_defaults(handler=cmd_stop)
+
+    p = sub.add_parser("work", help="do a task with the executor and the middle brain")
+    p.add_argument("text", nargs="+", help="what to do, in one line")
+    p.add_argument("--json", action="store_true", help="the whole result as JSON, for scripts")
+    p.set_defaults(handler=cmd_work)
+
+    p = sub.add_parser("journal", help="what ran, what failed, what needs a human")
+    p.add_argument("--json", action="store_true", help="the summary as JSON")
+    p.set_defaults(handler=cmd_journal)
+
+    p = sub.add_parser("skills", help="the installed skills, and what each one needs")
+    p.add_argument("--json", action="store_true", help="as JSON, for scripts")
+    p.set_defaults(handler=cmd_skills)
+
+    p = sub.add_parser("knowledge", help="search this machine's own documentation")
+    p.add_argument("query", nargs="*", help="what to look up; omit it for a summary")
+    p.set_defaults(handler=cmd_knowledge)
 
     return parser
 

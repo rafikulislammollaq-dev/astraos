@@ -327,6 +327,18 @@ class Engine:
         """
         self.start()
 
+        body = self._body(messages, stream)
+        return self._stream(body) if stream else self._complete(body)
+
+    def _body(self, messages: list[dict], stream: bool, **extra) -> dict:
+        """The chat completion body. Every ask goes through here.
+
+        `extra` carries the caller's additions - response_format for a
+        constrained call, chat_template_kwargs for a thinking mode - and it is
+        a keyword rather than a positional list because there will be more of
+        them, and because a call that needs both must be able to say so in one
+        line that reads as one intention.
+        """
         body = {
             "messages": messages,
             "stream": bool(stream),
@@ -337,7 +349,49 @@ class Engine:
                 self.settings.get("max_tokens") or _config.DEFAULTS["max_tokens"]
             ),
         }
-        return self._stream(body) if stream else self._complete(body)
+        body.update(extra)
+        return body
+
+    def ask_json(
+        self, messages: list[dict], schema: dict, stream: bool = False
+    ) -> Iterator[str]:
+        """Ask for one JSON answer the grammar cannot let be malformed.
+
+        WHY THIS EXISTS AT ALL
+
+        A small model asked for JSON produces broken JSON often enough that a
+        parser in the loop is a joke: the markdown fence appears, or a quote
+        escapes itself, or the object closes two levels down. llama.cpp can
+        constrain generation to a JSON schema, which turns the problem from
+        "please" into "cannot" - the tokens that would break the schema are not
+        generated, so the answer either parses or is empty.
+
+        WHY ENABLE_THINKING IS FORCED OFF
+
+        There is a live llama.cpp defect (issue #20335) in which grammar and
+        schema enforcement is silently skipped when a model's thinking mode is
+        enabled: the server returns the reasoning text, the constraint is not
+        applied to it, and the caller gets a 500 from a token that came out of
+        the model's head rather than a malformed answer. Qwen3 and SmolLM3 both
+        enable thinking by default in their own chat templates, so this flag is
+        not optional politeness - without it the constraint that this method
+        exists for is not applied to the models this distribution recommends.
+
+        WHY NOT STREAMING
+
+        A constrained answer is short (a tool call is a few dozen tokens) and it
+        is parsed as a whole anyway, so streaming would only add a code path
+        that cannot be used. stream=True is accepted for symmetry and ignored.
+        """
+        self.start()
+
+        body = self._body(
+            messages,
+            False,
+            response_format={"type": "json_object", "schema": schema},
+            chat_template_kwargs={"enable_thinking": False},
+        )
+        return self._complete(body)
 
     def _complete(self, body: dict) -> Iterator[str]:
         """One non-streaming answer."""

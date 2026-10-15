@@ -44,6 +44,8 @@ gnome-disk-utility
 baobab
 
 imagemagick
+# Document reading: pdftotext, pdfinfo, pdftoppm. It is also what the assistant's
+# pdf-office skill runs on, so removing this removes that capability.
 poppler-utils
 ghostscript
 libreoffice-calc

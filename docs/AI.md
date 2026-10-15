@@ -14,13 +14,14 @@ recorded in `KNOWN_LIMITATIONS.md` section 3.12, now with an implementation.
 
 ## 1. What it is
 
-A local assistant, in three pieces:
+A local assistant, in four pieces:
 
 | Piece | Installed at | What it is |
 |---|---|---|
 | Server | `/usr/lib/astraos/ai/server.py` | A small HTTP server, Python standard library only |
 | Page | `/usr/share/astraos/ai/web/index.html` | One HTML file: styles and script inline, no external requests |
 | Python package | `/usr/lib/astraos/ai/*.py` | Settings, the llama.cpp engine wrapper, the action repertoire, voice in/out |
+| The ladder | `/usr/lib/astraos/ai/{tiers,planner,worker,journal,knowledge,skills}.py` | Two models with two jobs, the skills library, and the task journal |
 
 Start it from a terminal:
 
@@ -30,6 +31,11 @@ astra ai start --lan    # also reachable from other devices on the local network
 astra ai open           # open the page in the browser
 astra ai status         # is it running, is a model installed
 astra ai stop           # stop it
+
+astra ai work TASK      # do a task: plan it, run it, verify every step
+astra ai journal        # what ran, what failed, and what you must decide
+astra ai skills         # the skills installed, and what each needs here
+astra ai knowledge WORDS # search this computer's own documentation
 ```
 
 The model runs on this computer. The page makes no request of any kind except to
@@ -41,6 +47,113 @@ which fails if an external address appears in the page.
 The assistant answers questions about the system, and it can carry out a small,
 fixed list of actions (for example opening an application or reporting system
 status). It is a normal program running as you: it has your rights and no others.
+
+### 1.1 Why two models and not one
+
+One small model has to be three things at once - good enough to plan, cheap
+enough to call a hundred times, and wise enough to know when it is out of its
+depth - and it is none of them. The measured finding behind splitting the roles
+(arXiv 2601.11327v2, v2 2026-04-13) is that multi-agent systems built on small
+models are **planner-limited, not executor-limited**: an 8B orchestrator scores
+23.0 / 23.0 / 23.6 on GAIA whether its sub-agents are 1.7B, 8B or 32B, and giving
+the *orchestrator* thinking is worth +18.2 GAIA and +36.7 AIME, while giving the
+*workers* thinking is worth marginal or negative amounts. ProST
+(arXiv 2509.04508v2) reaches the same conclusion from the other side: a 14B
+planner with 7B workers beats 7B/14B/14B on the Pareto front at equal parameters.
+
+So the parameter budget goes into the middle brain, and the executor is the
+smallest model that can follow one instruction. On the reference machine the
+two are never in memory together - loading both is the difference between an
+assistant and a machine that swaps the desktop out - so `tiers.py` owns at most
+one llama-server and swaps the model when the tier changes, which costs a
+reload of ten to thirty seconds and buys a machine that still works.
+
+| Tier | Model | Job |
+|---|---|---|
+| executor | `smollm3-3b-q4_k_m` (~1.8 GB) | reads one request, makes one tool call, reads what came back, retries once with the failure, or escalates |
+| middle brain | `qwen3-4b-instruct-2507-q4_k_m` (~2.5 GB, 6 GB RAM) | reads the whole request plus the retrieved knowledge and writes the plan as a typed list of actions |
+| router | `smollm2-360m-instruct-q8_0` (~400 MB) | optional; sorts a request into executor, brain or a plain answer |
+
+`astra-ai setup --model <name>` installs a tier; `astra ai status` says which
+ones are installed. Everything works with the executor alone - a task that needs
+more than one step is then attempted in one step, and the reply says so.
+
+### 1.2 Why the tool calls cannot be malformed
+
+A small model asked politely for JSON produces broken JSON. `llm.py`'s
+`ask_json()` therefore sends llama.cpp a JSON schema, and llama.cpp constrains
+generation to it: the tokens that would break the schema are never generated, so
+a tool call is either valid or empty. `enable_thinking` is forced off for the
+same reason - llama.cpp issue #20335 documents that grammar enforcement is
+silently skipped when a model's thinking mode is enabled, which would leave the
+constraint that this whole design rests on turned off.
+
+The catalogue the model may choose from is closed (`actions.ACTIONS`, 30-odd
+entries, 32 in the current build), the planner's grammar refuses a step that
+names anything outside it, `_prune_args()` drops an argument the action does not
+take, and `execute()` refuses the irreversible actions unless the caller passes
+`confirmed=True`. The model cannot widen its own vocabulary.
+
+### 1.3 The journal, and why it is visible
+
+The two largest measured failure modes of small-model agent systems are
+bookkeeping, not reasoning: step repetition (15.7%) and not knowing they are
+finished (12.4%) - MAST, arXiv 2503.13657, 1600+ annotated traces across seven
+frameworks. `journal.py` fixes both by writing the plan to SQLite **before** it
+runs, tracking which step is next, and re-rendering `plan.md` on every state
+change:
+
+```
+$ astra ai journal
+journal: ~/.local/share/astraos/ai/journal.sqlite3
+plan.md: ~/.local/share/astraos/ai/plan.md
+  ok           4
+  needs_human  1
+  awaiting a human:
+    #12 run_command: the assistant wants to run this command (command='pdftotext report.pdf -')
+```
+
+`needs_human` is not a failure. A step a person declined is recorded as the
+correct outcome of that conversation, and the journal shows what was asked and
+what was answered, so saying no is auditable rather than silent.
+
+### 1.4 Skills, and the knowledge they come from
+
+A skill is one `SKILL.md` file in a named directory, and there are two places
+they live: `/usr/share/astraos/ai/skills` (shipped, root-owned, read-only) and
+`~/.local/share/astraos/ai/skills` (yours). Write a file into yours and the
+next question can use it:
+
+```
+# Summarise a PDF
+
+keywords: pdf, extract, text, document, summarise
+requires: pdftotext
+when: the user wants the contents of a PDF as text or as a summary
+---
+
+## Steps
+
+1. Find the file. Use open_path with the path the user gave.
+2. Extract the text with run_command: pdftotext "<file>" -
+3. Say in three bullets what the document is about, and name the file.
+```
+
+Eight skills ship with the assistant (PDF and documents, finding and organising
+files, summarising documents, offline email triage, a read-only system health
+report, screenshots, locale and timezone, backup and sync). Each one lists what
+it needs, and a skill whose requirement is missing says so instead of failing
+half-way through - `astra ai skills` shows which.
+
+Alongside them is the knowledge pack: this distribution's own documentation,
+rewritten as short procedures with the exact commands, so the assistant quotes
+the machine instead of guessing. It is indexed with SQLite FTS5 (BM25, weighted
+so an author's keyword beats prose), which is in the standard library and needs
+no model. The search that produced this doc's answers is tested against the
+corpus in `tests/static/test_astra_ai_brain.py`, and a question the corpus does
+not cover returns nothing at all - never the nearest thing that looked
+plausible, because "I could not find that on this machine" is the difference
+between an assistant and a confident liar.
 
 ---
 
@@ -210,6 +323,11 @@ Two honest caveats:
 ---
 
 ## 6. What is deliberately not included yet
+
+The ladder changes nothing here except to add a requirement of its own: the
+middle brain is a 2.5 GB download the user chooses to make, and a machine with
+4 GB of RAM will not run it well. That is stated in `astra ai status` and in the
+knowledge entry, rather than being smoothed over.
 
 Stated so the omissions are decisions, not surprise gaps:
 

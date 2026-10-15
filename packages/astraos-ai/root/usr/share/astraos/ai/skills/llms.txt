@@ -1,0 +1,50 @@
+# AstraOS assistant skills
+
+> A small library of offline procedures the AstraOS assistant can read, follow and
+> quote: eight skills for work people actually do on a desktop, and the knowledge
+> entries that tell it how this machine is set up. Everything here is plain text,
+> shipped by the astraos-ai package, and indexed by the assistant's own search so a
+> 1B model can cite it. Nothing in this library contacts the network.
+
+Each entry is one SKILL.md in a named directory. The header at the top of the file
+carries the title, the keywords that drive retrieval, the programs the skill needs
+on PATH, and one line saying when it applies; the numbered list under `## Steps` is
+the playbook, and `## Notes` holds the warnings a small model is most likely to get
+wrong. A skill that cannot be run on this machine is still listed, with the package
+that is missing.
+
+## Office and documents
+
+- [pdf-office](pdf-office/SKILL.md): extract, convert and read PDFs offline - pdftotext for the text, pdftoppm plus tesseract for a scanned page, soffice --headless --convert-to for DOCX and text (needs pdftotext, soffice).
+- [summarise-documents](summarise-documents/SKILL.md): turn a folder of text documents into a short brief with every claim cited by file path, plus a "what is missing" section (needs pdftotext).
+
+## Files and storage
+
+- [find-and-organise-files](find-and-organise-files/SKILL.md): find files by name, extension, age or size with find, inspect them with ls -la, du -sh and file, and move them only after the plan has been printed and confirmed (needs find).
+- [backup-and-sync](backup-and-sync/SKILL.md): rsync -av --dry-run first, then the real copy, with --checksum to prove the destination matches; never --delete without showing the list (needs rsync).
+
+## Communication
+
+- [offline-email-triage](offline-email-triage/SKILL.md): read local Maildir or mbox mail, sort it into needs reply, needs reading and can be ignored, and draft replies for the user to send themselves. Nothing is ever sent (needs grep).
+
+## The machine
+
+- [system-health-report](system-health-report/SKILL.md): a read-only health check - fastfetch, df -h, free -h, systemctl --failed, journalctl -p 3 -xb, ip -br addr and ip route, reported with the command each number came from.
+- [locale-and-timezone](locale-and-timezone/SKILL.md): report the current timezone, locale and keyboard layout, and print the exact sudo commands the user must run to change them (needs setxkbmap).
+
+## Desktop and screen
+
+- [screenshot-and-describe](screenshot-and-describe/SKILL.md): capture the screen, list the open windows, describe what is visible, and leave the PNG in ~/Pictures. Nothing is uploaded.
+
+## Knowledge entries
+
+The facts behind the skills live beside them, in ../knowledge. They are what the
+assistant cites when a user asks how this machine works.
+
+- [set-dns](../knowledge/set-dns.md): how DNS is set here - NetworkManager writes /etc/resolv.conf itself, and the live medium's dns= boot parameter overrides it.
+- [keyboard-shortcuts](../knowledge/keyboard-shortcuts.md): the Windows-muscle-memory keys AstraOS binds and the file they are written in.
+- [install-extra-software](../knowledge/install-extra-software.md): astra install NAME, the Welcome app, synaptic, and why the assistant never installs anything.
+- [locale-time-and-timezone](../knowledge/locale-time-and-timezone.md): timedatectl, and what the user has to run themselves.
+- [fix-common-boot-and-graphics-issues](../knowledge/fix-common-boot-and-graphics-issues.md): a stock-looking desktop, no sound, brightness, VirtualBox resolution, and X11 versus Wayland.
+- [assistant-setup](../knowledge/assistant-setup.md): the exact commands to set the assistant up - model, runtime, voice, start and stop.
+- [privacy-and-what-leaves-the-machine](../knowledge/privacy-and-what-leaves-the-machine.md): what the assistant sends, and the one mode where something does.

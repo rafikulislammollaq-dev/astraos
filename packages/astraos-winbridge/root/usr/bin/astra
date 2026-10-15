@@ -243,8 +243,17 @@ do_ai_usage() {
     astra ai setup [FILE]   set it up; import a .gguf file you already have
     astra ai stop           stop a running assistant
     astra ai say TEXT       speak TEXT through this computer's speakers
+    astra ai work TASK      do a task: plan it, run it, verify each step
+    astra ai journal        what ran, what failed, and what you must decide
+    astra ai skills         the installed skills and what each one needs here
+    astra ai knowledge WORDS search this computer's own documentation
 
-  The model runs on this computer. The page is served on 127.0.0.1 only, unless
+  The model runs on this computer. `astra ai work` uses two of them: a small
+  executor that does one step at a time and reads what came back, and - when
+  the task needs more than one step, and only if you install it - a middle
+  brain that writes the plan and hands the steps down. Every step is written to
+  the journal first, so `astra ai journal` always shows what happened and what
+  is left, and anything irreversible still waits for you to say yes. The page is served on 127.0.0.1 only, unless
   --lan is given, which makes it reachable from devices on the local network so
   a phone can act as the microphone. There is no password there; actions in the
   page still need an explicit confirmation. Nothing is downloaded by default:
@@ -451,6 +460,10 @@ do_ai() {
         status)             do_ai_status "$@" ;;
         open)               do_ai_open "$@" ;;
         say|speak)          do_ai_say "$@" ;;
+        work|do)            astra-ai work "$@" ;;
+        journal)            astra-ai journal "$@" ;;
+        skills)             astra-ai skills "$@" ;;
+        knowledge|docs)     astra-ai knowledge "$@" ;;
         *)
             printf "Unknown 'astra ai' subcommand: %s\n\n" "$_what"
             do_ai_usage
