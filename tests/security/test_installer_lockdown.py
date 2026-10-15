@@ -16,6 +16,9 @@ the script runnable here without touching the /etc of the machine running the te
 The last case is the one that matters most: a target that still has an autologin
 anywhere must make the installation FAIL. An installer that only warns here produces a
 system that logs a user in without a password and never mentions it.
+
+The tests take no arguments and use no framework: the suite's runner loads each module
+and calls every test_* function directly (tests/run.py), with no pytest available.
 """
 
 from __future__ import annotations
@@ -23,37 +26,45 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
-LOCKDOWN = REPO_ROOT / "installer" / "calamares" / "modules" / "shellprocess.conf"
+sys.path.insert(0, str(REPO_ROOT / "tests" / "lib"))
+
+from astraos_testlib import SkipTest  # noqa: E402
 
 DESCRIPTION = "the installer's lock-down step removes the live medium's autologin"
 
-# An autologin key that carries a value. `autologin-user=` with nothing after it is
-# the lock-down itself and must not be flagged.
+LOCKDOWN = REPO_ROOT / "installer" / "calamares" / "modules" / "shellprocess.conf"
+
+# An autologin key that carries a value. `autologin-user=` with nothing after it is the
+# lock-down itself and must not be flagged.
 AUTOLOGIN_WITH_VALUE = re.compile(r"^[ \t]*autologin-(user|session|user-timeout)=[^ \t]")
 
-pytestmark = pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
+
+def _require_sh() -> None:
+    """The step runs in the target's /bin/sh; without a shell there is nothing to test."""
+    if shutil.which("sh") is None:
+        raise SkipTest("no POSIX shell on this machine, so the step cannot be run")
 
 
 def _extract_script() -> str:
     """Pull the block scalar out of the YAML the way YAML would.
 
-    The file is read as text rather than through a YAML parser because the suite has
-    no YAML dependency and one script does not justify adding one. The extraction
-    follows the rule that matters here: a block's indentation is set by its first
-    non-empty line. If the file's shape changes, the assertion below fails rather
-    than the test quietly running nothing.
+    The file is read as text rather than through a YAML parser because the suite has no
+    YAML dependency and one script does not justify adding one. The extraction follows
+    the rule that matters here: a block's indentation is set by its first non-empty
+    line. If the file's shape changes, the assertion below fails rather than the test
+    quietly running nothing.
     """
     lines = LOCKDOWN.read_text(encoding="utf-8").splitlines()
     for index, line in enumerate(lines):
         if line.strip() != "- |":
             continue
         body: list[str] = []
-        block_indent: int | None = None
+        block_indent = None
         for following in lines[index + 1:]:
             if not following.strip():
                 body.append("")
@@ -76,14 +87,14 @@ def _extract_script() -> str:
     )
 
 
-def _live_root(tmp_path: Path) -> Path:
+def _live_root(root: Path) -> Path:
     """A /etc that looks like the live medium's at the moment of installation.
 
-    Calamares unpacks the live filesystem, so the target carries whatever the live
-    boot left behind: the main conffile as live-config rewrote it, the image's own
-    drop-in, and any live-only drop-in.
+    Calamares unpacks the live filesystem, so the target carries whatever the live boot
+    left behind: the main conffile as live-config rewrote it, the image's own drop-in,
+    and any live-only drop-in.
     """
-    etc = tmp_path / "etc" / "lightdm"
+    etc = root / "etc" / "lightdm"
     (etc / "lightdm.conf.d").mkdir(parents=True)
 
     (etc / "lightdm.conf").write_text(
@@ -101,62 +112,71 @@ def _live_root(tmp_path: Path) -> Path:
     (etc / "lightdm.conf.d" / "99-astraos-live.conf").write_text(
         "[Seat:*]\nautologin-user=astra\n", encoding="utf-8"
     )
-    return tmp_path
+    return root
 
 
-def _run(script: str, root: Path) -> subprocess.CompletedProcess[str]:
+def _run(script: str, root: Path) -> subprocess.CompletedProcess:
     """Run the script with /etc redirected into the throwaway root."""
     redirected = script.replace("/etc/", f"{root.as_posix()}/etc/")
-    return subprocess.run(["sh", "-c", redirected], capture_output=True, text=True)
+    return subprocess.run(
+        ["sh", "-c", redirected], capture_output=True, text=True
+    )
 
 
 def test_the_lock_down_step_is_valid_posix_shell() -> None:
     """A syntax error here fails an installation halfway through, not at build time."""
-    check = subprocess.run(["sh", "-n"], input=_extract_script(), capture_output=True, text=True)
+    _require_sh()
+    check = subprocess.run(
+        ["sh", "-n"], input=_extract_script(), capture_output=True, text=True
+    )
     assert check.returncode == 0, f"the lock-down script does not parse: {check.stderr}"
 
 
-def test_the_installed_system_cannot_autologin(tmp_path: Path) -> None:
+def test_the_installed_system_cannot_autologin() -> None:
     """The live autologin is undone on the target and the policy is written there."""
-    root = _live_root(tmp_path)
-    result = _run(_extract_script(), root)
-    assert result.returncode == 0, (
-        "the lock-down step failed on an ordinary live root, so no installation would "
-        f"complete: {result.stdout}{result.stderr}"
-    )
+    _require_sh()
+    with tempfile.TemporaryDirectory(prefix="astraos-lockdown-") as directory:
+        root = _live_root(Path(directory))
+        result = _run(_extract_script(), root)
+        assert result.returncode == 0, (
+            "the lock-down step failed on an ordinary live root, so no installation "
+            f"would complete: {result.stdout}{result.stderr}"
+        )
 
-    etc = root / "etc" / "lightdm"
-    assert not (etc / "lightdm.conf.d" / "99-astraos-live.conf").exists(), (
-        "a live-only LightDM drop-in survived into the installed system, so the disk "
-        "would autologin like the live medium"
-    )
+        etc = root / "etc" / "lightdm"
+        assert not (etc / "lightdm.conf.d" / "99-astraos-live.conf").exists(), (
+            "a live-only LightDM drop-in survived into the installed system, so the "
+            "disk would autologin like the live medium"
+        )
 
-    main = (etc / "lightdm.conf").read_text(encoding="utf-8")
-    stray = [line for line in main.splitlines() if AUTOLOGIN_WITH_VALUE.match(line)]
-    assert not stray, (
-        "the main LightDM configuration still carries a live autologin after the "
-        f"lock-down step ran: {stray}. The installer unpacks this file onto the disk "
-        "verbatim, so this is what the installed system would log in with."
-    )
+        main = (etc / "lightdm.conf").read_text(encoding="utf-8")
+        stray = [line for line in main.splitlines() if AUTOLOGIN_WITH_VALUE.match(line)]
+        assert not stray, (
+            "the main LightDM configuration still carries a live autologin after the "
+            f"lock-down step ran: {stray}. The installer unpacks this file onto the "
+            "disk verbatim, so this is what the installed system would log in with."
+        )
 
-    policy = (etc / "lightdm.conf.d" / "90-astraos-installed.conf").read_text(encoding="utf-8")
-    assert re.search(r"^autologin-user=[ \t]*$", policy, re.M), (
-        "the installed system's own drop-in does not clear autologin-user; a stray key "
-        "in another file would be able to re-enable it"
-    )
+        policy = (etc / "lightdm.conf.d" / "90-astraos-installed.conf").read_text(encoding="utf-8")
+        assert re.search(r"^autologin-user=[ \t]*$", policy, re.M), (
+            "the installed system's own drop-in does not clear autologin-user; a stray "
+            "key in another file would be able to re-enable it"
+        )
 
 
-def test_an_autologin_that_survives_fails_the_installation(tmp_path: Path) -> None:
+def test_an_autologin_that_survives_fails_the_installation() -> None:
     """A check that only warns is a check that gets ignored."""
-    root = _live_root(tmp_path)
-    (root / "etc" / "lightdm" / "lightdm.conf.d" / "40-site.conf").write_text(
-        "[Seat:*]\nautologin-user=bob\n", encoding="utf-8"
-    )
+    _require_sh()
+    with tempfile.TemporaryDirectory(prefix="astraos-lockdown-") as directory:
+        root = _live_root(Path(directory))
+        (root / "etc" / "lightdm" / "lightdm.conf.d" / "40-site.conf").write_text(
+            "[Seat:*]\nautologin-user=bob\n", encoding="utf-8"
+        )
 
-    result = _run(_extract_script(), root)
-    assert result.returncode != 0, (
-        "an autologin in a file the lock-down step does not own was left in place and "
-        "the installation still reported success. The user would then be logged in "
-        "without a password on a system they believe is protected."
-    )
-    assert "refusing" in result.stderr
+        result = _run(_extract_script(), root)
+        assert result.returncode != 0, (
+            "an autologin in a file the lock-down step does not own was left in place "
+            "and the installation still reported success. The user would then be "
+            "logged in without a password on a system they believe is protected."
+        )
+        assert "refusing" in result.stderr
