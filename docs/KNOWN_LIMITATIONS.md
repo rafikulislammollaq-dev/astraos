@@ -212,12 +212,33 @@ Xfce and Debian both use for defaults that must not fight the packaged files.
 The live session's user and any user the installer creates are both new accounts, so a fresh
 install gets the AstraOS desktop; a pre-existing account does not.
 
-### 3.12 No AI features
+### 3.12 The AI assistant ships without a model
 
-AstraOS 0.1.0 includes no AI assistant and no AI component in the boot path. This is
-stated as a limitation because the project's long-term plan includes one, and because a
-future AI feature must never be required for startup, login, networking, package
-management or recovery.
+AstraOS now includes an AI assistant (`astraos-ai`, documented in `docs/AI.md`), and the
+limitation that remains is deliberate: **no model and no runtime are installed with the
+image**. The assistant is a command and a local page; the model, `llama.cpp` and the
+speech tools arrive only when the user runs `astra-ai setup`, because a small model is
+about a gigabyte and a distribution should not spend a user's bandwidth and disk on one
+unasked.
+
+Three consequences worth stating plainly:
+
+* **A fresh install cannot answer anything yet.** The page loads, explains what to run,
+  and the assistant reports "not installed" rather than failing. This is the state every
+  new user meets, and it is a design decision rather than a bug.
+* **The model is chosen for the hardware, not for the leaderboard.** The catalogue is
+  1B–3B Q4 models. A 7B model would be a better assistant on the machine this was
+  developed on only if it finished a sentence in a sitting, and it does not.
+* **Nothing about the assistant is required by anything else.** No boot unit, no login
+  path, no networking, no package management and no recovery tool depends on it, which is
+  the property the plan asked for before any AI feature was allowed in.
+
+Speech is split in the same way. Speaking works as soon as a text-to-speech tool is
+present, and `espeak-ng` is installed with the image so the assistant is audible out of
+the box — an older voice, chosen because it is in Debian, needs no model file and answers
+immediately. Recognising speech needs `whisper.cpp`, which is a build, so it is not
+installed by default; a phone on the same network can supply a microphone without it.
+A neural voice (Piper and a voice model) is not supported yet.
 
 ### 3.13 Plymouth's theme file is written at image build time
 

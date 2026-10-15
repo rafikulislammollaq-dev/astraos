@@ -1,0 +1,555 @@
+#!/usr/bin/python3
+# astra-ai - the AstraOS assistant on the command line.
+#
+# Why this exists:
+#
+#     The assistant is a small language model running on this machine. It has
+#     no account, no service and no network of its own: the model is a file,
+#     the actions are the functions in /usr/lib/astraos/ai/actions.py, and
+#     everything that touches the desktop goes through the tools the desktop
+#     already uses (xfconf, pactl, xdotool, wmctrl, nmcli). This command is the
+#     plain way in, for the terminal and for the troubleshooting that happens
+#     when a graphical front end will not start.
+#
+# Design rules, matching the rest of AstraOS:
+#
+#   * Nothing runs until it is asked. No unit, no autostart, no daemon: the
+#     model server starts on the first question and `astra-ai stop` ends it.
+#   * A destructive plan - suspend, reboot, shutdown, close a window, run a
+#     command - is refused unless the person at the terminal says yes. The
+#     model produces the plan; it can never confirm it.
+#   * No root and no sudo, anywhere. Model downloads and builds go under
+#     $HOME, and this file does not look for a way around that.
+#   * stdout carries answers and results; stderr carries what the assistant is
+#     doing. Piping `astra-ai ask ...` into another command gets the answer
+#     only.
+#   * Every failure is one line naming the fix, never a traceback.
+#
+# Why the web interface is imported inside cmd_serve() and not at the top:
+#
+#     astraos.ai.server is a separate module that the assistant package does
+#     not own. Importing it at start-up would make every subcommand fail on a
+#     system where it is not installed, and would make this file's help and
+#     `astra-ai status` unusable exactly when something is missing. It is
+#     imported when `serve` is typed, and the error when it is absent says so
+#     in one line.
+
+from __future__ import annotations
+
+import argparse
+import inspect
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+# The package lives in /usr/lib in the image and in packages/*/root/usr/lib in
+# the repository; both are one directory above this file's parent. Appended
+# rather than prepended: /usr/lib is not a Python package directory, and
+# nothing here should be able to shadow the standard library.
+_LIB = Path(__file__).resolve().parents[1] / "lib"
+if str(_LIB) not in sys.path:
+    sys.path.append(str(_LIB))
+
+from astraos.ai import actions, config, llm  # noqa: E402
+from astraos.ai import prompt as ai_prompt  # noqa: E402
+from astraos.ai import setup as ai_setup  # noqa: E402
+from astraos.ai import voice  # noqa: E402
+
+
+def _note(message: str) -> None:
+    print(f"astra-ai: {message}", file=sys.stderr)
+
+
+def _engine() -> llm.Engine:
+    return llm.Engine(config.load_settings())
+
+
+# ---------------------------------------------------------------------------
+# setup
+# ---------------------------------------------------------------------------
+
+
+def cmd_setup(args: argparse.Namespace) -> int:
+    if args.list:
+        _print_catalog()
+        return 0
+    if args.model:
+        ai_setup.install_model(args.model)
+        return 0
+    if args.build:
+        ai_setup.build_tools(args.build)
+        return 0
+    if args.voice:
+        _setup_voice()
+        return 0
+    _print_overview()
+    return 0
+
+
+def _setup_voice() -> None:
+    """`astra-ai setup --voice`: the two halves of talking to this machine.
+
+    Listening is whisper.cpp, which is a build; speaking is espeak-ng, which
+    is a package. The build happens only when the program is missing, so a
+    second run does not clone or rebuild anything (and does not need a network
+    for a git pull it would not have done). Installing a package needs root,
+    so the speaking half is named and left to the person, in one line.
+    """
+    if voice.stt_available():
+        print("listening: ready (whisper.cpp and a speech model are installed)")
+    else:
+        if voice.stt_binary() is None:
+            ai_setup.build_tools("whisper")
+        else:
+            print("listening: whisper.cpp is built; a speech model is still missing")
+        print("listening: install a model with:  astra-ai setup --model whisper-tiny.en")
+
+    if voice.tts_available():
+        tool = Path(voice.tts_tool() or "").name or "a speech tool"
+        print(f"speaking: ready ({tool})")
+    else:
+        print("speaking: install espeak-ng with:  astra install espeak-ng")
+
+
+def _print_catalog() -> None:
+    print("models that can be installed (1B-3B parameters, Q4, CPU only):\n")
+    for name, entry in ai_setup.MODELS.items():
+        marker = " (recommended)" if name == ai_setup.RECOMMENDED else ""
+        print(f"  {name}{marker}")
+        print(f"      {entry['note']}, about {entry['size_mb']} MB")
+    print("\ninstall one with:  astra-ai setup --model qwen2.5-1.5b-instruct-q4_k_m")
+
+
+def _print_overview() -> None:
+    info = ai_setup.describe()
+
+    print("AstraOS assistant\n")
+    print(f"  model          {info['model'] or 'none installed'}")
+    print(f"  llama-server   {info['llama_server'] or 'not installed'}")
+    print(f"  speech         {info['tts_tool'] or 'not installed'}")
+    print(f"  transcription  {'ready' if info['stt'] else 'not installed'}")
+    print(f"  models kept in {info['models_dir']}")
+    print(f"  settings       {info['config_file']}")
+
+    if info["installed"]:
+        print("\n  files in the model directory:")
+        for name in info["installed"]:
+            print(f"    {name}")
+
+    print("\nnext steps (each one is optional, and nothing is downloaded by itself):")
+    if not info["llama_server"]:
+        print("  astra-ai setup --build llama     build llama.cpp for this CPU "
+              "(AVX on, AVX2 off, no F16C)")
+    if not info["model_present"]:
+        print("  astra-ai setup --model qwen2.5-1.5b-instruct-q4_k_m    download "
+              "the recommended model")
+    if not info["tts"]:
+        print("  astra install espeak-ng         speak answers out loud")
+    if not info["stt"]:
+        print("  astra-ai setup --build whisper   build whisper.cpp, then install "
+              "a whisper model")
+    if info["llama_server"] and info["model_present"]:
+        print("  astra-ai ask 'what time is it'   ask something")
+        print("  astra-ai serve                    the web interface, on "
+              "127.0.0.1 only")
+
+
+# ---------------------------------------------------------------------------
+# asking
+# ---------------------------------------------------------------------------
+
+
+def _ask_model(engine: llm.Engine, text: str, history: list[dict], raw: bool) -> str:
+    """Ask and return the model's whole reply, streaming it only when asked.
+
+    Streaming is off by default because the reply is usually a JSON plan, and
+    watching a plan arrive one token at a time is not the answer the user
+    asked for. --stream exists for debugging a model that will not follow the
+    format.
+    """
+    messages = ai_prompt.build_messages(text, history)
+    _note("asking the model (a few seconds on a CPU with AVX but no AVX2)")
+    pieces: list[str] = []
+    for piece in engine.ask(messages, stream=True):
+        pieces.append(piece)
+        if raw:
+            sys.stdout.write(piece)
+            sys.stdout.flush()
+    if raw:
+        print()
+    return "".join(pieces)
+
+
+def _handle_reply(reply: str, interactive: bool) -> int:
+    """Print an answer, or run one action - after the user's yes when needed."""
+    plan = actions.parse_plan(reply)
+    if plan is None:
+        # Not a plan: the model answered in prose. That is a perfectly good
+        # answer, and refusing to show it would be worse than showing it.
+        print(reply.strip())
+        return 0
+
+    if "answer" in plan:
+        print(plan["answer"])
+        return 0
+
+    name = plan["action"]
+    action = actions.ACTIONS[name]
+    _note(f"action {name}: {action.summary}")
+
+    if action.needs_confirm and not interactive:
+        result = actions.execute(plan, confirmed=False)
+        print(result["output"])
+        _note("run it with `astra-ai chat` to confirm it here, or do it yourself")
+        return 0
+
+    confirmed = not action.needs_confirm
+    if action.needs_confirm:
+        print(f"astra-ai: '{name}' {action.summary}. This cannot be undone.")
+        print("run it? [y/N] ", end="", file=sys.stderr, flush=True)
+        try:
+            answer = input()
+        except EOFError:
+            answer = ""
+        confirmed = answer.strip().lower() in ("y", "yes")
+        if not confirmed:
+            _note("not run")
+            return 0
+
+    result = actions.execute(plan, confirmed=confirmed)
+    print(result["output"])
+    return 0 if result["ok"] else 1
+
+
+def cmd_ask(args: argparse.Namespace) -> int:
+    engine = _engine()
+    reply = _ask_model(engine, " ".join(args.text), [], args.stream)
+    code = _handle_reply(reply, interactive=sys.stdin.isatty())
+    if args.stop:
+        engine.stop()
+    return code
+
+
+def cmd_chat(args: argparse.Namespace) -> int:
+    engine = _engine()
+    history: list[dict] = []
+    _note("chat: /quit ends, /stop stops the model server, /help lists the actions")
+    while True:
+        try:
+            line = input("you> ")
+        except EOFError:
+            print()
+            break
+        line = line.strip()
+        if not line:
+            continue
+        if line in ("/quit", "/exit", "/q"):
+            break
+        if line == "/stop":
+            engine.stop()
+            _note("model server stopped")
+            continue
+        if line == "/help":
+            _print_actions()
+            continue
+
+        reply = _ask_model(engine, line, history, args.stream)
+        history.append({"role": "user", "content": line})
+        history.append({"role": "assistant", "content": reply})
+        _handle_reply(reply, interactive=sys.stdin.isatty())
+
+    if args.stop:
+        engine.stop()
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# speaking and listening
+# ---------------------------------------------------------------------------
+
+
+def cmd_say(args: argparse.Namespace) -> int:
+    if voice.speak(" ".join(args.text)):
+        return 0
+    return 1
+
+
+def _record(seconds: int) -> bytes | None:
+    """Record mono 16 kHz WAV, which is what whisper.cpp wants.
+
+    arecord is preferred because its -d stops the recording on its own; the
+    parecord fallback has no such option, so it is started and interrupted
+    after the same number of seconds. Neither is needed for anything else the
+    assistant does, so both being absent is a message, not an error.
+    """
+    handle = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    path = Path(handle.name)
+    handle.close()
+
+    arecord = shutil.which("arecord")
+    if arecord:
+        _note(f"recording for {seconds}s (speak now)")
+        argv = [arecord, "-q", "-f", "S16_LE", "-r", "16000", "-c", "1",
+                "-d", str(seconds), str(path)]
+        try:
+            completed = subprocess.run(argv)
+        except OSError as exc:
+            _note(f"could not start arecord: {exc}")
+            return None
+        if completed.returncode != 0:
+            _note("the microphone did not record anything (is one connected?)")
+            path.unlink(missing_ok=True)
+            return None
+        data = path.read_bytes()
+        path.unlink(missing_ok=True)
+        return data
+
+    parecord = shutil.which("parecord")
+    if parecord:
+        _note(f"recording for {seconds}s (speak now)")
+        argv = [parecord, "--format=s16le", "--rate=16000", "--channels=1",
+                "--file-format=wav", str(path)]
+        try:
+            process = subprocess.Popen(argv)
+        except OSError as exc:
+            _note(f"could not start parecord: {exc}")
+            return None
+        time.sleep(seconds)
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        data = path.read_bytes()
+        path.unlink(missing_ok=True)
+        return data
+
+    path.unlink(missing_ok=True)
+    _note("no recorder is installed - install one with: astra install alsa-utils")
+    return None
+
+
+def cmd_listen(args: argparse.Namespace) -> int:
+    data = _record(args.seconds)
+    if not data:
+        return 1
+    text = voice.transcribe(data)
+    if not text:
+        return 1
+    print(text)
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# the web interface, status, actions, stop
+# ---------------------------------------------------------------------------
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Hand the web interface over to astraos.ai.server.
+
+    The module belongs to the same package tree but is written separately, so
+    this command adapts to whichever entry point it has: main(), serve() or
+    run(), called with the keyword arguments it actually accepts. Adapting
+    here means a missing argument in that module is a one-line message rather
+    than an import that breaks the rest of this command.
+    """
+    settings = config.load_settings()
+    lan = bool(args.lan)
+    settings["lan"] = lan
+    host = "0.0.0.0" if lan else "127.0.0.1"
+    if lan:
+        _note("--lan makes the web interface reachable from the local network; "
+              "it is off by default")
+
+    try:
+        from astraos.ai import server  # noqa: PLC0415 - see the module comment
+    except ImportError as exc:
+        _note(f"the web interface is not installed (astraos.ai.server): {exc}")
+        return 1
+
+    entry = None
+    for name in ("main", "serve", "run"):
+        candidate = getattr(server, name, None)
+        if callable(candidate):
+            entry = candidate
+            break
+    if entry is None:
+        _note("astraos.ai.server has no main(), serve() or run() to start")
+        return 1
+
+    try:
+        parameters = inspect.signature(entry).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+
+    kwargs = {}
+    for key, value in (
+        ("settings", settings),
+        ("host", host),
+        ("port", args.port),
+        ("lan", lan),
+        ("open_browser", False),
+    ):
+        if key in parameters and value is not None:
+            kwargs[key] = value
+
+    result = entry(**kwargs)
+    return int(result) if isinstance(result, int) else 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    info = ai_setup.describe()
+    health = llm.Engine(config.load_settings()).health()
+
+    print("AstraOS assistant")
+    print(f"  model          {info['model'] or 'none installed'}")
+    print(f"  llama-server   {info['llama_server'] or 'not installed'}")
+    print(f"  speech         {info['tts_tool'] or 'not installed'}")
+    print(f"  transcription  {'ready' if info['stt'] else 'not installed'}")
+    print(f"  models kept in {info['models_dir']}")
+    print(f"  settings       {info['config_file']}")
+    if health["ok"]:
+        print(f"  model server   answering on {health['host']}:{health['port']} "
+              f"(pid {health['pid']})")
+    else:
+        print(f"  model server   {health['message']}")
+    return 0
+
+
+def _print_actions() -> None:
+    print("everything the assistant can do (and nothing else):\n")
+    for entry in actions.list_actions():
+        if entry["needs_confirm"]:
+            marker = " [asks the user first]"
+        elif entry["dangerous"]:
+            marker = " [destructive]"
+        else:
+            marker = ""
+        print(f"  {entry['name']}({', '.join(entry['args'])}){marker}")
+        print(f"      {entry['summary']}")
+
+
+def cmd_actions(args: argparse.Namespace) -> int:
+    if args.json:
+        import json
+
+        print(json.dumps(actions.list_actions(), indent=2, sort_keys=True))
+        return 0
+    _print_actions()
+    return 0
+
+
+def cmd_stop(args: argparse.Namespace) -> int:
+    engine = _engine()
+    health = engine.health()
+    if not health["running"]:
+        _note("no model server was started by this account; nothing to stop")
+        return 0
+    pid = health["pid"]
+    engine.stop()
+    _note(f"stopped the model server (pid {pid}) - the memory is free again")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="astra-ai",
+        description="The AstraOS assistant: a small local model wired to the "
+                    "desktop's own tools.",
+        epilog="The model is optional. `astra-ai status` and `astra-ai actions` "
+               "work with nothing installed.",
+    )
+    parser.add_argument("--version", action="version",
+                        version=f"astra-ai {config.VERSION} (AstraOS)")
+
+    sub = parser.add_subparsers(dest="command", metavar="COMMAND")
+
+    p = sub.add_parser("setup", help="show, download and build what the assistant needs")
+    p.add_argument("--list", action="store_true", help="list the models that can be installed")
+    p.add_argument("--model", metavar="NAME", help="download one model from the catalogue")
+    p.add_argument("--build", metavar="WHAT", nargs="?", const="all",
+                   help="build llama-server, whisper-cli or all, from source")
+    p.add_argument("--voice", action="store_true",
+                   help="set up voice: build whisper.cpp for this CPU when it is "
+                        "missing, and say what to install for speaking")
+    p.set_defaults(handler=cmd_setup)
+
+    p = sub.add_parser("ask", help="ask one question and print the answer")
+    p.add_argument("text", nargs="+", help="the question")
+    p.add_argument("--stream", action="store_true",
+                   help="print the model's reply as it arrives (for debugging)")
+    p.add_argument("--stop", action="store_true",
+                   help="stop the model server when the answer is complete")
+    p.set_defaults(handler=cmd_ask)
+
+    p = sub.add_parser("chat", help="a conversation, one line at a time")
+    p.add_argument("--stream", action="store_true", help="print replies as they arrive")
+    p.add_argument("--stop", action="store_true", help="stop the server on exit")
+    p.set_defaults(handler=cmd_chat)
+
+    p = sub.add_parser("say", help="speak the given text")
+    p.add_argument("text", nargs="+", help="what to say")
+    p.set_defaults(handler=cmd_say)
+
+    p = sub.add_parser("listen", help="record, transcribe and print what was said")
+    p.add_argument("--seconds", type=int, default=5, help="how long to record (default 5)")
+    p.set_defaults(handler=cmd_listen)
+
+    p = sub.add_parser("serve", help="the web interface (astraos.ai.server)")
+    p.add_argument("--port", type=int, default=None, help="port for the web interface")
+    p.add_argument("--lan", action="store_true",
+                   help="listen on the local network, not only on this machine")
+    p.set_defaults(handler=cmd_serve)
+
+    p = sub.add_parser("status", help="what is installed and whether the model is running")
+    p.set_defaults(handler=cmd_status)
+
+    p = sub.add_parser("actions", help="list everything the assistant can do")
+    p.add_argument("--json", action="store_true", help="as JSON, for scripts")
+    p.set_defaults(handler=cmd_actions)
+
+    p = sub.add_parser("stop", help="stop the model server this account started")
+    p.set_defaults(handler=cmd_stop)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    handler = getattr(args, "handler", None)
+    if handler is None:
+        parser.print_help()
+        return 2
+
+    try:
+        return int(handler(args) or 0)
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        _note("stopped")
+        return 130
+    except BrokenPipeError:
+        return 0
+    except (ai_setup.SetupError, llm.EngineUnavailable) as exc:
+        _note(str(exc))
+        return 1
+    except OSError as exc:
+        _note(str(exc))
+        return 1
+    except Exception as exc:  # noqa: BLE001 - the user gets a line, not a traceback
+        _note(f"internal error: {exc.__class__.__name__}: {exc}")
+        _note("please report it with the output of `astra-ai status`")
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

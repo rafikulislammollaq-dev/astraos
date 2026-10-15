@@ -292,6 +292,18 @@ WINBRIDGE_STAGE="$(stage_package astraos-winbridge)"
 # already; nothing else to assemble. The stage_package chmod rules above cover
 # /usr/bin and the winbin/shell directories.
 
+say "assembling astraos-ai"
+AI_STAGE="$(stage_package astraos-ai)"
+# The assistant's tree is complete in the package: the astra-ai entry point in
+# /usr/bin, the library in /usr/lib/astraos/ai and the web interface under
+# /usr/share/astraos/ai/web, which the server reads from the system directory so a
+# local copy cannot be shadowed.
+#
+# Nothing is generated here and nothing is downloaded here. The model, whisper.cpp and
+# Piper are installed by `astra-ai setup` on the user's machine, because the build
+# machines have no business fetching a gigabyte of model per ISO, and because a
+# distribution that ships the model silently has decided for the user.
+
 say "assembling astraos-branding"
 BRAND_STAGE="$(stage_package astraos-branding)"
 require_dir() { [ -e "$1" ] || die "branding asset missing: $1 (run branding/tools/render_assets.py)"; }
@@ -393,6 +405,29 @@ cp -a "${REPO_ROOT}/desktop/skel/." "${DESKTOP_STAGE}/etc/skel/"
 mkdir -p "${DESKTOP_STAGE}/usr/share/applications"
 cp -a "${REPO_ROOT}/desktop/launchers/." "${DESKTOP_STAGE}/usr/share/applications/"
 
+# Desktop shortcuts -> /etc/skel/Desktop
+#
+# Three icons greet a first login: install, the welcome guide, and the assistant. They
+# are not duplicates - the files just installed into /usr/share/applications are copied,
+# and the assistant's comes from its own package, so a name, a comment or an icon is
+# changed in exactly one place and cannot drift.
+#
+# THE MODE IS SET HERE, NOT TRUSTED FROM THE WORKING TREE. xfdesktop refuses to run a
+# launcher that is not executable: it draws it as an "Untrusted application launcher"
+# and asks before doing anything. A checkout on Windows has no execute bits at all -
+# the same trap that once made the build ship a non-executable astraos-info - so the
+# bit is applied to the staged copy.
+mkdir -p "${DESKTOP_STAGE}/etc/skel/Desktop"
+for entry in astraos-installer astraos-welcome; do
+    cp -f "${DESKTOP_STAGE}/usr/share/applications/${entry}.desktop" \
+          "${DESKTOP_STAGE}/etc/skel/Desktop/"
+done
+[ -f "${AI_STAGE}/usr/share/applications/astraos-ai.desktop" ] \
+    || die "astraos-ai did not install a launcher, so the desktop shortcut cannot be seeded"
+cp -f "${AI_STAGE}/usr/share/applications/astraos-ai.desktop" \
+      "${DESKTOP_STAGE}/etc/skel/Desktop/"
+chmod 0755 "${DESKTOP_STAGE}/etc/skel/Desktop/"*.desktop
+
 # Autostart -> /etc/xdg/autostart
 mkdir -p "${DESKTOP_STAGE}/etc/xdg/autostart"
 cp -a "${REPO_ROOT}/desktop/autostart/." "${DESKTOP_STAGE}/etc/xdg/autostart/"
@@ -460,6 +495,7 @@ DEBS=()
 DEBS+=("$(finish_package astraos-base "$BASE_STAGE")")
 DEBS+=("$(finish_package astraos-system-tools "$TOOLS_STAGE")")
 DEBS+=("$(finish_package astraos-winbridge "$WINBRIDGE_STAGE")")
+DEBS+=("$(finish_package astraos-ai "$AI_STAGE")")
 DEBS+=("$(finish_package astraos-branding "$BRAND_STAGE")")
 DEBS+=("$(finish_package astraos-desktop "$DESKTOP_STAGE")")
 DEBS+=("$(finish_package astraos-installer "$INSTALLER_STAGE")")

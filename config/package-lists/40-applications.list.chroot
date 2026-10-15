@@ -56,3 +56,12 @@ python3-dbus
 python3-pycurl
 python3-yaml
 python3-requests
+
+# The assistant's voice, on the machine and offline.
+#
+# espeak-ng is small, in Debian, and works with no model to download, which is why
+# astraos-ai prefers it to a neural voice (docs/AI.md 4). It is named here instead of
+# being left to the package's Recommends, because live-build installs with
+# --no-install-recommends: an assistant that cannot say anything until the user works
+# out which package to add is a worse first impression than a robotic voice.
+espeak-ng

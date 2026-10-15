@@ -1,0 +1,1249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Astra - AstraOS assistant</title>
+<!--
+  The AstraOS assistant page. One file: styles and script are inline, there are no
+  fonts or scripts to fetch, and every request this page makes goes to its own
+  server ("/api/..."). That is a product property, not a preference: this page
+  runs on a machine that may have no internet connection at all.
+
+  The page talks to the server with:
+    GET  /api/health       ready or not, and which voice tools exist
+    POST /api/chat         a reply, streamed as newline-delimited JSON events
+    POST /api/confirm      runs one proposed action, after the Confirm button
+    POST /api/transcribe   a recorded WAV when the browser cannot transcribe
+    POST /api/speak        speaks through the PC's speakers instead of the browser
+  Nothing in that list runs an action on its own.
+-->
+<style>
+  :root {
+    --bg: #0b0b12;
+    --bg-soft: #101019;
+    --panel: rgba(22, 22, 36, 0.72);
+    --panel-solid: #15151f;
+    --line: rgba(150, 150, 195, 0.16);
+    --line-strong: rgba(150, 150, 195, 0.28);
+    --text: #ecebf6;
+    --muted: #a5a1c2;
+    --violet: #8b5cf6;
+    --cyan: #22d3ee;
+    --danger: #fb7185;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --radius: 22px;
+    --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+    --mono: ui-monospace, "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    background:
+      radial-gradient(1100px 750px at 88% -12%, rgba(34, 211, 238, 0.10), transparent 62%),
+      radial-gradient(900px 700px at -12% 112%, rgba(139, 92, 246, 0.16), transparent 60%),
+      var(--bg);
+    overscroll-behavior-y: none;
+  }
+
+  .num, code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .app {
+    min-height: 100dvh;
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 12px 12px calc(10px + env(safe-area-inset-bottom));
+    display: grid;
+    gap: 10px;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  /* ---------------- the orb ---------------- */
+
+  .orb-panel {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 6px 6px 2px;
+  }
+
+  .orb {
+    position: relative;
+    flex: none;
+    width: 84px;
+    height: 84px;
+    transition: transform 0.25s ease;
+  }
+
+  .orb-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(from 210deg, var(--violet), var(--cyan), var(--violet));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+    animation: orb-spin 11s linear infinite;
+    filter: saturate(1.05);
+  }
+
+  .orb-glow {
+    position: absolute;
+    inset: 4px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 42%, rgba(139, 92, 246, 0.42), rgba(34, 211, 238, 0.16) 55%, transparent 74%);
+    filter: blur(6px);
+    opacity: 0.85;
+  }
+
+  .orb-core {
+    position: absolute;
+    inset: 13px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: radial-gradient(circle at 50% 32%, #1c1c2e, #0d0d16 74%);
+    box-shadow:
+      inset 0 0 26px rgba(139, 92, 246, 0.28),
+      0 0 34px rgba(34, 211, 238, 0.10);
+  }
+
+  .orb-core span {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    background: linear-gradient(135deg, #a78bfa, var(--cyan));
+    -webkit-background-clip: text;
+            background-clip: text;
+    color: transparent;
+  }
+
+  @keyframes orb-spin { to { transform: rotate(360deg); } }
+
+  @keyframes orb-breathe {
+    0%, 100% { transform: scale(1); filter: brightness(1); }
+    50%      { transform: scale(1.045); filter: brightness(1.22); }
+  }
+
+  .orb[data-state="listening"] { animation: orb-breathe 1.5s ease-in-out infinite; }
+  .orb[data-state="listening"] .orb-ring { animation-duration: 2.4s; }
+  .orb[data-state="thinking"] .orb-ring { animation-duration: 1.5s; }
+  .orb[data-state="speaking"] { animation: orb-breathe 0.85s ease-in-out infinite; }
+  .orb[data-state="speaking"] .orb-ring { animation-duration: 1.9s; }
+  .orb[data-state="idle"] .orb-ring { opacity: 0.85; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .orb, .orb-ring { animation: none !important; }
+  }
+
+  .orb-meta h1 {
+    margin: 0;
+    font-size: 21px;
+    letter-spacing: 0.01em;
+  }
+
+  .state {
+    margin: 1px 0 0;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: lowercase;
+  }
+
+  .tagline {
+    margin: 3px 0 0;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+
+  /* ---------------- transcript ---------------- */
+
+  .chat {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: 8px;
+  }
+
+  .setup-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(251, 191, 36, 0.35);
+    background: linear-gradient(140deg, rgba(251, 191, 36, 0.10), rgba(139, 92, 246, 0.08));
+  }
+
+  .setup-banner[hidden] { display: none; }
+
+  .setup-text { flex: 1; font-size: 13.5px; color: var(--text); }
+  .setup-text strong { display: block; margin-bottom: 2px; }
+  .setup-text code {
+    padding: 2px 7px;
+    border-radius: 8px;
+    border: 1px solid var(--line-strong);
+    background: rgba(0, 0, 0, 0.32);
+    font-size: 12.5px;
+  }
+
+  .copy-btn {
+    flex: none;
+    min-height: 40px;
+    padding: 8px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--line-strong);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .copy-btn:active { transform: translateY(1px); }
+
+  .transcript {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 2px 14px;
+    scroll-behavior: smooth;
+  }
+
+  .msg {
+    max-width: 90%;
+    padding: 10px 14px;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  }
+
+  .msg-label {
+    display: block;
+    margin-bottom: 4px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .msg.user {
+    align-self: flex-end;
+    border-color: rgba(139, 92, 246, 0.38);
+    border-bottom-right-radius: 7px;
+    background: linear-gradient(150deg, rgba(139, 92, 246, 0.30), rgba(139, 92, 246, 0.14));
+  }
+
+  .msg.assistant {
+    align-self: flex-start;
+    border-bottom-left-radius: 7px;
+  }
+
+  .msg.error {
+    align-self: flex-start;
+    border-color: rgba(251, 113, 133, 0.45);
+    background: rgba(251, 113, 133, 0.10);
+  }
+
+  .msg.ok {
+    align-self: flex-start;
+    border-color: rgba(52, 211, 153, 0.40);
+    background: rgba(52, 211, 153, 0.10);
+  }
+
+  .msg.warn {
+    align-self: flex-start;
+    border-color: rgba(251, 191, 36, 0.38);
+    background: rgba(251, 191, 36, 0.08);
+  }
+
+  .msg.thinking::after {
+    content: "";
+    display: inline-block;
+    width: 9px;
+    height: 15px;
+    margin-left: 3px;
+    vertical-align: -2px;
+    background: linear-gradient(180deg, var(--violet), var(--cyan));
+    animation: caret 1s steps(2) infinite;
+  }
+
+  @keyframes caret { 50% { opacity: 0; } }
+
+  /* ---------------- action card ---------------- */
+
+  .action-card {
+    align-self: flex-start;
+    width: min(100%, 560px);
+    display: grid;
+    gap: 9px;
+    padding: 14px;
+    border-radius: 18px;
+    border: 1px solid rgba(139, 92, 246, 0.45);
+    background: linear-gradient(155deg, rgba(139, 92, 246, 0.13), rgba(34, 211, 238, 0.06));
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+  }
+
+  .action-card.danger {
+    border-color: rgba(251, 113, 133, 0.55);
+    background: linear-gradient(155deg, rgba(251, 113, 133, 0.13), rgba(139, 92, 246, 0.06));
+  }
+
+  .action-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .action-kicker {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .action-name { font-size: 15.5px; }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    padding: 2px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--line-strong);
+    color: var(--muted);
+  }
+
+  .badge.danger {
+    color: #fda4af;
+    border-color: rgba(251, 113, 133, 0.55);
+    background: rgba(251, 113, 133, 0.10);
+  }
+
+  .action-summary {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13.5px;
+  }
+
+  .cmd-label {
+    margin: 2px 0 -2px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .cmd {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: rgba(0, 0, 0, 0.36);
+    font-size: 12.5px;
+    line-height: 1.45;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: #dcd8ff;
+  }
+
+  .action-buttons { display: flex; gap: 10px; }
+
+  .btn {
+    min-height: 44px;
+    padding: 10px 18px;
+    border-radius: 14px;
+    border: 1px solid var(--line-strong);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .btn:active { transform: translateY(1px); }
+
+  .btn[disabled] { opacity: 0.5; cursor: default; transform: none; }
+
+  .btn.confirm {
+    border: 0;
+    color: #0b0b12;
+    background: linear-gradient(135deg, var(--violet), var(--cyan));
+    box-shadow: 0 8px 26px rgba(139, 92, 246, 0.35);
+  }
+
+  /* ---------------- composer ---------------- */
+
+  .composer {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 24px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    backdrop-filter: blur(14px);
+    box-shadow:
+      0 20px 55px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .composer-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  #input {
+    flex: 1;
+    min-height: 48px;
+    max-height: 132px;
+    padding: 13px 14px;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    background: rgba(0, 0, 0, 0.30);
+    color: var(--text);
+    font: inherit;
+    resize: none;
+    outline: none;
+  }
+
+  #input:focus { border-color: rgba(139, 92, 246, 0.55); box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.16); }
+  #input::placeholder { color: rgba(165, 161, 194, 0.65); }
+
+  .mic, .send {
+    flex: none;
+    width: 48px;
+    height: 48px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid var(--line-strong);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .mic svg, .send svg { fill: currentColor; }
+
+  .mic[aria-pressed="true"] {
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--violet), var(--cyan));
+    color: #0b0b12;
+    animation: mic-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes mic-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.55); }
+    55%      { box-shadow: 0 0 0 12px rgba(139, 92, 246, 0); }
+  }
+
+  .send {
+    border: 0;
+    color: #0b0b12;
+    background: linear-gradient(135deg, var(--violet), var(--cyan));
+    box-shadow: 0 8px 24px rgba(34, 211, 238, 0.25);
+  }
+
+  .send[disabled] { opacity: 0.45; box-shadow: none; cursor: default; }
+
+  .composer-tools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 0 4px 2px;
+  }
+
+  .seg {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: rgba(0, 0, 0, 0.26);
+  }
+
+  .seg button {
+    border: 0;
+    border-radius: 999px;
+    padding: 7px 12px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+  }
+
+  .seg button[aria-pressed="true"] {
+    color: #0b0b12;
+    font-weight: 700;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.95), rgba(34, 211, 238, 0.85));
+  }
+
+  .capabilities {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .hint {
+    flex-basis: 100%;
+    min-height: 0;
+    color: var(--warn);
+    font-size: 12px;
+  }
+
+  .hint:empty { display: none; }
+
+  /* ---------------- wide screens ---------------- */
+
+  @media (min-width: 900px) {
+    .app {
+      grid-template-columns: 290px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "orb chat"
+        "orb composer";
+      gap: 16px;
+      padding: 22px 22px 18px;
+    }
+
+    .orb-panel {
+      grid-area: orb;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 18px;
+      align-self: start;
+      position: sticky;
+      top: 22px;
+      padding: 10px 4px;
+    }
+
+    .orb { width: 138px; height: 138px; }
+    .orb-core span { font-size: 50px; }
+    .orb-meta h1 { font-size: 26px; }
+
+    .chat { grid-area: chat; }
+    .composer { grid-area: composer; }
+
+    .msg { max-width: 78%; }
+  }
+</style>
+</head>
+<body>
+<main class="app">
+
+  <header class="orb-panel">
+    <div class="orb" id="orb" data-state="idle" aria-hidden="true">
+      <div class="orb-ring"></div>
+      <div class="orb-glow"></div>
+      <div class="orb-core"><span>A</span></div>
+    </div>
+    <div class="orb-meta">
+      <h1>Astra</h1>
+      <p class="state" id="state-caption" aria-live="polite">idle</p>
+      <p class="tagline">Local assistant. Nothing leaves this computer.</p>
+    </div>
+  </header>
+
+  <section class="chat">
+    <div class="setup-banner" id="setup-banner" hidden>
+      <div class="setup-text">
+        <strong>No model installed yet</strong>
+        <span>In a terminal run <code id="setup-code">astra ai setup</code>, then come back.</span>
+      </div>
+      <button class="copy-btn" id="copy-setup" type="button">Copy</button>
+    </div>
+    <div class="transcript" id="transcript" aria-live="polite"></div>
+  </section>
+
+  <footer class="composer">
+    <div class="composer-row">
+      <button class="mic" id="mic-btn" type="button" aria-pressed="false" aria-label="Start listening">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+          <path d="M12 15a3.5 3.5 0 0 0 3.5-3.5V6a3.5 3.5 0 1 0-7 0v5.5A3.5 3.5 0 0 0 12 15Zm6.2-3.5a6.2 6.2 0 0 1-5.2 6.1V20h3v1.4H8V20h3v-2.4a6.2 6.2 0 0 1-5.2-6.1H7.2a4.8 4.8 0 0 0 9.6 0Z"/>
+        </svg>
+      </button>
+      <textarea id="input" rows="1" placeholder="Ask Astra..." enterkeyhint="send"
+                autocomplete="off" autocapitalize="sentences" spellcheck="false"></textarea>
+      <button class="send" id="send-btn" type="button" aria-label="Send">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+          <path d="M3.4 20.4 21 12 3.4 3.6l-.01 6.5L15.5 12 3.39 13.9Z"/>
+        </svg>
+      </button>
+    </div>
+    <div class="composer-tools">
+      <div class="seg" id="speak-seg" role="group" aria-label="Voice replies">
+        <button type="button" data-mode="off" aria-pressed="true">Voice off</button>
+        <button type="button" data-mode="browser" aria-pressed="false">This device</button>
+        <button type="button" data-mode="pc" aria-pressed="false">PC speakers</button>
+      </div>
+      <span class="capabilities" id="capabilities"></span>
+      <span class="hint" id="hint"></span>
+    </div>
+  </footer>
+
+</main>
+<script>
+(() => {
+  "use strict";
+
+  const els = {
+    orb: document.getElementById("orb"),
+    caption: document.getElementById("state-caption"),
+    transcript: document.getElementById("transcript"),
+    setupBanner: document.getElementById("setup-banner"),
+    setupCode: document.getElementById("setup-code"),
+    copySetup: document.getElementById("copy-setup"),
+    input: document.getElementById("input"),
+    send: document.getElementById("send-btn"),
+    mic: document.getElementById("mic-btn"),
+    speakSeg: document.getElementById("speak-seg"),
+    capabilities: document.getElementById("capabilities"),
+    hint: document.getElementById("hint")
+  };
+
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
+  const state = {
+    phase: "idle",
+    busy: false,
+    ready: false,
+    speakMode: "off",
+    history: [],
+    recognition: null,
+    recorder: null,
+    recorderStream: null,
+    chunks: [],
+    healthTimer: 0,
+    canSTT: !!SpeechRecognitionCtor,
+    canRecord: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder),
+    serverSTT: false,
+    serverTTS: false,
+    canSpeak: "speechSynthesis" in window && typeof window.SpeechSynthesisUtterance === "function"
+  };
+
+  // ---------------------------------------------------------------- helpers
+
+  function setPhase(phase) {
+    state.phase = phase;
+    els.orb.dataset.state = phase;
+    els.caption.textContent = phase;
+  }
+
+  function textEl(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function addMessage(kind, text) {
+    const bubble = textEl("div", "msg " + kind);
+    if (kind === "assistant" || kind === "user") {
+      bubble.appendChild(textEl("span", "msg-label", kind === "user" ? "you" : "astra"));
+    }
+    bubble.appendChild(document.createTextNode(text));
+    els.transcript.appendChild(bubble);
+    autoScroll(true);
+    return bubble;
+  }
+
+  function hint(text) {
+    els.hint.textContent = text;
+    window.clearTimeout(hint.timer);
+    hint.timer = window.setTimeout(() => { els.hint.textContent = ""; }, 9000);
+  }
+
+  function autoScroll(force) {
+    const box = els.transcript;
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+    if (force || nearBottom) box.scrollTop = box.scrollHeight;
+  }
+
+  function autoGrow() {
+    els.input.style.height = "auto";
+    els.input.style.height = Math.min(els.input.scrollHeight, 132) + "px";
+  }
+
+  async function readJson(response) {
+    try { return await response.json(); }
+    catch (err) { return {}; }
+  }
+
+  function firstString(values) {
+    for (const value of values) {
+      if (typeof value === "string" && value) return value;
+    }
+    return "";
+  }
+
+  function plainObject(value) {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  // ---------------------------------------------------------------- health
+
+  function scheduleHealthPoll(ready) {
+    window.clearTimeout(state.healthTimer);
+    if (!ready && state.ready !== "done") {
+      state.healthTimer = window.setTimeout(refreshHealth, 15000);
+    }
+  }
+
+  async function refreshHealth() {
+    try {
+      const response = await fetch("/api/health", { headers: { "Accept": "application/json" } });
+      const health = await readJson(response);
+      const voice = health.voice || {};
+      state.serverSTT = voice.stt === true;
+      state.serverTTS = voice.tts === true;
+      state.ready = health.ready === true;
+      els.setupBanner.hidden = state.ready;
+      renderCapabilities();
+      scheduleHealthPoll(state.ready);
+    } catch (err) {
+      state.serverSTT = false;
+      state.serverTTS = false;
+      hint("Cannot reach the assistant server. Start it with: astra ai start");
+      renderCapabilities();
+    }
+  }
+
+  function renderCapabilities() {
+    const mic = state.canSTT
+      ? "mic: browser"
+      : state.canRecord
+        ? (state.serverSTT ? "mic: record + whisper" : "mic: record, whisper missing")
+        : "mic: unavailable";
+    const voice = state.canSpeak
+      ? (state.serverTTS ? "voice: here or PC" : "voice: here")
+      : (state.serverTTS ? "voice: PC" : "voice: unavailable");
+    els.capabilities.textContent = mic + " / " + voice;
+  }
+
+  // ---------------------------------------------------------------- chat
+
+  async function sendMessage() {
+    const text = els.input.value.trim();
+    if (!text || state.busy) return;
+    els.input.value = "";
+    autoGrow();
+    addMessage("user", text);
+    state.history.push({ role: "user", content: text });
+    const prior = state.history.slice(0, -1).slice(-20);
+
+    state.busy = true;
+    els.send.disabled = true;
+    setPhase("thinking");
+    const bubble = addMessage("assistant", "");
+
+    let answer = "";
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text, history: prior })
+      });
+      if (!response.ok || !response.body) {
+        const payload = await readJson(response);
+        throw new Error(payload.detail || ("the server answered " + response.status));
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffered = "";
+      for (;;) {
+        const step = await reader.read();
+        if (step.done) break;
+        buffered += decoder.decode(step.value, { stream: true });
+        let index = buffered.indexOf("\n");
+        while (index >= 0) {
+          const line = buffered.slice(0, index).trim();
+          buffered = buffered.slice(index + 1);
+          if (line) {
+            let event = null;
+            try { event = JSON.parse(line); } catch (err) { event = null; }
+            if (event) {
+              const delta = handleEvent(event, bubble);
+              if (delta) answer += delta;
+            }
+          }
+          index = buffered.indexOf("\n");
+        }
+      }
+      if (answer.trim()) state.history.push({ role: "assistant", content: answer });
+      if (answer.trim() && state.speakMode !== "off") speak(answer);
+    } catch (err) {
+      addMessage("error", "The assistant could not answer: " + err.message);
+    } finally {
+      if (!bubble.textContent.trim()) bubble.remove();
+      state.busy = false;
+      els.send.disabled = false;
+      setPhase("idle");
+      els.input.focus();
+    }
+  }
+
+  function handleEvent(event, bubble) {
+    if (!event || typeof event.type !== "string") return "";
+    if (event.type === "delta") {
+      const chunk = String(event.text || "");
+      bubble.appendChild(document.createTextNode(chunk));
+      autoScroll(false);
+      return chunk;
+    }
+    if (event.type === "plan" && plainObject(event.plan)) {
+      stripPlanText(bubble, event.plan);
+      renderPlan(event.plan, Array.isArray(event.catalog) ? event.catalog : []);
+      autoScroll(true);
+      return "";
+    }
+    if (event.type === "error") {
+      addMessage("error", String(event.text || "The assistant reported an error."));
+      return "";
+    }
+    return ""; // "done" is handled by the end of the stream
+  }
+
+  function stripPlanText(bubble, plan) {
+    // Best effort: if the model wrote the plan as a fenced JSON block at the end
+    // of its reply, remove that block so the action card is the only copy. If the
+    // text does not look like JSON the model's own words are left alone.
+    const raw = bubble.textContent;
+    const match = raw.match(/```[a-zA-Z]*\s*([\s\S]*?)```\s*$/);
+    if (!match) return;
+    let parsed = null;
+    try { parsed = JSON.parse(match[1].trim()); } catch (err) { return; }
+    if (!plainObject(parsed)) return;
+    const planName = firstString([plan.action, plan.name, plan.tool, plan.id]);
+    const written = [parsed.action, parsed.name, parsed.tool, parsed.id].filter((v) => typeof v === "string");
+    if (planName && written.indexOf(planName) >= 0) {
+      bubble.textContent = raw.slice(0, match.index).trimEnd();
+    }
+  }
+
+  function renderPlan(plan, catalog) {
+    const name = firstString([plan.action, plan.name, plan.tool, plan.id]) || "(unnamed action)";
+    let entry = {};
+    for (const item of catalog) {
+      if (item && (item.name === name || item.action === name)) { entry = item; break; }
+    }
+    const args = plainObject(plan.args) ? plan.args : (plainObject(plan.arguments) ? plan.arguments : null);
+    const dangerous = entry.dangerous === true || plan.dangerous === true;
+    const command = firstString([plan.command, entry.command, entry.cmd, args ? args.command : ""]);
+
+    const card = textEl("div", "action-card" + (dangerous ? " danger" : ""));
+    const head = textEl("div", "action-head");
+    head.appendChild(textEl("span", "action-kicker", "action"));
+    head.appendChild(textEl("strong", "action-name", name));
+    if (dangerous) head.appendChild(textEl("span", "badge danger", "destructive"));
+    card.appendChild(head);
+    card.appendChild(textEl("p", "action-summary",
+      entry.summary || "This action is not in the local catalogue; it cannot be confirmed."));
+
+    if (dangerous && command) {
+      card.appendChild(textEl("p", "cmd-label", "Runs this command:"));
+      card.appendChild(textEl("pre", "cmd", command));
+    } else if (dangerous && args) {
+      card.appendChild(textEl("p", "cmd-label", "Runs the built-in action with these arguments:"));
+      card.appendChild(textEl("pre", "cmd", JSON.stringify(args, null, 2)));
+    } else if (args) {
+      card.appendChild(textEl("pre", "cmd", JSON.stringify(args, null, 2)));
+    }
+
+    const buttons = textEl("div", "action-buttons");
+    const confirm = textEl("button", "btn confirm", "Confirm");
+    confirm.type = "button";
+    const cancel = textEl("button", "btn cancel", "Cancel");
+    cancel.type = "button";
+    confirm.addEventListener("click", () => confirmPlan(card, plan, buttons));
+    cancel.addEventListener("click", () => {
+      buttons.remove();
+      card.classList.add("resolved");
+      addMessage("warn", "Cancelled - nothing was executed.");
+    });
+    buttons.appendChild(confirm);
+    buttons.appendChild(cancel);
+    card.appendChild(buttons);
+    els.transcript.appendChild(card);
+  }
+
+  async function confirmPlan(card, plan, buttons) {
+    for (const button of buttons.querySelectorAll("button")) button.disabled = true;
+    try {
+      const response = await fetch("/api/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: plan })
+      });
+      const payload = await readJson(response);
+      if (response.ok && payload.ok) {
+        addMessage("ok", "Done. " + (payload.detail || "The action ran."));
+      } else {
+        addMessage("error", "Not run: " + (payload.detail || ("the server answered " + response.status)));
+      }
+    } catch (err) {
+      addMessage("error", "Could not reach the assistant server: " + err.message);
+    } finally {
+      buttons.remove();
+      card.classList.add("resolved");
+    }
+  }
+
+  // ---------------------------------------------------------------- speech out
+
+  function setSpeakMode(mode) {
+    state.speakMode = mode;
+    for (const button of els.speakSeg.querySelectorAll("button")) {
+      button.setAttribute("aria-pressed", button.dataset.mode === mode ? "true" : "false");
+    }
+  }
+
+  function speak(text) {
+    const clean = text.replace(/```[\s\S]*?```/g, " ").replace(/\s+/g, " ").trim();
+    if (!clean) return;
+    if (state.speakMode === "browser") { speakHere(clean); return; }
+    if (state.speakMode === "pc") { speakOnPc(clean); }
+  }
+
+  function speakHere(text) {
+    if (!state.canSpeak) { hint("This browser cannot speak."); return; }
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new window.SpeechSynthesisUtterance(text);
+      utterance.lang = document.documentElement.lang || "en-US";
+      utterance.rate = 1.05;
+      utterance.onstart = () => setPhase("speaking");
+      utterance.onend = () => setPhase(state.busy ? "thinking" : "idle");
+      utterance.onerror = () => setPhase(state.busy ? "thinking" : "idle");
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      hint("This browser could not speak: " + err.message);
+    }
+  }
+
+  async function speakOnPc(text) {
+    setPhase("speaking");
+    try {
+      const response = await fetch("/api/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text })
+      });
+      const payload = await readJson(response);
+      if (!response.ok || !payload.ok) {
+        hint(payload.detail || "The PC could not speak the reply.");
+      }
+    } catch (err) {
+      hint("Could not reach the assistant server: " + err.message);
+    } finally {
+      setPhase(state.busy ? "thinking" : "idle");
+    }
+  }
+
+  // ---------------------------------------------------------------- microphone
+
+  function micErrorText(reason) {
+    if (reason === "not-allowed" || reason === "permission-denied" || reason === "NotAllowedError") {
+      return "Microphone permission was denied for this page. Allow it in the browser, then try again.";
+    }
+    if (reason === "no-speech") return "No speech was heard. Try again, a little closer to the microphone.";
+    if (reason === "audio-capture" || reason === "NotFoundError") {
+      return "This device has no microphone the browser can use.";
+    }
+    if (reason === "network") {
+      return "The browser's speech service could not be reached. Recorded audio through the PC (whisper) still works.";
+    }
+    return "The microphone stopped: " + (reason || "unknown reason");
+  }
+
+  async function toggleMic() {
+    if (state.phase === "listening") { stopListening(); return; }
+    if (state.busy) { hint("Wait for the current reply, then speak."); return; }
+    if (state.canSTT) { startRecognition(); return; }
+    if (state.canRecord) { await startRecording(); return; }
+    addMessage("error",
+      "This browser cannot use the microphone: no speech recognition and no audio recorder. " +
+      "Update the browser, or open this page on a phone that can listen and use it as the microphone.");
+    hint("Microphone unavailable in this browser.");
+  }
+
+  function startRecognition() {
+    let recognition = null;
+    try { recognition = new SpeechRecognitionCtor(); }
+    catch (err) { hint("The browser refused to start its speech recognition."); return; }
+    recognition.lang = document.documentElement.lang || navigator.language || "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    if ("processLocally" in recognition) {
+      // On-device transcription exists in some browsers; ask for it when it does.
+      try { recognition.processLocally = true; } catch (err) { /* not supported: continue */ }
+    }
+    recognition.onresult = (event) => {
+      let text = "";
+      for (let index = 0; index < event.results.length; index += 1) {
+        text += event.results[index][0].transcript;
+      }
+      els.input.value = text.trim();
+      autoGrow();
+    };
+    recognition.onerror = (event) => {
+      addMessage("error", micErrorText(event.error));
+      stopListening();
+    };
+    recognition.onend = () => {
+      if (state.phase === "listening") stopListening();
+    };
+    state.recognition = recognition;
+    try {
+      recognition.start();
+    } catch (err) {
+      state.recognition = null;
+      hint("The browser refused to start listening: " + err.message);
+      return;
+    }
+    setPhase("listening");
+    els.mic.setAttribute("aria-pressed", "true");
+  }
+
+  async function startRecording() {
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      addMessage("error", micErrorText(err.name || err.message));
+      return;
+    }
+    state.recorderStream = stream;
+    state.chunks = [];
+    let recorder = null;
+    try {
+      recorder = new window.MediaRecorder(stream);
+    } catch (err) {
+      stopTracks(stream);
+      addMessage("error", "This browser cannot record audio: " + err.message);
+      return;
+    }
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size) state.chunks.push(event.data);
+    };
+    recorder.onstop = async () => {
+      const blob = new window.Blob(state.chunks, { type: recorder.mimeType || "audio/webm" });
+      stopTracks(stream);
+      state.recorder = null;
+      els.mic.setAttribute("aria-pressed", "false");
+      if (!blob.size) {
+        setPhase("idle");
+        addMessage("error", "No audio was recorded.");
+        return;
+      }
+      await transcribeBlob(blob);
+    };
+    state.recorder = recorder;
+    recorder.start();
+    setPhase("listening");
+    els.mic.setAttribute("aria-pressed", "true");
+  }
+
+  function stopTracks(stream) {
+    if (stream && stream.getTracks) {
+      for (const track of stream.getTracks()) track.stop();
+    }
+  }
+
+  function stopListening() {
+    if (state.recognition) {
+      try { state.recognition.stop(); } catch (err) { /* already finished */ }
+      state.recognition = null;
+    }
+    if (state.recorder && state.recorder.state !== "inactive") {
+      try { state.recorder.stop(); } catch (err) { /* already stopped */ }
+    }
+    els.mic.setAttribute("aria-pressed", "false");
+    if (state.phase === "listening") setPhase(state.busy ? "thinking" : "idle");
+  }
+
+  async function transcribeBlob(blob) {
+    setPhase("thinking");
+    let wav = null;
+    try {
+      wav = await encodeWav(blob);
+    } catch (err) {
+      setPhase("idle");
+      addMessage("error", "Could not prepare the recording: " + err.message);
+      return;
+    }
+    try {
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "audio/wav" },
+        body: wav
+      });
+      const payload = await readJson(response);
+      if (!response.ok) {
+        addMessage("error", payload.detail || "The recording could not be transcribed.");
+      } else {
+        els.input.value = String(payload.text || "").trim();
+        autoGrow();
+        els.input.focus();
+      }
+    } catch (err) {
+      addMessage("error", "Could not reach the assistant server: " + err.message);
+    } finally {
+      setPhase(state.busy ? "thinking" : "idle");
+    }
+  }
+
+  async function encodeWav(blob) {
+    // MediaRecorder gives webm/ogg, and the whisper endpoint wants WAV: decode,
+    // mix down to mono, resample to 16 kHz and write a plain PCM header. No
+    // library does this for us because the page may make no external requests.
+    const bytes = await blob.arrayBuffer();
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) throw new Error("Web Audio is not available in this browser");
+    const context = new Ctx();
+    let decoded = null;
+    try {
+      decoded = await context.decodeAudioData(bytes.slice(0));
+    } finally {
+      if (context.close) { try { await context.close(); } catch (err) { /* closed */ } }
+    }
+    const channels = decoded.numberOfChannels;
+    const frames = decoded.length;
+    const mono = new Float32Array(frames);
+    for (let channel = 0; channel < channels; channel += 1) {
+      const data = decoded.getChannelData(channel);
+      for (let index = 0; index < frames; index += 1) mono[index] += data[index] / channels;
+    }
+    const targetRate = 16000;
+    const ratio = decoded.sampleRate / targetRate;
+    const outFrames = Math.max(1, Math.floor(frames / ratio));
+    const pcm = new Int16Array(outFrames);
+    for (let index = 0; index < outFrames; index += 1) {
+      const position = index * ratio;
+      const low = Math.floor(position);
+      const high = Math.min(low + 1, frames - 1);
+      const weight = position - low;
+      const sample = mono[low] * (1 - weight) + mono[high] * weight;
+      const clamped = Math.max(-1, Math.min(1, sample));
+      pcm[index] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+    }
+    return wavBlob(pcm, targetRate);
+  }
+
+  function writeAscii(view, offset, text) {
+    for (let index = 0; index < text.length; index += 1) {
+      view.setUint8(offset + index, text.charCodeAt(index));
+    }
+  }
+
+  function wavBlob(pcm, sampleRate) {
+    const bytesPerSample = 2;
+    const buffer = new ArrayBuffer(44 + pcm.length * bytesPerSample);
+    const view = new DataView(buffer);
+    writeAscii(view, 0, "RIFF");
+    view.setUint32(4, 36 + pcm.length * bytesPerSample, true);
+    writeAscii(view, 8, "WAVE");
+    writeAscii(view, 12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);                                // PCM
+    view.setUint16(22, 1, true);                                // mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * bytesPerSample, true);      // byte rate
+    view.setUint16(32, bytesPerSample, true);                   // block align
+    view.setUint16(34, 16, true);                               // bits per sample
+    writeAscii(view, 36, "data");
+    view.setUint32(40, pcm.length * bytesPerSample, true);
+    let offset = 44;
+    for (let index = 0; index < pcm.length; index += 1, offset += bytesPerSample) {
+      view.setInt16(offset, pcm[index], true);
+    }
+    return new window.Blob([buffer], { type: "audio/wav" });
+  }
+
+  // ---------------------------------------------------------------- wiring
+
+  els.send.addEventListener("click", sendMessage);
+
+  els.input.addEventListener("input", autoGrow);
+  els.input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  });
+
+  els.mic.addEventListener("click", toggleMic);
+
+  els.speakSeg.addEventListener("click", (event) => {
+    const target = event.target.closest("button[data-mode]");
+    if (!target) return;
+    const mode = target.dataset.mode;
+    if (mode === "browser" && !state.canSpeak) {
+      hint("This browser cannot speak replies; use 'PC speakers' instead.");
+      return;
+    }
+    if (mode === "pc" && !state.serverTTS) {
+      hint("The PC has no text-to-speech tool yet. Run 'astra ai setup'.");
+      return;
+    }
+    setSpeakMode(mode);
+  });
+
+  els.copySetup.addEventListener("click", async () => {
+    const text = els.setupCode.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      els.copySetup.textContent = "Copied";
+    } catch (err) {
+      const range = document.createRange();
+      range.selectNodeContents(els.setupCode);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      els.copySetup.textContent = "Selected";
+    }
+    window.setTimeout(() => { els.copySetup.textContent = "Copy"; }, 1600);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      stopListening();
+      if (state.canSpeak) window.speechSynthesis.cancel();
+    }
+  });
+
+  // ---------------------------------------------------------------- start
+
+  addMessage("assistant",
+    "Hi - I am Astra. I run on this computer, with a local model, and I only act " +
+    "after you confirm. Ask me about the system, or tell me what you would like to do.");
+  renderCapabilities();
+  refreshHealth();
+  els.input.focus();
+})();
+</script>
+</body>
+</html>

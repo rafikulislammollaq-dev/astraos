@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AstraOS AI assistant icon. Original artwork, square 256x256 viewBox so it aligns
+     with the freedesktop icon grid. Same construction as the other AstraOS app marks:
+     a rounded surface in the brand background, the gradient ring for identity, and one
+     cyan accent that says what the application is - here a microphone, because the
+     assistant's distinguishing feature is that it also listens. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"
+     role="img" aria-label="Astra AI">
+  <title>Astra AI</title>
+  <defs>
+    <linearGradient id="aig" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF5CC8"/>
+      <stop offset="55%" stop-color="#8B3DFF"/>
+      <stop offset="100%" stop-color="#22E6FF"/>
+    </linearGradient>
+    <linearGradient id="aibg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1A1230"/>
+      <stop offset="100%" stop-color="#05030A"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="24" width="224" height="208" rx="34" fill="url(#aibg)"
+        stroke="url(#aig)" stroke-width="3"/>
+  <circle cx="128" cy="116" r="62" fill="none" stroke="url(#aig)" stroke-width="4"
+          opacity="0.55"/>
+  <rect x="112" y="76" width="32" height="58" rx="16" fill="url(#aig)"/>
+  <path d="M 96 120 A 32 32 0 0 0 160 120" fill="none" stroke="#22E6FF"
+        stroke-width="6" stroke-linecap="round"/>
+  <path d="M 128 152 L 128 170" stroke="#22E6FF" stroke-width="6" stroke-linecap="round"/>
+  <path d="M 106 178 L 150 178" stroke="#22E6FF" stroke-width="6" stroke-linecap="round"/>
+  <rect x="72" y="196" width="112" height="7" rx="3.5" fill="#F2EEFF" opacity="0.35"/>
+</svg>

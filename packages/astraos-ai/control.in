@@ -1,0 +1,32 @@
+Package: @@PACKAGE@@
+Version: @@VERSION@@
+Architecture: @@ARCH@@
+Maintainer: @@VENDOR@@ <maintainers@astraos.invalid>
+Section: utils
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: astraos-base (>= @@VERSION@@), python3 (>= 3.11), bash (>= 5.0), coreutils, sed, grep, procps
+Recommends: alsa-utils, xdotool, wmctrl, curl, ca-certificates, xfce4-screenshooter, x11-utils
+Description: AstraOS AI assistant
+ An assistant that runs on the machine it is asked to control. `astra-ai ask` answers a
+ question, `astra-ai chat` holds a conversation, `astra ai` reaches the same thing through
+ the system command, and `astra-ai serve` publishes it as a page on localhost - which is
+ also how a phone on the same network becomes the microphone for a machine that has none.
+ .
+ The assistant's repertoire is a closed list of actions that ship with it: opening
+ applications, files and links, volume, brightness, media keys, window management, the
+ time, the battery, a screenshot, a web search, and - only behind an explicit
+ confirmation - the power actions and a command it shows before running. The model
+ chooses from that list and cannot invent an action; anything irreversible waits for a
+ Confirm click or a typed yes.
+ .
+ It runs as the user who started it, never as root, and nothing starts at boot: no
+ service, no daemon and no model in the background. The model itself is opt-in and is
+ downloaded by `astra-ai setup --model` only when the user asks for it, because a
+ 1-3B model is a gigabyte of someone else's bandwidth and a distribution should not
+ fetch that on their behalf.
+ .
+ Speech is optional and equally opt-in: whisper.cpp for listening, espeak-ng for
+ speaking. `astra-ai setup --voice` builds whisper.cpp for this machine's CPU, which
+ matters because prebuilt binaries are compiled for AVX2 and die with an illegal
+ instruction on anything older (the build passes -DGGML_AVX=ON -DGGML_AVX2=OFF).

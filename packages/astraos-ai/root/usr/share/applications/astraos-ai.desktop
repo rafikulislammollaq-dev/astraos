@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Astra AI
+Name[en]=Astra AI
+GenericName=Assistant
+Comment=Ask this computer to do things, by typing or by talking
+Comment[en]=Ask this computer to do things, by typing or by talking
+Exec=astra-ai serve --open
+Icon=astraos-ai
+Terminal=false
+Categories=Utility;System;
+Keywords=AstraOS;AI;assistant;voice;chat;help;ask;
+StartupNotify=true

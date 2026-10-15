@@ -206,6 +206,259 @@ do_effects() {
     esac
 }
 
+# --------------------------------------------------------------------------
+# The local AI assistant (astraos-ai package)
+#
+# The assistant is a page served on 127.0.0.1 by /usr/lib/astraos/ai/server.py.
+# It is not a system service: it runs when the user starts it and stops when
+# that process stops. Everything the model proposes is confirmed inside the
+# page before it runs. Nothing is downloaded by default: a model or a tool
+# appears only through a setup command typed on purpose - 'astra ai setup'
+# imports a local file, and the package's own 'astra-ai setup' fetches or
+# builds one - and then says what it is about to do first.
+AI_PORT_DEFAULT=8765
+AI_SERVER=/usr/lib/astraos/ai/server.py
+
+# The astraos package lives in /usr/lib, which python3 does not search when a
+# script is run by path. One export makes both entry points work.
+ai_pythonpath() {
+    PYTHONPATH="/usr/lib${PYTHONPATH:+:${PYTHONPATH}}"
+    export PYTHONPATH
+}
+
+ai_python() {
+    command -v python3 >/dev/null 2>&1 && return 0
+    printf "${RED}python3 is not installed.${E} Install it with:  astra install python3\n"
+    return 1
+}
+
+do_ai_usage() {
+    cat <<'AIUSAGE'
+  Usage:
+
+    astra ai                what the assistant can do
+    astra ai start [--lan]  start the assistant page (Ctrl+C stops it)
+    astra ai open           open the page in the browser
+    astra ai status         is the assistant running, is a model installed
+    astra ai setup [FILE]   set it up; import a .gguf file you already have
+    astra ai stop           stop a running assistant
+    astra ai say TEXT       speak TEXT through this computer's speakers
+
+  The model runs on this computer. The page is served on 127.0.0.1 only, unless
+  --lan is given, which makes it reachable from devices on the local network so
+  a phone can act as the microphone. There is no password there; actions in the
+  page still need an explicit confirmation. Nothing is downloaded by default:
+  'astra ai setup' imports a file you already have, and 'astra-ai setup --model
+  NAME' downloads one from the catalogue. The assistant works (with a clear
+  message) without a model, so an install is never blocked by it.
+AIUSAGE
+}
+
+do_ai_status() {
+    ai_python || return 1
+    ai_pythonpath
+    python3 - "${1:-$AI_PORT_DEFAULT}" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+sock = socket.socket()
+sock.settimeout(0.4)
+try:
+    sock.connect(("127.0.0.1", port))
+except OSError:
+    print("server: not running on port %d  (start it: astra ai start)" % port)
+else:
+    print("server: running on port %d" % port)
+finally:
+    sock.close()
+
+try:
+    from astraos.ai import config, llm, voice
+except Exception as exc:
+    print("package: not installed or not importable (%s)" % exc)
+    raise SystemExit(1)
+
+try:
+    engine = llm.Engine(config.load_settings())
+    print("model: %s" % ("ready" if engine.available() else "not installed yet"))
+except Exception as exc:
+    print("model: unknown (%s: %s)" % (type(exc).__name__, exc))
+
+for label, probe in (("speech out", voice.tts_available), ("speech in", voice.stt_available)):
+    try:
+        print("%s: %s" % (label, "yes" if probe() else "no (see: astra ai setup)"))
+    except Exception:
+        print("%s: unknown" % label)
+PY
+}
+
+do_ai_setup() {
+    ai_python || return 1
+    ai_pythonpath
+    _source="${1:-}"
+
+    # The two directories belong to the package's PATHS, so ask the package
+    # rather than guessing; create them user-owned if they do not exist yet.
+    _dirs="$(python3 - <<'PY'
+import sys
+try:
+    from astraos.ai import config
+except Exception as exc:
+    sys.stderr.write("astraos-ai is not installed or not importable (%s)\n" % exc)
+    raise SystemExit(1)
+for name in ("models_dir", "bin_dir"):
+    directory = getattr(config.PATHS, name)
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        sys.stderr.write("cannot create %s (%s): %s\n" % (name, directory, exc))
+        raise SystemExit(1)
+    print(directory)
+PY
+)" || return 1
+    _models_dir="$(printf '%s\n' "$_dirs" | sed -n '1p')"
+    _bin_dir="$(printf '%s\n' "$_dirs" | sed -n '2p')"
+
+    if [ -n "$_source" ]; then
+        [ -f "$_source" ] || { printf "${RED}not a file:${E} %s\n" "$_source"; return 1; }
+        case "$_source" in
+            *.gguf|*.GGUF) ;;
+            *) printf "${YLW}note: %s does not end in .gguf; importing it anyway.${E}\n" "$_source" ;;
+        esac
+        if cp -n "$_source" "${_models_dir}/"; then
+            printf "${GRN}Imported${E} %s -> %s\n" "$_source" "$_models_dir/"
+        else
+            printf "${RED}Could not import${E} %s (already imported, or no permission to read it)\n" "$_source"
+            return 1
+        fi
+    fi
+
+    _ready="$(python3 - <<'PY' 2>/dev/null
+try:
+    from astraos.ai import config, llm
+    engine = llm.Engine(config.load_settings())
+    print("yes" if engine.available() else "no")
+except Exception:
+    print("unknown")
+PY
+)"
+    if [ "$_ready" = "yes" ]; then
+        printf "${GRN}A model is installed and ready.${E} Start the assistant with:  astra ai start\n"
+        return 0
+    fi
+
+    cat <<SETUP
+  No model is ready yet. Two pieces, both opt-in (nothing downloads by default):
+
+    model    a GGUF file, 1B-3B parameters at Q4, in:  ${_models_dir}
+             import one you already have:  astra ai setup /path/to/model.gguf
+    runtime  the llama.cpp 'llama-server' binary on PATH, or in:  ${_bin_dir}
+
+  The package's own command line can fetch these for you, only when asked:
+      astra-ai setup --list          show the model catalogue
+      astra-ai setup --model NAME    download one model
+      astra-ai setup --build llama   build the runtime from source
+
+  Optional voice tools: espeak-ng (speaking here), whisper.cpp (phone recordings).
+  The house rules: this machine is CPU-only, so stay at 1B-3B Q4, and expect a
+  few words per second, not instant answers.
+
+  Until a model is installed the page still opens and says so. Start it with:
+      astra ai start        (this machine only)
+      astra ai start --lan  (a phone on the same network can be the microphone)
+SETUP
+    return 0
+}
+
+do_ai_start() {
+    ai_python || return 1
+    [ -f "$AI_SERVER" ] \
+        || { printf "${RED}missing ${AI_SERVER}${E} (reinstall astraos-ai)\n"; return 1; }
+    ai_pythonpath
+    printf "${DIM}Ctrl+C stops the assistant.${E}\n"
+    exec python3 "$AI_SERVER" "$@"
+}
+
+do_ai_stop() {
+    # Match only a python3 process running the assistant server: a text editor
+    # with the file open must not be signalled by this.
+    if pkill -f 'python3.*astraos[./]ai[./]server' 2>/dev/null; then
+        printf "${GRN}Assistant stopped.${E}\n"
+    else
+        printf "${DIM}The assistant is not running.${E}\n"
+    fi
+    return 0
+}
+
+do_ai_open() {
+    ai_python || return 1
+    _port="${1:-$AI_PORT_DEFAULT}"
+    if ! python3 - "$_port" <<'PY' 2>/dev/null
+import socket
+import sys
+
+sock = socket.socket()
+sock.settimeout(0.4)
+try:
+    sock.connect(("127.0.0.1", int(sys.argv[1])))
+finally:
+    sock.close()
+raise SystemExit(0)
+PY
+    then
+        printf "${YLW}The assistant is not running.${E} Start it with:  astra ai start\n"
+        return 1
+    fi
+    if command -v xdg-open >/dev/null 2>&1; then
+        exec xdg-open "http://127.0.0.1:${_port}/"
+    fi
+    printf 'Open this address in the browser:  http://127.0.0.1:%s/\n' "$_port"
+    return 0
+}
+
+do_ai_say() {
+    [ $# -gt 0 ] || { printf 'Usage: astra ai say TEXT\n'; return 2; }
+    ai_python || return 1
+    ai_pythonpath
+    python3 - "$*" <<'PY'
+import sys
+try:
+    from astraos.ai import voice
+except Exception as exc:
+    print("astraos-ai is not installed (%s)" % exc)
+    raise SystemExit(1)
+try:
+    available = bool(voice.tts_available())
+except Exception as exc:
+    print("Could not check the speech tool (%s: %s)" % (type(exc).__name__, exc))
+    raise SystemExit(1)
+if not available:
+    print("No text-to-speech tool is installed. Run:  astra ai setup")
+    raise SystemExit(1)
+raise SystemExit(0 if voice.speak(sys.argv[1]) else 1)
+PY
+}
+
+do_ai() {
+    _what="${1:-help}"
+    [ $# -gt 0 ] && shift
+    case "$_what" in
+        help|--help|-h|usage) do_ai_usage ;;
+        setup)              do_ai_setup "$@" ;;
+        start)              do_ai_start "$@" ;;
+        stop)               do_ai_stop ;;
+        status)             do_ai_status "$@" ;;
+        open)               do_ai_open "$@" ;;
+        say|speak)          do_ai_say "$@" ;;
+        *)
+            printf "Unknown 'astra ai' subcommand: %s\n\n" "$_what"
+            do_ai_usage
+            return 2
+            ;;
+    esac
+}
+
 do_reboot() {
     if ask "Restart the computer now?"; then
         exec systemctl reboot
@@ -337,6 +590,7 @@ INTRO
     astra repair            repair the package database
     astra trim              TRIM the SSDs (SSD maintenance)
     astra effects on|off    fade animations on windows (off = default)
+    astra ai start|setup    the local assistant (opt-in, no cloud)
     astra reboot            restart
     astra info              system summary
     astra help              this cheat sheet
@@ -367,6 +621,7 @@ usage() {
     astra repair            repair the package database
     astra trim              TRIM the SSDs
     astra effects on|off    window fade animations
+    astra ai start          the local assistant (opt-in; 'astra ai setup' first)
     astra reboot            restart the computer (asks first)
     astra info              system summary
     astra help              the Windows-to-Linux cheat sheet
@@ -394,6 +649,7 @@ case "$CMD" in
     repair|fix)              do_repair "$@" ;;
     trim|ssd)                do_trim ;;
     effects|compositor)      do_effects "$@" ;;
+    ai|assistant)            do_ai "$@" ;;
     reboot|restart)          do_reboot ;;
     doctor|check)            do_doctor ;;
     info|neofetch|fetch)     do_info ;;
