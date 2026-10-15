@@ -54,14 +54,18 @@ from urllib.parse import urlsplit
 
 try:
     # The installed layout: /usr/lib/astraos/ai/*.py, imported as astraos.ai.*
-    from astraos.ai import actions, config, llm, prompt, voice
+    from astraos.ai import actions, config, llm, prompt, tiers, voice
+    from astraos.ai import journal as _journal
+    from astraos.ai import worker as _worker
 except ImportError:
     # Running this file by path puts its own directory on sys.path, not /usr/lib,
     # so the astraos package is not importable. Add the tree root and retry once.
     _TREE_ROOT = str(Path(__file__).resolve().parents[2])
     if _TREE_ROOT not in sys.path:
         sys.path.insert(0, _TREE_ROOT)
-    from astraos.ai import actions, config, llm, prompt, voice
+    from astraos.ai import actions, config, llm, prompt, tiers, voice
+    from astraos.ai import journal as _journal
+    from astraos.ai import worker as _worker
 
 DEFAULT_HOST = "127.0.0.1"
 LAN_HOST = "0.0.0.0"
@@ -460,6 +464,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                                      "detail": f"Could not list actions: {exc}"})
                     return
                 self._json(200, {"actions": items if isinstance(items, list) else []})
+            elif path == "/api/journal":
+                try:
+                    report = _journal.journal().summary()
+                except Exception as exc:
+                    self._json(500, {"ok": False,
+                                     "detail": f"Could not read the journal: {exc}"})
+                    return
+                self._json(200, {"journal": report})
             elif path == "/favicon.ico":
                 self._no_content()
             else:
@@ -478,6 +490,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._transcribe()
             elif path == "/api/speak":
                 self._speak()
+            elif path == "/api/work":
+                self._work()
             else:
                 self._json(404, {"ok": False, "detail": f"No such path: {path}"})
         except Exception as exc:
@@ -527,6 +541,58 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.close_connection = True
         finally:
             self._end_stream()
+
+    def _work(self) -> None:
+        """One request through the ladder, with every step visible.
+
+        The stream carries the plan and each step's evidence rather than only the
+        model's prose, which is the whole difference between an assistant and a
+        chat box: what it decided to do, and what happened when it did.
+
+        Confirmation happens the way it already does - in the page, through
+        /api/confirm - so a phone taps Confirm rather than being asked to type.
+        The callback below is only reached by a caller that wired one without a
+        human behind it, and it refuses.
+        """
+        payload = self._read_json(MAX_CHAT_BYTES)
+        if payload is None:
+            return
+        text = payload.get("text")
+        if not isinstance(text, str) or not text.strip():
+            self._json(400, {"ok": False,
+                             "detail": 'Expected a non-empty "text" string.'})
+            return
+
+        pool = tiers.TierPool(self.server.assistant.settings)
+        agent = _worker.Worker(pool, confirm=self._confirm_action)
+
+        self._begin_stream()
+        try:
+            for event in agent.events_for(text.strip()):
+                self._send_event(event)
+        except (BrokenPipeError, ConnectionResetError):
+            # The page went away mid-task. Nothing to report to anyone.
+            self.close_connection = True
+            return
+        except Exception as exc:  # noqa: BLE001 - the page must not die here
+            try:
+                self._send_event({"type": "error",
+                                  "text": f"{type(exc).__name__}: {exc}"})
+                self._send_event({"type": "done"})
+            except (BrokenPipeError, ConnectionResetError):
+                self.close_connection = True
+
+    def _confirm_action(self, action: str, args: dict) -> bool:
+        """Refuse, and say why. The page's Confirm is not this callback.
+
+        The page asks the human and posts their answer back to /api/confirm;
+        this path is reached only by a caller that wired a callback without a
+        human behind it. Refusing is the only safe default, and the event says
+        so in the words the journal uses for the same question.
+        """
+        self._send_event({"type": "needs",
+                          "text": _worker.question_for(action, args)})
+        return False
 
     def _confirm(self) -> None:
         payload = self._read_json(MAX_CHAT_BYTES)

@@ -50,7 +50,7 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
 
 from . import actions as _actions
 from . import journal as _journal
@@ -118,6 +118,20 @@ def question_for(action: str, args: dict) -> str:
     opening = CONFIRM_QUESTIONS.get(action, f"the assistant wants to run {action}")
     detail = ", ".join(f"{key}={value!r}" for key, value in args.items())
     return f"{opening} ({detail})" if detail else opening
+
+
+def plan_goal(plan: list[dict]) -> str:
+    """A plan's stated purpose, or its first step's, for the plan event.
+
+    Between the two classes of answer: the brain's own goal when it wrote one,
+    and the first step's reason otherwise. A page that shows a plan with no
+    title over it is showing a list of commands with no purpose.
+    """
+    for step in plan:
+        why = step.get("why") if isinstance(step, dict) else ""
+        if why:
+            return why
+    return ""
 
 
 class Worker:
@@ -287,6 +301,174 @@ class Worker:
             self.journal.set_status(task_id, outcome["kind"])
             self.journal.set_result(task_id, None, error=evidence["error"])
         return outcome
+
+    def events_for(self, request: str,
+                  context: str = "") -> Iterator[dict]:
+        """Run one request and yield its events. Same behaviour as handle().
+
+        The event vocabulary:
+
+            thinking   what the assistant is deciding, in one line
+            plan       {"goal", "steps"} - the middle brain's plan
+            step-start {"step"} - a task is about to run, with its action
+            step       {"evidence"} - what came back, and whether it verified
+            done       {"kind", "text", "plan", "evidence"} - the whole result
+
+        `done` is always last, so a client has one rule for the end of the turn
+        rather than three.
+        """
+        yield {"type": "thinking", "text": "reading the request"}
+
+        outcome = {
+            "kind": "failed",
+            "text": "",
+            "plan": [],
+            "evidence": [],
+            "needs": [],
+        }
+
+        if not self.pool.ready():
+            outcome["kind"] = "needs"
+            outcome["text"] = (
+                "The assistant has no model installed yet, so it cannot answer "
+                "or do anything. " + self.pool.unavailable_reason()
+            )
+            yield {"type": "done", **outcome}
+            return
+
+        retrieved = _prompt.knowledge_for(request)
+        full_context = "\n\n".join(part for part in (context, retrieved) if part)
+
+        try:
+            with self.pool.asking("worker") as engine:
+                decision = self._decide(request, full_context, engine)
+        except (TierUnavailable, EngineUnavailable) as exc:
+            outcome["kind"] = "needs"
+            outcome["text"] = str(exc)
+            yield {"type": "done", **outcome}
+            return
+
+        kind = decision.get("kind", "refuse")
+        outcome["kind"] = kind
+        outcome["text"] = decision.get("text", "")
+
+        if kind == "answer":
+            yield {"type": "done", **outcome}
+            return
+
+        if kind == "refuse":
+            outcome["text"] = decision.get("reason") or (
+                "I do not have a way to do that from here."
+            )
+            yield {"type": "done", **outcome}
+            return
+
+        if kind == "plan":
+            from . import planner as _planner
+
+            try:
+                with self.pool.asking("brain") as brain:
+                    plan = _planner.plan(brain, request, full_context)
+            except (TierUnavailable, EngineUnavailable) as exc:
+                outcome["kind"] = "degraded"
+                outcome["text"] = (
+                    "No middle brain is installed, so this is being attempted in "
+                    "one step instead. " + str(exc)
+                )
+                for event in self._single_step_events(request, full_context, outcome):
+                    yield event
+                return
+
+            yield {"type": "plan", "goal": outcome["text"] or plan_goal(plan), "steps": plan}
+            for event in self._run_plan_events(plan, outcome):
+                yield event
+            return
+
+        if kind == "action":
+            for event in self._single_step_events(request, full_context, outcome):
+                yield event
+            return
+
+        outcome["kind"] = "refuse"
+        outcome["text"] = "I could not work out what was being asked for."
+        yield {"type": "done", **outcome}
+
+    def _single_step_events(self, request: str, context: str, outcome: dict):
+        """The one-step path, emitted rather than collected."""
+        task_id = self.journal.add_task(request, [])
+        self.journal.set_status(task_id, "running")
+        try:
+            with self.pool.asking("worker") as engine:
+                decision = self._decide(request, context, engine)
+        except (TierUnavailable, EngineUnavailable) as exc:
+            outcome["kind"] = "failed"
+            outcome["text"] = f"The model could not be reached: {exc}"
+            self.journal.set_result(task_id, None, error=str(exc))
+            self.journal.set_status(task_id, "failed")
+            yield {"type": "done", **outcome}
+            return
+
+        action = decision.get("action", "")
+        args = decision.get("args") if isinstance(decision.get("args"), dict) else {}
+        if not action or action not in _actions.ACTIONS:
+            outcome["kind"] = "refuse"
+            outcome["text"] = decision.get("reason") or (
+                "That did not map to anything I can do."
+            )
+            self.journal.set_status(task_id, "failed")
+            yield {"type": "done", **outcome}
+            return
+
+        step = {"action": action, "args": args, "why": decision.get("reason", "")}
+        yield {"type": "step-start", "step": step}
+        evidence = self._run_step(step, 1, task_id)
+        outcome["plan"] = [step]
+        outcome["evidence"] = [evidence]
+        outcome["kind"] = "action" if evidence["ok"] else self._end_status(evidence)
+        outcome["text"] = evidence["output"] or evidence["error"]
+        if evidence["ok"]:
+            self.journal.set_status(task_id, "ok")
+            self.journal.set_result(task_id, {"text": outcome["text"]})
+        else:
+            self.journal.set_status(task_id, outcome["kind"])
+            self.journal.set_result(task_id, None, error=evidence["error"])
+        yield {"type": "step", "evidence": evidence}
+        yield {"type": "done", **outcome}
+
+    def _run_plan_events(self, plan: list[dict], outcome: dict):
+        """The plan, one task at a time, emitted as each step runs."""
+        if not plan:
+            outcome["kind"] = "refuse"
+            outcome["text"] = "The plan was empty, so nothing was done."
+            yield {"type": "done", **outcome}
+            return
+
+        task_id = self.journal.add_task(outcome.get("text") or "planned task", plan)
+        self.journal.set_status(task_id, "running")
+
+        for index, step in enumerate(plan, 1):
+            yield {"type": "step-start", "step": step}
+            evidence = self._run_step(step, index, task_id)
+            outcome["plan"].append(step)
+            outcome["evidence"].append(evidence)
+            if not evidence["ok"]:
+                status = self._end_status(evidence)
+                outcome["kind"] = status
+                outcome["text"] = (
+                    evidence["error"]
+                    or "That step did not work, so the rest of the plan was not run."
+                )
+                self.journal.set_status(task_id, status)
+                self.journal.set_result(task_id, None, error=outcome["text"])
+                yield {"type": "done", **outcome}
+                return
+            yield {"type": "step", "evidence": evidence}
+
+        outcome["kind"] = "action"
+        outcome["text"] = outcome["text"] or "Done."
+        self.journal.set_status(task_id, "ok")
+        self.journal.set_result(task_id, {"text": outcome["text"]})
+        yield {"type": "done", **outcome}
 
     def _end_status(self, evidence: dict) -> str:
         """How a failed step ends a task.

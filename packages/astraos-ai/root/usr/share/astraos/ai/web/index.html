@@ -15,6 +15,8 @@
     GET  /api/health       ready or not, and which voice tools exist
     POST /api/chat         a reply, streamed as newline-delimited JSON events
     POST /api/confirm      runs one proposed action, after the Confirm button
+    POST /api/work         the ladder: plan it, run it, verify every step
+    GET  /api/journal      the task journal: what ran and what needs a human
     POST /api/transcribe   a recorded WAV when the browser cannot transcribe
     POST /api/speak        speaks through the PC's speakers instead of the browser
   Nothing in that list runs an action on its own.
@@ -68,6 +70,44 @@
     gap: 10px;
     grid-template-rows: auto minmax(0, 1fr) auto;
   }
+
+    /* ---------------- the ladder: steps --- */
+    .step {
+      margin: 8px 0 0;
+      padding: 8px 12px;
+      border-left: 3px solid var(--line, rgba(255, 255, 255, 0.16));
+      border-radius: 4px 10px 10px 4px;
+      background: rgba(255, 255, 255, 0.04);
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text, #f4f1fb);
+    }
+    .step[data-state="ok"] { border-left-color: #34d399; }
+    .step[data-state="ok-unverified"] { border-left-color: #fbbf24; }
+    .step[data-state="failed"] { border-left-color: #fb7185; }
+    .step[data-state="needs"] { border-left-color: #a78bfa; }
+    .step[data-state="running"] { border-left-color: var(--accent, #8b5cf6); }
+    .step[data-state="thinking"] {
+      background: none;
+      border-left-color: transparent;
+      color: var(--muted, rgba(244, 241, 251, 0.62));
+      font-style: italic;
+    }
+    .step-note { font-style: italic; }
+    .step-output {
+      margin-top: 6px;
+      font-family: var(--mono, ui-monospace, monospace);
+      font-size: 12px;
+      opacity: 0.78;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .step[data-state="running"]::after {
+        content: " \2026";
+        animation: none;
+      }
+    }
 
   /* ---------------- the orb ---------------- */
 
@@ -671,6 +711,35 @@
     return bubble;
   }
 
+  function addSystemNote(text) {
+    const note = textEl("div", "step step-note", text);
+    note.dataset.state = "thinking";
+    els.transcript.appendChild(note);
+    autoScroll(true);
+    return note;
+  }
+
+  function addStepNote(step, state, output) {
+    const action = String((step && step.action) || "action");
+    const why = String((step && step.why) || "");
+    const label = action + (why ? ": " + why : "");
+    const line = textEl("div", "step", label);
+    line.dataset.state = state || "running";
+    if (output) {
+      line.appendChild(textEl("div", "step-output", String(output)));
+    }
+    els.transcript.appendChild(line);
+    autoScroll(true);
+    return line;
+  }
+
+  function evidenceState(evidence) {
+    if (!evidence || !evidence.ok) return "failed";
+    if (evidence.needs_confirm && !evidence.confirmed) return "needs";
+    if (evidence.verified) return "ok";
+    return "ok-unverified";
+  }
+
   function hint(text) {
     els.hint.textContent = text;
     window.clearTimeout(hint.timer);
@@ -761,8 +830,9 @@
     const bubble = addMessage("assistant", "");
 
     let answer = "";
+    let finished = null;
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch("/api/work", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: text, history: prior })
@@ -786,12 +856,21 @@
             let event = null;
             try { event = JSON.parse(line); } catch (err) { event = null; }
             if (event) {
+              if (event.type === "done") finished = event;
               const delta = handleEvent(event, bubble);
               if (delta) answer += delta;
             }
           }
           index = buffered.indexOf("\n");
         }
+      }
+      // The ladder answers on the final event rather than in deltas. Anything
+      // the stream did not already put on screen is the answer, and it is what
+      // the next turn should be able to refer back to.
+      if (!answer.trim() && finished && String(finished.text || "").trim()) {
+        answer = String(finished.text);
+        bubble.appendChild(document.createTextNode(answer));
+        autoScroll(false);
       }
       if (answer.trim()) state.history.push({ role: "assistant", content: answer });
       if (answer.trim() && state.speakMode !== "off") speak(answer);
@@ -808,6 +887,24 @@
 
   function handleEvent(event, bubble) {
     if (!event || typeof event.type !== "string") return "";
+    if (event.type === "thinking") {
+      // The middle brain is reading the request. Two seconds of silence with a
+      // reason on screen is a better assistant than two seconds of nothing.
+      addSystemNote(String(event.text || "thinking"));
+      return "";
+    }
+    if (event.type === "step-start" && plainObject(event.step)) {
+      addStepNote(event.step, "running");
+      return "";
+    }
+    if (event.type === "step" && plainObject(event.evidence)) {
+      addStepNote(event.evidence, evidenceState(event.evidence), event.evidence.output);
+      return "";
+    }
+    if (event.type === "needs") {
+      addMessage("error", String(event.text || "This needs a human's confirmation."));
+      return "";
+    }
     if (event.type === "delta") {
       const chunk = String(event.text || "");
       bubble.appendChild(document.createTextNode(chunk));
