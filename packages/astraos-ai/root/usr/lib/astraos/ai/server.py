@@ -54,18 +54,14 @@ from urllib.parse import urlsplit
 
 try:
     # The installed layout: /usr/lib/astraos/ai/*.py, imported as astraos.ai.*
-    from astraos.ai import actions, config, llm, prompt, tiers, voice
-    from astraos.ai import journal as _journal
-    from astraos.ai import worker as _worker
+    from astraos.ai import actions, config, llm, prompt, voice
 except ImportError:
     # Running this file by path puts its own directory on sys.path, not /usr/lib,
     # so the astraos package is not importable. Add the tree root and retry once.
     _TREE_ROOT = str(Path(__file__).resolve().parents[2])
     if _TREE_ROOT not in sys.path:
         sys.path.insert(0, _TREE_ROOT)
-    from astraos.ai import actions, config, llm, prompt, tiers, voice
-    from astraos.ai import journal as _journal
-    from astraos.ai import worker as _worker
+    from astraos.ai import actions, config, llm, prompt, voice
 
 DEFAULT_HOST = "127.0.0.1"
 LAN_HOST = "0.0.0.0"
@@ -466,7 +462,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._json(200, {"actions": items if isinstance(items, list) else []})
             elif path == "/api/journal":
                 try:
-                    report = _journal.journal().summary()
+                    from astraos.ai import journal
+                    report = journal.journal().summary()
                 except Exception as exc:
                     self._json(500, {"ok": False,
                                      "detail": f"Could not read the journal: {exc}"})
@@ -563,8 +560,21 @@ class RequestHandler(BaseHTTPRequestHandler):
                              "detail": 'Expected a non-empty "text" string.'})
             return
 
+        # The ladder is imported here, not at the top of the file. The five
+        # modules the rest of the server needs are enough for the chat page to
+        # work, and a machine where the ladder cannot be imported should still
+        # be able to ask a question.
+        try:
+            from astraos.ai import tiers, worker
+        except ImportError as exc:
+            self._send_event({"type": "error", "text": (
+                "The assistant's action modules could not be loaded: "
+                f"{exc}. Reinstall the astraos-ai package.")})
+            self._send_event({"type": "done"})
+            return
+
         pool = tiers.TierPool(self.server.assistant.settings)
-        agent = _worker.Worker(pool, confirm=self._confirm_action)
+        agent = worker.Worker(pool, confirm=self._confirm_action)
 
         self._begin_stream()
         try:
@@ -591,7 +601,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         so in the words the journal uses for the same question.
         """
         self._send_event({"type": "needs",
-                          "text": _worker.question_for(action, args)})
+                          "text": worker.question_for(action, args)})
         return False
 
     def _confirm(self) -> None:
