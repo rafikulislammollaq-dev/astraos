@@ -17,7 +17,7 @@
     <property name="&lt;Primary&gt;&lt;Alt&gt;t" type="string" value="xfce4-terminal"/>
     <property name="&lt;Primary&gt;&lt;Alt&gt;h" type="string" value="thunar"/>
     <property name="&lt;Primary&gt;&lt;Alt&gt;f" type="string" value="firefox-esr"/>
-    <property name="&lt;Primary&gt;&lt;Alt&gt;i" type="string" value="xfce4-terminal --title='AstraOS information' --command='astraos-info; echo; read -p \"Press Enter to close...\"'"/>
+    <property name="&lt;Primary&gt;&lt;Alt&gt;i" type="string" value="xfce4-terminal --title='AstraOS information' -x bash -c 'astraos-info; echo; read -p &quot;Press Enter to close...&quot;'"/>
 
     <!-- Application menu / launcher -->
     <property name="&lt;Super&gt;space" type="string" value="xfce4-popup-whiskermenu"/>
