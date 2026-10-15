@@ -135,8 +135,12 @@ clean:
 	@echo "==> removing logs and the live-build working tree"
 	@rm -rf "$(REPO_ROOT)/logs"
 	@rm -rf "$(REPO_ROOT)/build/live-build"
-	@echo "    kept: dist/ output and build/packages"
-	@echo "    note: no ISO was deleted and no source file was touched"
+	@echo "    this also removes the built .deb files: they live in"
+	@echo "    build/live-build/packages, not build/packages, so removing the"
+	@echo "    live-build tree takes them with it. They are cheap to rebuild"
+	@echo "    (scripts/build-packages.sh, about a second) which is why clean"
+	@echo "    is allowed to remove them."
+	@echo "    kept: dist/ output and no source file was touched"
 
 distclean:
 	@echo "==> removing all generated output"

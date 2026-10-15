@@ -34,6 +34,7 @@ devmgmt.msc|driverquery|see drivers per device: lspci -k
 dir|dir|directory listing with Windows flags (/w, /b, /s)
 diskmgmt.msc|diskpart|disk overview; partitioning in GNOME Disks or gparted
 diskpart|diskpart|disk overview (read-only); real partitioning: gparted
+driverquery|driverquery|kernel drivers and the modules behind them
 dxdiag|dxdiag|graphics card and display information
 echo|echo|print text (same as Windows)
 edit|edit|edit a file (nano in a terminal, mousepad in the desktop)
@@ -67,24 +68,29 @@ netsh|nmcli|network: nmcli device wifi list;  nmcli radio wifi on
 netstat|netstat|network connections (-ano works, -o becomes -p)
 notepad|notepad|text editor (mousepad)
 nslookup|nslookup|DNS lookups (same name, same job)
+paint|mspaint|simple paint app (Drawing) - the modern name for mspaint
 path|echo $PATH|the command search path
 pathping|mtr|install with: astra install mtr-tiny
 ping|ping|4 pings by default like Windows; -t for continuous
 powershell|bash|the shell here is bash - scripts end in .sh
 print|lp|printing: lp file.pdf (CUPS is running)
+rd|rd|remove a directory; /s /q removes a whole tree without asking
 reg|NONE|no registry: settings are plain files in /etc and ~/.config
 regedit|regedit|explains where settings live instead of the registry
-ren|ren|rename a file
+ren|ren|rename a file (OLDNAME NEWNAME)
+rename|ren|rename a file - same as ren; the 3-argument Linux "rename OLD NEW FILE" works too
 replace|cp|copy with overwrite: cp -f SRC DST
 robocopy|robocopy|robust copy; /MIR = rsync -a --delete
 route print|ip route|the routing table: ip route show
 runas|runas|run as another user (administrator = root)
 sc|systemctl|services: systemctl status/start/stop NAME
 schtasks|crontab -e|scheduled tasks: crontab -e (edit) or crontab -l (list)
+services|services|running services with their state (systemctl underneath)
 set|printenv|environment variables: printenv, export VAR=value
 setx|NONE|make it permanent: add 'export VAR=value' to ~/.profile
 sfc|sfc|verify system files (dpkg --verify underneath)
 shutdown|shutdown|shutdown /s now, /r restart, /a abort, /t N wait, /l log off
+start|start|open a file, folder or app (start "" TITLE TARGET also works)
 subst|ln -s|map a folder to a name: ln -s /path NAME
 systeminfo|systeminfo|the full system report
 taskkill|taskkill|end a process: /IM name /F (force) or /PID number
@@ -100,7 +106,7 @@ verifier|NONE|driver verification does not apply; drivers are kernel modules
 vol|lsblk -f|filesystem labels and UUIDs: lsblk -f
 where|where|find where a command lives on PATH
 whoami|whoami|your username (same as Windows)
-winver|winver|the OS version window
 winget|winget|app installer mapped to: astra install
+winver|winver|the OS version window
 wmic|astra doctor|system queries: astra doctor, astraos-info, dmidecode
 xcopy|xcopy|copy directories recursively

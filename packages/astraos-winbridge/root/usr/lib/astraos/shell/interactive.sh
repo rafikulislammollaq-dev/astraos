@@ -78,6 +78,25 @@ cd() {
     builtin cd "$@"
 }
 
+# --- type: read a file, or describe a name ------------------------------------
+# Windows: `type FILE` prints the file. Bash: `type NAME` describes a name. Both
+# are useful, and the two meanings do not overlap where it matters - a Windows
+# user names a file that exists, and the only files a command name can be are
+# executables under /usr/bin. So a single, non-executable file argument is read,
+# and everything else goes to the builtin. `type -a bash` and `type ls` still
+# describe commands; `builtin type` always reaches bash's own definition.
+#
+# A function rather than a wrapper in winbin, because only this can win: bash
+# resolves a builtin ahead of anything on PATH. interactive.sh is sourced only by
+# interactive shells and nothing here is exported, so scripts keep bash's meaning.
+type() {
+    if [ "$#" -eq 1 ] && [ -f "$1" ] && [ ! -x "$1" ]; then
+        cat -- "$1"
+        return 0
+    fi
+    builtin type "$@"
+}
+
 # --- Prompt: user, machine, path, git branch ----------------------------------
 # The escape sequences must reach PS1 unexpanded, so they are stored raw.
 __ASTRA_RESET='\[\e[0m\]'

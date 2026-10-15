@@ -14,8 +14,13 @@
 #   builds of the same content produce identical .deb files apart from nothing.
 #
 # Output:
-#   build/packages/*.deb                            the packages
+#   build/live-build/packages/*.deb                 the packages
 #   build/live-build/config/packages.chroot/*.deb   staged for live-build to install
+#
+# Both live under ASTRAOS_BUILD_DIR ("build/live-build"), not build/packages. The
+# paths above are quoted from config/distribution.env rather than written out, because
+# a comment naming the wrong directory is how a cleanup target ends up deleting the
+# thing it promises to keep. See the `clean` target in the Makefile.
 #
 # Usage: ./scripts/build-packages.sh [--clean]
 

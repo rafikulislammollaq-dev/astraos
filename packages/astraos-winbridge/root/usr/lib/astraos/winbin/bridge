@@ -76,6 +76,52 @@ usage() {
 }
 
 # --------------------------------------------------------------------------
+# run_real TOOL [ARG...]
+#
+# Run the genuine TOOL, never one of our own wrappers.
+#
+# This exists because the wrappers sit on PATH ahead of /usr/bin (see
+# /etc/profile.d/astraos-winbridge.sh), which makes a handler that delegates by
+# name recurse into itself. `mkdir`, `tree`, `ping` and `netstat` are all real
+# commands that also have a wrapper of the same name, so
+#
+#     cmd_md()  { ... exec mkdir -p "$@" ... }
+#
+# resolves `mkdir` to the wrapper, which calls this script again with the same
+# arguments, which calls cmd_md again, until the process limit is reached. Four
+# handlers had that shape. The wrappers are not hypothetical recursion:
+# `mkdir -p` on the live image printed the bridge's own usage line and hung.
+#
+# PATH is rebuilt without WINBIN_DIR rather than the tool path hardcoded, so a
+# tool that moves between /bin and /usr/bin, or a different install prefix, still
+# resolves. On the real image /bin is a symlink to /usr/bin, which is why
+# stripping the entry by string compare is enough.
+run_real() {
+    _rr_tool="$1"; shift
+    _rr_old_ifs="$IFS"
+    _rr_new_path=""
+    IFS=:
+    for _rr_dir in $PATH; do
+        [ "$_rr_dir" = "$WINBIN_DIR" ] && continue
+        _rr_new_path="${_rr_new_path:+$_rr_new_path:}$_rr_dir"
+    done
+    IFS="$_rr_old_ifs"
+    unset _rr_old_ifs _rr_dir
+    PATH="$_rr_new_path" exec "$_rr_tool" "$@"
+}
+
+# real_tool NAME - print the path of the genuine NAME, ignoring our wrappers.
+#
+# `command -v rename` with the bridge on PATH answers with the wrapper of that
+# name rather than the real program, so every "is this installed?" probe has to
+# look at a PATH without WINBIN_DIR. Prints nothing and returns 1 when the tool is
+# genuinely absent. This is the same reordering run_real does before exec'ing.
+real_tool() {
+    PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$WINBIN_DIR" | paste -sd:)" \
+        command -v "$1" 2>/dev/null
+}
+
+# --------------------------------------------------------------------------
 # Path translation
 #
 # winpath ARG - prints ARG as a Unix path:
@@ -91,7 +137,15 @@ winpath() {
     _p="$(printf '%s' "$_p" | sed -e 's#^[A-Za-z]:[/\\]$#/#' \
                                   -e 's#^[A-Za-z]:[/\\]##' \
                                   -e 's#\\#/#g')"
-    printf '%s' "$_p"
+    # The trailing newline is load-bearing, not cosmetic. collect_paths() calls
+    # this once per argument and rebuilds "$@" from the captured string, using the
+    # newline as the separator. Without it every path was concatenated into one
+    # argument: `copy note.txt copy.txt` collected "note.txtcopy.txt" and answered
+    # with its own usage message, `ren a.txt b.txt` saw one argument where it
+    # wanted two, and any command given more than one path failed the same way.
+    # Every other caller wraps this in $(...) or "$(...)", which strips a trailing
+    # newline, so nothing else changes.
+    printf '%s\n' "$_p"
 }
 
 # collect_paths IS_SWITCH_FUNC ARGS...
@@ -120,25 +174,71 @@ lookup() {
 
 # --------------------------------------------------------------------------
 # Switch matchers. One per command; anything they do not accept is a path.
+#
+# Every one of them defers to looks_like_windows_switch() first, because Windows
+# writes switches with a slash and so does every absolute Unix path. The pattern
+# /[A-Za-z]* matches /w, and it matches /home just as readily. Measured before
+# this guard existed: `md /tmp/newdir` collected no paths at all and answered with
+# its own usage line, and a script doing `mkdir -p /tmp/x` failed the same way.
+# Relative paths were unaffected, which is why the first round of testing missed
+# it: the sandbox was created with relative paths.
 # --------------------------------------------------------------------------
-dir_switch()      { case "$1" in /[WwBbSsPpQq]|/[Oo]*|/[Aa][:+-]*|/[Aa]*|/[Tt]*) return 0 ;; esac; return 1; }
-copy_switch()     { case "$1" in /[Yy]|/-[Yy]|/[VvZzAaBbDdNn]) return 0 ;; esac; return 1; }
-xcopy_switch()    { case "$1" in /[A-Za-z][A-Za-z]*|/-[Yy]) return 0 ;; esac; return 1; }
-robocopy_switch() { case "$1" in /[A-Za-z.]*) return 0 ;; esac; return 1; }
-move_switch()     { case "$1" in /[Yy]|/-[Yy]|/[Nn]) return 0 ;; esac; return 1; }
-ren_switch()      { case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
-rd_switch()       { case "$1" in /[SsQq]) return 0 ;; esac; return 1; }
-del_switch()      { case "$1" in /[FfPpSsQq]|/[Aa][:+-]*|/[Aa]*) return 0 ;; esac; return 1; }
-type_switch()     { case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
-tree_switch()     { case "$1" in /[FfAa]) return 0 ;; esac; return 1; }
-comp_switch()     { case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
-explorer_switch() { case "$1" in /[A-Za-z,]*) return 0 ;; esac; return 1; }
-simple_path_switch() { case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
+
+# looks_like_windows_switch ARG
+#
+# Yes if ARG is plausibly a Windows switch rather than an absolute path.
+#
+# Everything common is decided reliably: a second slash makes it a path
+# (/var/log), and a token that exists on disk is a path (/home, /etc, /opt, /tmp -
+# every top-level directory on a running system, so this covers the realistic
+# cases). What remains ambiguous is a short, single-component, non-existent path
+# such as `md /data`, which this reads as a switch. A Windows switch is one or two
+# letters, so that shape is rare enough to accept; `md ./data` always works.
+looks_like_windows_switch() {
+    case "$1" in
+        /*/*) return 1 ;;                 # a second slash: an absolute path
+        /*)   ;;                          # a single leading slash: maybe
+        *)    return 1 ;;                 # no leading slash: not a switch
+    esac
+    [ -e "$1" ] && return 1               # it names something that exists
+    _llws_letters="${1#/}"
+    _llws_letters="${_llws_letters%%:*}"  # /A:R and /O:N are letter:value
+    [ "${#_llws_letters}" -le 5 ] || return 1
+    case "$_llws_letters" in
+        *[!A-Za-z]*) return 1 ;;          # /2, /tmp-2 and the like
+    esac
+    return 0
+}
+
+dir_switch()      { looks_like_windows_switch "$1" || return 1; case "$1" in /[WwBbSsPpQq]|/[Oo]*|/[Aa][:+-]*|/[Aa]*|/[Tt]*) return 0 ;; esac; return 1; }
+copy_switch()     { looks_like_windows_switch "$1" || return 1; case "$1" in /[Yy]|/-[Yy]|/[VvZzAaBbDdNn]) return 0 ;; esac; return 1; }
+xcopy_switch()    { looks_like_windows_switch "$1" || return 1; case "$1" in /[A-Za-z][A-Za-z]*|/-[Yy]) return 0 ;; esac; return 1; }
+robocopy_switch() { looks_like_windows_switch "$1" || return 1; case "$1" in /[A-Za-z.]*) return 0 ;; esac; return 1; }
+move_switch()     { looks_like_windows_switch "$1" || return 1; case "$1" in /[Yy]|/-[Yy]|/[Nn]) return 0 ;; esac; return 1; }
+ren_switch()      { looks_like_windows_switch "$1" || return 1; case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
+rd_switch()       { looks_like_windows_switch "$1" || return 1; case "$1" in /[SsQq]) return 0 ;; esac; return 1; }
+del_switch()      { looks_like_windows_switch "$1" || return 1; case "$1" in /[FfPpSsQq]|/[Aa][:+-]*|/[Aa]*) return 0 ;; esac; return 1; }
+type_switch()     { looks_like_windows_switch "$1" || return 1; case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
+tree_switch()     { looks_like_windows_switch "$1" || return 1; case "$1" in /[FfAa]) return 0 ;; esac; return 1; }
+comp_switch()     { looks_like_windows_switch "$1" || return 1; case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
+explorer_switch() { looks_like_windows_switch "$1" || return 1; case "$1" in /[A-Za-z,]*) return 0 ;; esac; return 1; }
+simple_path_switch() { looks_like_windows_switch "$1" || return 1; case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
 
 # --------------------------------------------------------------------------
 # Command implementations
 # --------------------------------------------------------------------------
 cmd_dir() {
+    # A Unix-style invocation belongs to the real dir(1), not to this Windows
+    # wrapper. Windows writes switches as /w and Unix writes them as -1 or
+    # --color=never, so a leading dash is unambiguous: once one is present the user
+    # means coreutils. Delegating verbatim keeps `dir -1` and `dir --color=never`
+    # working in the same shell that provides the Windows `dir /w`, which is the
+    # reason this wrapper is allowed to shadow the real command at all.
+    for _a in "$@"; do
+        case "$_a" in
+            -?*) run_real dir "$@" ;;
+        esac
+    done
     _ls_opts="-Fh --group-directories-first --color=auto"
     _bare=""; _paths=""; _one_path=""
     for _a in "$@"; do
@@ -249,24 +349,59 @@ cmd_move() {
 }
 
 cmd_ren() {
+    # Windows `ren OLD NEW` takes two arguments. The Linux `rename` of the same
+    # name takes three: `rename PATTERN REPLACEMENT FILE...`. Both reach this
+    # function, because the `rename` wrapper is bound to the same verb, so the
+    # arity decides which tool the user meant. Without this, `rename` on PATH
+    # would fail on every Linux invocation with "ren OLDNAME NEWNAME".
     _PATHS="$(collect_paths ren_switch "$@")" || return $?
     set -f; _ifs_old=$IFS; IFS="
 "
     set -- $_PATHS
     IFS=$_ifs_old; set +f
+    if [ $# -ge 3 ]; then
+        # Linux rename: pattern, replacement, then one or more files. It lives in
+        # util-linux and is not in the base image, so check before delegating.
+        # Without the check the user gets a bare shell error from inside the
+        # bridge ("exec: rename: not found") instead of an explanation.
+        [ -n "$(real_tool rename)" ] || {
+            fail "rename (the 3-argument Linux form) is not installed"
+            hint "install it with:  astra install util-linux"
+            return 127
+        }
+        run_real rename "$@"
+    fi
     [ $# -eq 2 ] || { say "ren OLDNAME NEWNAME"; return 2; }
     exec mv "$@"
 }
 
 cmd_md() {
+    # Accept the Linux spellings as well as the Windows ones. `mkdir -p` is in
+    # every shell script there is, and a wrapper that turns a working Linux
+    # command into an error is worse than no wrapper. -p is what Windows does
+    # anyway, so it is redundant here, not contradictory: drop it and do not
+    # print the explanatory hint for a user who already knows.
+    _quiet=""
+    _args=""
+    for _a in "$@"; do
+        case "$_a" in
+            -p|--parents) _quiet=1 ;;
+            *) _args="${_args:+$_args }$_a" ;;
+        esac
+    done
+    # shellcheck disable=SC2086
+    set -- $_args
+
     _PATHS="$(collect_paths simple_path_switch "$@")" || return $?
     set -f; _ifs_old=$IFS; IFS="
 "
     set -- $_PATHS
     IFS=$_ifs_old; set +f
     [ $# -eq 0 ] && { say "md DIR [DIR...]"; return 2; }
-    hint "md -> mkdir -p (parent directories are created too)"
-    exec mkdir -p "$@"
+    [ -n "$_quiet" ] || hint "md -> mkdir -p (parent directories are created too)"
+    # run_real, not `mkdir`: the wrapper of that name is on PATH ahead of the real
+    # one, so delegating by name would call this function again forever.
+    run_real mkdir -p "$@"
 }
 
 cmd_rd() {
@@ -368,7 +503,18 @@ cmd_findstr() {
             /[Mm]) _g="$_g -l" ;;
             /[Ss]) _rec=1 ;;
             /[Cc]:*) _pat="${_a#/[Cc]:}"; _have_pat=1 ;;
-            /[LlRrOoXxEeGgDdPp]|/[A-Za-z]:*) : ;;
+            /[LlRrOoXxEeGgDdPp]|/[A-Za-z]:*)
+                # Guarded, because a one-letter absolute path such as /a or /e
+                # matches these patterns just as a switch does.
+                if looks_like_windows_switch "$_a"; then
+                    :
+                elif [ -z "$_have_pat" ]; then
+                    _pat="$_a"; _have_pat=1
+                else
+                    _paths="$_paths
+$(winpath "$_a")"
+                fi
+                ;;
             *)
                 if [ -z "$_have_pat" ]; then
                     _pat="$_a"; _have_pat=1
@@ -420,27 +566,42 @@ $(winpath "$_a")" ;;
 }
 
 cmd_tree() {
-    _files=""; _ascii=""; _paths=""
+    _files=""; _ascii=""; _paths=""; _quiet=""
     for _a in "$@"; do
-        case "$_a" in
-            /[Ff]) _files=1 ;;
-            /[Aa]) _ascii=1 ;;
-            *) _paths="$_paths
-$(winpath "$_a")" ;;
-        esac
+        # tree_switch is guarded against absolute paths, so /var/log is a path
+        # here rather than an /A or /F switch. The Unix-flag test is separate
+        # because -L and friends are not switches this bridge knows: they are
+        # passed through and they suppress the Windows default (see below).
+        if tree_switch "$_a"; then
+            case "$_a" in
+                /[Ff]) _files=1 ;;
+                /[Aa]) _ascii=1 ;;
+            esac
+        elif [ "$_a" != "-" ] && [ "$_a" != "${_a#-}" ]; then
+            _paths="$_paths
+$_a"
+            _quiet=1
+        else
+            _paths="$_paths
+$(winpath "$_a")"
+        fi
     done
-    command -v tree >/dev/null 2>&1 || { fail "tree is not installed"; return 127; }
-    hint "tree -> tree (directories only, like Windows; /f adds files)"
+    # Probe the REAL tree, not the wrapper of the same name that shadows it.
+    [ -n "$(real_tool tree)" ] || { fail "tree is not installed"; return 127; }
+    [ -n "$_quiet" ] || hint "tree -> tree (directories only, like Windows; /f adds files)"
     set -f; _ifs_old=$IFS; IFS="
 "
     set -- $_paths
     IFS=$_ifs_old; set +f
-    if [ -z "$_files" ]; then
+    # Windows `tree` shows directories only unless /f asks for files. That default
+    # must NOT be applied to a Unix-style call: `tree -L 1` is asking the real tree
+    # for one level, and adding -d would silently drop every file from the answer.
+    if [ -z "$_files" ] && [ -z "$_quiet" ]; then
         # shellcheck disable=SC2086
-        exec tree -d ${_ascii:+--charset ascii} "$@"
+        run_real tree -d ${_ascii:+--charset ascii} "$@"
     fi
     # shellcheck disable=SC2086
-    exec tree ${_ascii:+--charset ascii} "$@"
+    run_real tree ${_ascii:+--charset ascii} "$@"
 }
 
 cmd_comp() {
@@ -660,6 +821,23 @@ cmd_getmac() {
 }
 
 cmd_ping() {
+    # Unix-style invocation goes to the real ping untouched.
+    #
+    # -c is the Linux count flag and the one every script uses; -q/-I/-M/-p/-R/-S
+    # and friends are Linux-only. When any of them appears the caller is writing
+    # Unix, not Windows, so translating would be wrong: `ping -c 1 HOST` used to
+    # collect -c and 1 as if they were paths and then append its own `-c 4`,
+    # producing `ping -c 1 -c 4 HOST` - four pings where the script asked for one.
+    # The weak-additional-switches are not translated here either, so a script's
+    # exact flags and exit status reach the real tool.
+    for _a in "$@"; do
+        case "$_a" in
+            -c|-q|-I|-M|-p|-Q|-R|-S|-T|-U|-z|-f|-A|-O|-D|-B|-V|-h|--help|--version)
+                run_real ping "$@"
+                ;;
+        esac
+    done
+
     _args=""; _count="4"; _infinite=""
     _next="none"
     for _a in "$@"; do
@@ -681,7 +859,7 @@ cmd_ping() {
     [ -n "$_infinite" ] || _args="$_args -c ${_count:-4}"
     [ -n "$_infinite" ] || hint "like Windows: 4 pings, then it stops. Use  ping -t HOST  for continuous, Ctrl+C to stop."
     # shellcheck disable=SC2086
-    exec ping $_args
+    run_real ping $_args
 }
 
 cmd_tracert() {
@@ -706,6 +884,26 @@ cmd_tracert() {
 }
 
 cmd_netstat() {
+    # Unix-style invocation goes to the real netstat untouched.
+    #
+    # 'l' is Linux-only (listening sockets) and in Windows there is no such
+    # switch, so the translation loop above silently ignores it: `netstat -tunl`
+    # became `netstat -t -u -n`, which lists every established connection instead
+    # of the listening sockets the caller asked for. Bare -p is worse, because
+    # Windows uses -p for a protocol name while Linux uses it for the program -
+    # `netstat -tlnp` consumed the following argument as a protocol. `netstat -ano`
+    # has neither and still takes the translation path.
+    for _a in "$@"; do
+        case "$_a" in
+            -p|--*) run_real netstat "$@" ;;
+            -[!-]*|/[!-]*)
+                case "$_a" in
+                    *[Ll]*) run_real netstat "$@" ;;
+                esac
+                ;;
+        esac
+    done
+
     _flags=""
     _next="none"
     for _a in "$@"; do
@@ -745,7 +943,7 @@ cmd_netstat() {
     [ -z "$_flags" ] && _flags="-a -n"
     hint "netstat -> netstat (-p shows the owning process; use sudo for other users' processes)"
     # shellcheck disable=SC2086
-    exec netstat $_flags
+    run_real netstat $_flags
 }
 
 cmd_net() {
@@ -982,6 +1180,23 @@ cmd_regedit() {
 }
 
 cmd_shutdown() {
+    # Unix-style invocation goes to the real shutdown untouched.
+    #
+    # Windows writes its switches with a slash, so any argument beginning with a
+    # dash is Unix, and the flag meanings genuinely conflict. -h is the dangerous
+    # one: Windows /h means hibernate, Linux -h means halt, and the translation
+    # below mapped it to suspend - so a script or a user typing the ordinary
+    # `shutdown -h now` put the machine to sleep instead of powering it off, and
+    # the trailing `now` was discarded entirely. Bare `shutdown now` and
+    # `shutdown +5` are also valid Linux and have no Windows spelling, so they are
+    # recognised too.
+    for _a in "$@"; do
+        case "$_a" in
+            -*) run_real shutdown "$@" ;;
+            now|+[0-9]*|[0-9][0-9]:[0-9][0-9]) run_real shutdown "$@" ;;
+        esac
+    done
+
     _action=""; _delay=0; _abort=""
     _next="none"
     for _a in "$@"; do
@@ -1115,6 +1330,106 @@ shift 2>/dev/null || true
 case "$CMD" in
     -h|--help) usage; exit 0 ;;
 esac
+
+# --------------------------------------------------------------------------
+# Command dispatch.
+#
+# This block is the one that makes the bridge work, and it was missing. Every
+# cmd_* function above was defined and nothing ever called one: the only case
+# labels present were -h/--help and --list, so every bridged command fell through
+# to the "not a bridged command" branch below, printed
+#
+#     'dir' is a Windows command. On AstraOS: dir
+#
+# and exited 127. That is an unhelpful message twice over: it tells the user to
+# run the command they just ran, and it reports a missing dispatcher as if the
+# command were absent. All 54 wrappers failed this way.
+#
+# A name that matches nothing here falls through to the --list block and then to
+# the mapping-table lookup, which is where the deliberate hints for genuinely
+# unwrapped Windows names (echo, set, path, whoami, wmic, ...) come from.
+#
+# _HANDLED is what keeps those two paths apart. A POSIX shell runs on past the end
+# of a case statement, so without it a matched command ran its handler and then
+# kept going into the lookup, printing
+#
+#     'dir' is a Windows command. On AstraOS: dir
+#
+# over the top of output that had already been produced correctly, and exiting 127
+# on success. Measured before this line existed: `dir` printed its listing and
+# returned 127; so did `ver`, `where`, `attrib` and every other bridged command.
+# --------------------------------------------------------------------------
+_HANDLED=1
+case "$CMD" in
+    # Files and directories
+    dir)                    cmd_dir "$@" ;;
+    copy)                   cmd_copy "$@" ;;
+    xcopy)                  cmd_xcopy "$@" ;;
+    robocopy)               cmd_robocopy "$@" ;;
+    move)                   cmd_move "$@" ;;
+    # ren and rename are the same Windows verb; rename is only bound here so the
+    # wrapper of that name is reachable at all. Its Linux namesake takes three
+    # arguments where Windows takes two, and cmd_ren tells the two apart.
+    ren|rename)             cmd_ren "$@" ;;
+    # md and mkdir likewise. cmd_md keeps Windows semantics (parents are created)
+    # and accepts -p so the Linux spelling still works.
+    md|mkdir)               cmd_md "$@" ;;
+    rd)                     cmd_rd "$@" ;;
+    del|erase)              cmd_del "$@" ;;
+    type)                   cmd_type "$@" ;;
+    edit)                   cmd_edit "$@" ;;
+    where)                  cmd_where "$@" ;;
+    findstr)                cmd_findstr "$@" ;;
+    attrib)                 cmd_attrib "$@" ;;
+    tree)                   cmd_tree "$@" ;;
+    comp)                   cmd_comp "$@" ;;
+    # Processes
+    tasklist)               cmd_tasklist "$@" ;;
+    taskkill)               cmd_taskkill "$@" ;;
+    taskmgr)                cmd_taskmgr "$@" ;;
+    services)               cmd_services "$@" ;;
+    # System information
+    systeminfo|msinfo32)    cmd_systeminfo "$@" ;;
+    driverquery)            cmd_driverquery "$@" ;;
+    dxdiag)                 cmd_dxdiag "$@" ;;
+    winver)                 cmd_winver "$@" ;;
+    ver)                    cmd_ver "$@" ;;
+    sfc)                    cmd_sfc "$@" ;;
+    chkdsk)                 cmd_chkdsk "$@" ;;
+    defrag)                 cmd_defrag "$@" ;;
+    diskpart)               cmd_diskpart "$@" ;;
+    msconfig)               cmd_msconfig "$@" ;;
+    regedit)                cmd_regedit "$@" ;;
+    # Network
+    ipconfig)               cmd_ipconfig "$@" ;;
+    getmac)                 cmd_getmac "$@" ;;
+    ping)                   cmd_ping "$@" ;;
+    tracert)                cmd_tracert "$@" ;;
+    netstat)                cmd_netstat "$@" ;;
+    net)                    cmd_net "$@" ;;
+    # Desktop and session
+    cls)                    cmd_cls "$@" ;;
+    control)                cmd_control "$@" ;;
+    explorer)               cmd_explorer "$@" ;;
+    notepad)                cmd_notepad "$@" ;;
+    calc)                   cmd_calc "$@" ;;
+    mspaint|paint)          cmd_mspaint "$@" ;;
+    start)                  cmd_start "$@" ;;
+    shutdown)               cmd_shutdown "$@" ;;
+    logoff)                 cmd_logoff "$@" ;;
+    runas)                  cmd_runas "$@" ;;
+    # Apps
+    winget)                 cmd_winget "$@" ;;
+    choco)                  cmd_choco "$@" ;;
+    # Nothing above claimed this name, so clear the flag and let the mapping-table
+    # lookup below decide whether it can at least name the Linux equivalent.
+    *)                      _HANDLED="" ;;
+esac
+_dispatch_status=$?
+
+# A matched handler owns the process, and its status is the bridge's status. Only
+# names that nothing above claimed reach the lookup.
+[ -n "$_HANDLED" ] && exit "$_dispatch_status"
 
 case "$CMD" in
     --list)
