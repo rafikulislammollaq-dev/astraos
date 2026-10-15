@@ -36,31 +36,68 @@ fail() { printf '%s ERROR: %s\n' "$PREFIX" "$*" >&2; exit 1; }
 
 mkdir -p .disk
 
-# The identity comes from the staged configuration rather than from literals here,
-# so this hook cannot drift from config/distribution.env. The staged copy is inside
-# the chroot tree; when it is absent (an lb build run by hand, without this
-# repository's configure step) the release's real values are used as fallbacks.
-STAGED_ENV=../chroot/usr/share/astraos/staged/distribution.env
-if [ -f "$STAGED_ENV" ]; then
-    # The path is in a variable, so ShellCheck cannot follow it and reports SC1090. The build
-    # scripts answer that with the same directive, and every value the file can set has a
-    # default below, so nothing depends on it being read.
-    # shellcheck source=/dev/null
-    . "$STAGED_ENV"
-else
-    log "WARNING: ${STAGED_ENV} not found; using the release's pinned defaults"
+# The identity comes from the configuration this repository renders, never from literals in
+# this file. A build that cannot find it is refused rather than stamped with a guess.
+#
+# WHERE IT IS LOOKED FOR, AND WHY THERE IS MORE THAN ONE PLACE
+# ----------------------------------------------------------
+# configure-live-build.sh renders config/distribution.env into the chroot include tree at
+# usr/share/astraos/staged/distribution.env, so live-build copies it into the chroot as
+# /usr/share/astraos/staged/distribution.env. The chroot tree is the intended source.
+#
+# This hook never read it. 0600-cleanup.hook.chroot removes /usr/share/astraos/staged so
+# that it is not shipped inside the live filesystem, and that runs long before the binary
+# stage, so the file was gone by the time this looked for it and the defaults that used to
+# sit below were used on every single build. That is how the medium's identity came to be
+# free to disagree with the image's own /etc/os-release, and it did: the defaults still
+# said 0.1.0 and would have stamped a 0.2.0 image, which the ISO validator compares against
+# os-release-derived expectations.
+#
+# The search covers every tree that can hold the file and every working directory a binary
+# hook may be invoked from, because which directory that is is live-build's business and not
+# something this repository should have to assume. The first candidate is derived from this
+# script's own location, which works from anywhere live-build chooses to stand; the rest are
+# the relative paths that work when the hook is invoked without a full path.
+IDENTITY=""
+for candidate in \
+    "$(dirname "$0")/../../includes.chroot/usr/share/astraos/staged/distribution.env" \
+    ../chroot/usr/share/astraos/staged/distribution.env \
+    chroot/usr/share/astraos/staged/distribution.env \
+    config/includes.chroot/usr/share/astraos/staged/distribution.env \
+    ../config/includes.chroot/usr/share/astraos/staged/distribution.env
+do
+    if [ -f "$candidate" ]; then
+        IDENTITY="$candidate"
+        break
+    fi
+done
+
+if [ -z "$IDENTITY" ]; then
+    fail "no release identity found, so the medium cannot be stamped and this build will
+not invent a version. From $(pwd), with this script at $0, none of these existed:
+    $(dirname "$0")/../../includes.chroot/usr/share/astraos/staged/distribution.env
+    ../chroot/usr/share/astraos/staged/distribution.env
+    chroot/usr/share/astraos/staged/distribution.env
+    config/includes.chroot/usr/share/astraos/staged/distribution.env
+    ../config/includes.chroot/usr/share/astraos/staged/distribution.env
+scripts/configure-live-build.sh creates the staged copy; build through scripts/build-iso.sh."
 fi
 
-: "${ASTRAOS_NAME:=AstraOS}"
-# No default for the version. One of '0.1.0' sat here while config/distribution.env said
-# 0.2.0, so any build that fell back would have written onto the medium a version number
-# that no release ever had - a fabricated value, which plan §28 Rule 4 forbids. A missing
-# version is a failed build instead, and the message names the file that should have set it.
-: "${ASTRAOS_VERSION:?the staged distribution.env did not set ASTRAOS_VERSION}"
-: "${ASTRAOS_RELEASE_STAGE:=alpha}"
-: "${ASTRAOS_ARCH:=amd64}"
-: "${ASTRAOS_BASE_DISTRIBUTION:=Debian}"
-: "${ASTRAOS_BASE_RELEASE_VERSION:=13}"
+log "release identity: ${IDENTITY}"
+# The path is in a variable, so ShellCheck cannot follow it and reports SC1090. The build
+# scripts answer that with the same directive.
+# shellcheck source=/dev/null
+. "$IDENTITY"
+
+# Every field is required, and there are deliberately no defaults. A default is a second copy
+# of the release's identity, and this file's copy of the version is exactly what went stale
+# while the real one was raised. A missing field stops the build instead, naming itself.
+: "${ASTRAOS_NAME:?$IDENTITY did not set ASTRAOS_NAME}"
+: "${ASTRAOS_VERSION:?$IDENTITY did not set ASTRAOS_VERSION}"
+: "${ASTRAOS_RELEASE_STAGE:?$IDENTITY did not set ASTRAOS_RELEASE_STAGE}"
+: "${ASTRAOS_ARCH:?$IDENTITY did not set ASTRAOS_ARCH}"
+: "${ASTRAOS_BASE_DISTRIBUTION:?$IDENTITY did not set ASTRAOS_BASE_DISTRIBUTION}"
+: "${ASTRAOS_BASE_RELEASE_VERSION:?$IDENTITY did not set ASTRAOS_BASE_RELEASE_VERSION}"
 
 STAMP="$(date -u +%Y%m%d-%H:%M)"
 

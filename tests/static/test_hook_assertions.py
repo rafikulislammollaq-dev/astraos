@@ -244,3 +244,34 @@ def test_no_hook_writes_the_release_version_as_a_literal() -> None:
         "(see release_field in 0700-verify.hook.chroot) or from the staged distribution.env:\n  "
         + "\n  ".join(offenders)
     )
+
+
+def test_disk_info_hook_has_no_identity_defaults() -> None:
+    """A default in that hook is a second copy of the release's identity, and it goes stale.
+
+    It is the worst place for one, because it is the copy that actually reaches the medium.
+    0800-disk-info reads the identity from the staged configuration, but 0600-cleanup removes
+    /usr/share/astraos/staged so that it is not shipped inside the live filesystem, and that
+    runs in the chroot stage long before this binary hook. The lookup therefore never
+    succeeded, the defaults were used on every build, and the version default sat at 0.1.0
+    while the release moved to 0.2.0. Nothing failed; the medium just described itself with a
+    version number no release had.
+
+    The hook now searches the trees that can hold the file and refuses the build if none
+    does. This keeps a fallback from being reintroduced: the failure it hides is silent, and
+    the thing it hides is the image's own name for itself.
+    """
+    body = _without_comments(_read(HOOKS_DIR / "0800-disk-info.hook.binary"))
+
+    assert "ASTRAOS_VERSION:?" in body, (
+        "0800-disk-info no longer requires the version to come from the identity file it "
+        "reads, so a stale copy of the version can reach the medium again"
+    )
+
+    defaults = sorted(set(re.findall(r"\$\{(ASTRAOS_\w+):[-=]", body)))
+    assert not defaults, (
+        f"0800-disk-info defaults {', '.join(defaults)}. Every release field has to come from "
+        "the identity file, because this hook's defaults are the copy that reaches the ISO: "
+        "the staged file it looks for is removed by 0600-cleanup before the binary stage runs, "
+        "so a default here is not a fallback, it is the value."
+    )
