@@ -24,6 +24,35 @@
     Ctrl+Alt+arrows) and the workspace pager remains available in the panel
     preferences.
 
+  PROPERTY PATHS ARE NOT COSMETIC - 0.2.1
+
+  This file has to place its properties exactly where xfce4-panel looks, and
+  until 0.2.1 it did not. The layout was wrapped in <property name="config">,
+  which put it at /config/panels/panel-1/...; the per-plugin settings sat at
+  the channel root as /plugin-N/...; xfce4-panel 4.20 (Debian 13) reads
+  /panels/panel-1/... and /plugins/plugin-N/... respectively.
+
+  The failure was silent and total. xfce4-panel 4.20 does not migrate the
+  config/ wrapper, and it does not error on properties it does not recognise:
+  it simply did not see any panel, so it built Debian's stock default layout
+  instead. The AstraOS taskbar, the ring Start button, the pinned launchers,
+  the clock format and the tray all silently did not exist in a live session,
+  while everything that reads from a wrapper-free channel (xfwm4.xml, which
+  carries the titlebar buttons and the AstraOS window theme) worked correctly.
+  That combination - decorations correct, panel stock - is the signature of
+  this bug, and it is what a live 0.2.0 session showed: a stock top bar with an
+  "Applications" text button and window titles, over the AstraOS wallpaper.
+
+  The canonical shape is the one xfce4-panel itself writes:
+    /panels/panel-N/...           one container per panel, at the root
+    /plugins/plugin-N             the plugin's type, as the node's value
+    /plugins/plugin-N/<setting>   that plugin's own settings, as its children
+  The plugin type is the value of the same node that holds its settings. A
+  separate type mapping under /config/plugins is not read.
+
+  tests/static/test_desktop_skel.py asserts the paths, so the layout cannot be
+  written back into the wrapper without the suite failing.
+
   DESIGN NOTES
 
   * Panel uses the theme background (background-style 0): the GTK theme paints
@@ -40,130 +69,120 @@
 -->
 <channel name="xfce4-panel" version="1.0">
 
-  <property name="config" type="empty">
-    <property name="panels" type="empty">
-      <property name="panel-1" type="empty">
-        <property name="position" type="string" value="p=10;x=0;y=0"/>
-        <property name="length" type="uint" value="100"/>
-        <property name="position-locked" type="bool" value="true"/>
-        <property name="size" type="uint" value="44"/>
-        <property name="icon-size" type="uint" value="26"/>
-        <property name="background-style" type="uint" value="0"/>
-        <property name="background-alpha" type="uint" value="100"/>
-        <property name="enter-opacity" type="uint" value="100"/>
-        <property name="leave-opacity" type="uint" value="100"/>
-        <property name="autohide-behavior" type="uint" value="0"/>
-        <property name="mode" type="uint" value="0"/>
-        <property name="disable-struts" type="bool" value="false"/>
-        <property name="plugin-ids" type="array">
-          <value type="int" value="1"/>
-          <value type="int" value="2"/>
-          <value type="int" value="3"/>
-          <value type="int" value="4"/>
-          <value type="int" value="5"/>
-          <value type="int" value="6"/>
-          <value type="int" value="7"/>
-          <value type="int" value="8"/>
-          <value type="int" value="9"/>
-        </property>
+  <property name="panels" type="empty">
+    <property name="panel-1" type="empty">
+      <property name="position" type="string" value="p=10;x=0;y=0"/>
+      <property name="length" type="uint" value="100"/>
+      <property name="position-locked" type="bool" value="true"/>
+      <property name="size" type="uint" value="44"/>
+      <property name="icon-size" type="uint" value="26"/>
+      <property name="background-style" type="uint" value="0"/>
+      <property name="background-alpha" type="uint" value="100"/>
+      <property name="enter-opacity" type="uint" value="100"/>
+      <property name="leave-opacity" type="uint" value="100"/>
+      <property name="autohide-behavior" type="uint" value="0"/>
+      <property name="mode" type="uint" value="0"/>
+      <property name="disable-struts" type="bool" value="false"/>
+      <property name="plugin-ids" type="array">
+        <value type="int" value="1"/>
+        <value type="int" value="2"/>
+        <value type="int" value="3"/>
+        <value type="int" value="4"/>
+        <value type="int" value="5"/>
+        <value type="int" value="6"/>
+        <value type="int" value="7"/>
+        <value type="int" value="8"/>
+        <value type="int" value="9"/>
+      </property>
+    </property>
+  </property>
+
+  <property name="plugins" type="empty">
+
+    <!-- Left pusher: invisible, expandable, pushes the centre cluster to the
+         middle of the bar. -->
+    <property name="plugin-1" type="string" value="separator">
+      <property name="expand" type="bool" value="true"/>
+      <property name="style" type="uint" value="0"/>
+    </property>
+
+    <!-- Start button. Icon-only, like Windows 11; the ring logo is the brand. -->
+    <property name="plugin-2" type="string" value="whiskermenu">
+      <property name="button-icon" type="string" value="astraos-logo"/>
+      <property name="show-button-title" type="bool" value="false"/>
+      <property name="show-button-icon" type="bool" value="true"/>
+      <property name="menu-opacity" type="uint" value="100"/>
+      <property name="category-icon-size" type="uint" value="20"/>
+      <property name="launcher-icon-size" type="uint" value="28"/>
+      <property name="view-mode" type="int" value="0"/>
+      <property name="position-categories-alternate" type="bool" value="false"/>
+      <property name="position-categories-horizontal" type="bool" value="true"/>
+      <property name="favorites" type="array">
+        <value type="string" value="thunar.desktop"/>
+        <value type="string" value="xfce4-terminal.desktop"/>
+        <value type="string" value="firefox-esr.desktop"/>
+        <value type="string" value="mousepad.desktop"/>
+        <value type="string" value="astraos-welcome.desktop"/>
       </property>
     </property>
 
-    <property name="plugins" type="empty">
-      <property name="plugin-1" type="string" value="separator"/>
-      <property name="plugin-2" type="string" value="whiskermenu"/>
-      <property name="plugin-3" type="string" value="docklike"/>
-      <property name="plugin-4" type="string" value="separator"/>
-      <property name="plugin-5" type="string" value="systray"/>
-      <property name="plugin-6" type="string" value="pulseaudio"/>
-      <property name="plugin-7" type="string" value="power-manager-plugin"/>
-      <property name="plugin-8" type="string" value="clock"/>
-      <property name="plugin-9" type="string" value="showdesktop"/>
+    <!-- Taskbar: pinned launchers + running windows, one icon per app.
+         Pinned here: Files, Terminal, Firefox, Editor, Welcome - the five a new
+         user actually needs. docklike groups windows and shows running dots. -->
+    <property name="plugin-3" type="string" value="docklike">
+      <property name="pinned" type="array">
+        <value type="string" value="thunar.desktop"/>
+        <value type="string" value="xfce4-terminal.desktop"/>
+        <value type="string" value="firefox-esr.desktop"/>
+        <value type="string" value="mousepad.desktop"/>
+        <value type="string" value="astraos-welcome.desktop"/>
+      </property>
     </property>
-  </property>
 
-  <!-- Left pusher: invisible, expandable, pushes the centre cluster to the
-       middle of the bar. -->
-  <property name="plugin-1" type="empty">
-    <property name="expand" type="bool" value="true"/>
-    <property name="style" type="uint" value="0"/>
-  </property>
-
-  <!-- Start button. Icon-only, like Windows 11; the ring logo is the brand. -->
-  <property name="plugin-2" type="empty">
-    <property name="button-icon" type="string" value="astraos-logo"/>
-    <property name="show-button-title" type="bool" value="false"/>
-    <property name="show-button-icon" type="bool" value="true"/>
-    <property name="menu-opacity" type="uint" value="100"/>
-    <property name="category-icon-size" type="uint" value="20"/>
-    <property name="launcher-icon-size" type="uint" value="28"/>
-    <property name="view-mode" type="int" value="0"/>
-    <property name="position-categories-alternate" type="bool" value="false"/>
-    <property name="position-categories-horizontal" type="bool" value="true"/>
-    <property name="favorites" type="array">
-      <value type="string" value="thunar.desktop"/>
-      <value type="string" value="xfce4-terminal.desktop"/>
-      <value type="string" value="firefox-esr.desktop"/>
-      <value type="string" value="mousepad.desktop"/>
-      <value type="string" value="astraos-welcome.desktop"/>
+    <!-- Right pusher: second half of the centre trick. -->
+    <property name="plugin-4" type="string" value="separator">
+      <property name="expand" type="bool" value="true"/>
+      <property name="style" type="uint" value="0"/>
     </property>
-  </property>
 
-  <!-- Taskbar: pinned launchers + running windows, one icon per app.
-       Pinned here: Files, Terminal, Firefox, Editor, Welcome - the five a new
-       user actually needs. docklike groups windows and shows running dots. -->
-  <property name="plugin-3" type="empty">
-    <property name="pinned" type="array">
-      <value type="string" value="thunar.desktop"/>
-      <value type="string" value="xfce4-terminal.desktop"/>
-      <value type="string" value="firefox-esr.desktop"/>
-      <value type="string" value="mousepad.desktop"/>
-      <value type="string" value="astraos-welcome.desktop"/>
+    <!-- Notification tray. NetworkManager's nm-applet, Bluetooth (blueman) and
+         anything else legacy registers here. -->
+    <property name="plugin-5" type="string" value="systray">
+      <property name="square-icons" type="bool" value="true"/>
+      <property name="size-max" type="uint" value="22"/>
+      <property name="hidden-legacy" type="bool" value="false"/>
     </property>
-  </property>
 
-  <!-- Right pusher: second half of the centre trick. -->
-  <property name="plugin-4" type="empty">
-    <property name="expand" type="bool" value="true"/>
-    <property name="style" type="uint" value="0"/>
-  </property>
+    <!-- Volume -->
+    <property name="plugin-6" type="string" value="pulseaudio">
+      <property name="enable-keyboard-shortcuts" type="bool" value="true"/>
+      <property name="show-notifications" type="bool" value="true"/>
+    </property>
 
-  <!-- Notification tray. NetworkManager's nm-applet, Bluetooth (blueman) and
-       anything else legacy registers here. -->
-  <property name="plugin-5" type="empty">
-    <property name="square-icons" type="bool" value="true"/>
-    <property name="size-max" type="uint" value="22"/>
-    <property name="hidden-legacy" type="bool" value="false"/>
-  </property>
+    <!-- Battery. Only renders on hardware with a battery, which is correct. -->
+    <property name="plugin-7" type="string" value="power-manager-plugin">
+      <property name="show-label" type="bool" value="false"/>
+      <property name="show-percentage" type="bool" value="true"/>
+      <property name="show-notifications" type="bool" value="false"/>
+    </property>
 
-  <!-- Volume -->
-  <property name="plugin-6" type="empty">
-    <property name="enable-keyboard-shortcuts" type="bool" value="true"/>
-    <property name="show-notifications" type="bool" value="true"/>
-  </property>
+    <!-- Clock. Mono numerals are the HUD voice of the brand (docs/DESIGN.md 3).
+         Seconds stay: the ticking is deliberate AstraOS identity. -->
+    <property name="plugin-8" type="string" value="clock">
+      <property name="digital-layout" type="uint" value="3"/>
+      <property name="digital-time-format" type="string" value="%H:%M:%S"/>
+      <property name="digital-date-format" type="string" value="%a %d %b"/>
+      <property name="digital-time-font" type="string" value="JetBrains Mono Bold 11"/>
+      <property name="digital-date-font" type="string" value="Inter 9"/>
+      <property name="tooltip-format" type="string" value="%A %d %B %Y"/>
+      <property name="flash-separators" type="bool" value="false"/>
+      <property name="show-seconds" type="bool" value="true"/>
+    </property>
 
-  <!-- Battery. Only renders on hardware with a battery, which is correct. -->
-  <property name="plugin-7" type="empty">
-    <property name="show-label" type="bool" value="false"/>
-    <property name="show-percentage" type="bool" value="true"/>
-    <property name="show-notifications" type="bool" value="false"/>
-  </property>
+    <!-- Far right: the show-desktop sliver, the Windows 11 habit. -->
+    <property name="plugin-9" type="string" value="showdesktop">
+      <property name="show-image" type="bool" value="true"/>
+    </property>
 
-  <!-- Clock. Mono numerals are the HUD voice of the brand (docs/DESIGN.md 3).
-       Seconds stay: the ticking is deliberate AstraOS identity. -->
-  <property name="plugin-8" type="empty">
-    <property name="digital-layout" type="uint" value="3"/>
-    <property name="digital-time-format" type="string" value="%H:%M:%S"/>
-    <property name="digital-date-format" type="string" value="%a %d %b"/>
-    <property name="digital-time-font" type="string" value="JetBrains Mono Bold 11"/>
-    <property name="digital-date-font" type="string" value="Inter 9"/>
-    <property name="tooltip-format" type="string" value="%A %d %B %Y"/>
-    <property name="flash-separators" type="bool" value="false"/>
-    <property name="show-seconds" type="bool" value="true"/>
-  </property>
-
-  <!-- Far right: the show-desktop sliver, the Windows 11 habit. -->
-  <property name="plugin-9" type="empty">
-    <property name="show-image" type="bool" value="true"/>
   </property>
 </channel>
