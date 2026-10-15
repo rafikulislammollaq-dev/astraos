@@ -31,6 +31,8 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+DESCRIPTION = "the desktop skeleton is written where the session actually reads it"
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 SKEL_XFCONF = REPO_ROOT / "desktop" / "skel" / ".config" / "xfce4" / "xfconf" / "xfce-perchannel-xml"
