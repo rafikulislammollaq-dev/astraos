@@ -7,6 +7,7 @@ one file being updated and another being forgotten.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -137,6 +138,82 @@ def test_iso_identity_carries_the_release_version() -> None:
         f"ASTRAOS_ISO_VOLUME_ID is {volume!r}, but version {version!r} and architecture "
         f"{config['ASTRAOS_ARCH']!r} imply {expected!r}. The volume id is what isoinfo "
         "reports, so it has to be derivable from the release, not maintained by hand."
+    )
+
+
+# Files that ship in the image and state the release to a person: the login banner, the
+# message of the day, the desktop greeter, the boot menu, the installer, the first-run
+# screen and the tool that reports what this system is. Each one either carries the release
+# number or reads it at run time; none may carry a different one.
+#
+# Not in this list: files that quote a version as history. docs/KNOWN_LIMITATIONS.md records
+# what the 0.1.0 ISO measured, and the CHANGELOG is a record of past releases. Those are
+# supposed to keep the old numbers.
+SHIPPED_IDENTITY_FILES = [
+    "apps/astraos-hud/astraos_hud/__init__.py",
+    "branding/grub/astraos/theme.txt",
+    "branding/lightdm/astraos-greeter/MainWindow.html",
+    "installer/branding/astraos/branding.desc",
+    "packages/astraos-base/root/etc/ufw/astraos-policy.conf",
+    "packages/astraos-base/root/usr/bin/astraos-info",
+    "packages/astraos-system-tools/root/usr/bin/astraos-welcome",
+    "system/issue.in",
+    "system/issue.net.in",
+    "system/lsb-release.in",
+    "system/motd",
+]
+
+
+def _without_comments(text: str) -> str:
+    """Drop full-line comments.
+
+    Every file in the list above is shell, Python, HTML or a Calamares description file, and
+    in all of them a line whose first non-space characters open a comment. A comment is
+    allowed to name a version it is not claiming: the explanation above a line that reads the
+    release from a file will say which release the literal it replaced was. Flagging those
+    would push the next person to stop writing down why the code looks the way it does.
+    """
+    kept = []
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(("#", "<!--", "//")):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def test_no_shipped_file_names_a_different_release() -> None:
+    """Every place the image names its own release has to name the release being built.
+
+    Raising the version to 0.2.0 in VERSION and config/distribution.env left eleven shipped
+    files still saying 0.1.0: the boot menu, the desktop login screen, the installer's title
+    and welcome page, `/etc/issue`, `/etc/issue.net`, the message of the day, `astraos-info
+    --help`, the first-run screen and the HUD's own version. The image would have introduced
+    itself as 0.1.0 from the first screen after the firmware and reported 0.2.0 in
+    /etc/os-release, which is the version bug reports are filed against.
+
+    A file may name the current release, and it may read the release at run time (the two
+    tools do), but it may not name any other version. That rule is what makes this test
+    catch the next bump as well as this one.
+    """
+    version = astraos_env.distribution()["ASTRAOS_VERSION"]
+    pattern = re.compile(r"\b\d+\.\d+\.\d+\b")
+
+    offenders: list[str] = []
+    for relative in SHIPPED_IDENTITY_FILES:
+        path = REPO_ROOT / relative
+        assert path.is_file(), (
+            f"{relative} is listed as a file that names the release but does not exist, so "
+            "this test is not checking what it says it checks"
+        )
+        for number, line in enumerate(_without_comments(path.read_text(encoding="utf-8")).splitlines(), 1):
+            for found in pattern.findall(line):
+                if found != version:
+                    offenders.append(f"{relative}:{number}: {found} (release is {version})")
+
+    assert not offenders, (
+        "the image would name a release other than the one being built:\n  "
+        + "\n  ".join(offenders)
     )
 
 

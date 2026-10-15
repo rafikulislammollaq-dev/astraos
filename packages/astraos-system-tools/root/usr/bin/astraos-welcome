@@ -11,7 +11,18 @@
 
 set -uo pipefail
 
-VERSION="0.1.0"
+# The release named in the banner below, read from /etc/astraos-release instead of being
+# written here. The literals that used to sit here said "0.1.0" and printed "Alpha" beside
+# them as plain text, so a welcome screen on a 0.2.0 image would have named the wrong
+# release - in the first thing a new installation shows a person.
+VERSION="unknown"
+STAGE=""
+if [ -r /etc/astraos-release ]; then
+    # shellcheck source=/dev/null
+    VERSION="$( . /etc/astraos-release; printf '%s' "${VERSION:-unknown}" )"
+    # shellcheck source=/dev/null
+    STAGE="$( . /etc/astraos-release; printf '%s' "${RELEASE_STAGE:-}" )"
+fi
 DOC_DIR="/usr/share/doc/astraos"
 MARKER="${HOME}/.config/astraos/welcome-shown"
 
@@ -36,7 +47,7 @@ network_up() {
 
 printf '\n'
 printf '  ============================================================\n'
-printf '     A S T R A   O S      %s Alpha\n' "$VERSION"
+printf '     A S T R A   O S      %s %s\n' "$VERSION" "$STAGE"
 printf '  ============================================================\n\n'
 
 if is_live; then

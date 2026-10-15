@@ -1,7 +1,7 @@
 # AstraOS
 
 An independent, lightweight Linux desktop distribution built from Debian packages.
-**Version 0.1.0 Alpha, codename Nova, architecture amd64 (x86_64).**
+**Version 0.2.0 Alpha, codename Nova, architecture amd64 (x86_64).**
 
 AstraOS is a Debian 13 (trixie) derivative with its own package selection, Xfce desktop
 configuration, branding, installer configuration and automated ISO build pipeline.

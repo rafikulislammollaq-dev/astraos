@@ -4,7 +4,7 @@
 # The checksum file is written next to the image and then verified against it, so the
 # project never publishes a checksum that has not been checked against its own artifact.
 #
-# Usage: ./scripts/generate-checksums.sh dist/astraos-0.1.0-alpha-amd64.iso
+# Usage: ./scripts/generate-checksums.sh dist/astraos-<version>-alpha-amd64.iso
 
 set -euo pipefail
 

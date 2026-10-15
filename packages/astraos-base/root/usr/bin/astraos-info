@@ -17,7 +17,16 @@
 
 set -uo pipefail
 
-VERSION="0.1.0"
+# The release this system is running, for the --help banner. It is read from
+# /etc/astraos-release, the same file every other reported field comes from. A literal
+# "0.1.0" sat here and went stale: it made `astraos-info --help` announce a release that
+# contradicted the version `astraos-info` itself printed two lines below it.
+if [ -r /etc/astraos-release ]; then
+    # shellcheck source=/dev/null
+    VERSION="$( . /etc/astraos-release; printf '%s' "${VERSION:-unknown}" )"
+else
+    VERSION="unknown"
+fi
 
 # --- Field collection ---------------------------------------------------------
 # Every function returns a single line, or "unknown".
@@ -148,7 +157,7 @@ secure_boot_state() {
     fi
     if command -v mokutil >/dev/null 2>&1; then
         # Do not attempt a privileged query; report only what is readable.
-        printf 'reported by firmware (Secure Boot is not supported by AstraOS 0.1.0)'
+        printf 'reported by firmware (Secure Boot is not supported by AstraOS)'
     else
         printf 'unknown (mokutil not installed)'
     fi
@@ -213,7 +222,7 @@ firewall_state() {
         # fresh instalment, where ufw is documented as inactive. Keep the prefix.
         case "$result" in
             "Status: active"*) printf 'active' ;;
-            "Status: inactive"*) printf 'inactive (default for AstraOS 0.1.0)' ;;
+            "Status: inactive"*) printf 'inactive (the default for this release)' ;;
             *) printf 'unknown (run as root: sudo ufw status)' ;;
         esac
     else

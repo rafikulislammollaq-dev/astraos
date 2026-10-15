@@ -12,17 +12,17 @@ componentName: astraos
 strings:
     productName:         "AstraOS"
     shortProductName:    "AstraOS"
-    version:             "0.1.0 Alpha"
-    shortVersion:        "0.1.0"
-    versionedName:       "AstraOS 0.1.0 Alpha"
-    shortVersionedName:  "AstraOS 0.1.0"
+    version:             "0.2.0 Alpha"
+    shortVersion:        "0.2.0"
+    versionedName:       "AstraOS 0.2.0 Alpha"
+    shortVersionedName:  "AstraOS 0.2.0"
     bootloaderEntryName: "AstraOS"
     productUrl:          "https://astraos.invalid"
     supportUrl:          "https://astraos.invalid/support"
 
     # Shown on the welcome page. States the base distribution and the alpha status
     # plainly (plan §23: do not claim to be an official Debian release).
-    welcome:             "AstraOS 0.1.0 Alpha is an independent distribution based on Debian GNU/Linux. This is an early release: back up anything you cannot lose before continuing."
+    welcome:             "AstraOS 0.2.0 Alpha is an independent distribution based on Debian GNU/Linux. This is an early release: back up anything you cannot lose before continuing."
     replacement:         "Installing AstraOS will replace the operating system currently on the selected disk. Files on that disk will be lost."
     alongside:          "AstraOS can be installed alongside an existing operating system if you free up space first. Choose manual partitioning to decide exactly which partitions are used."
     erase:               "The selected disk will be erased and all data on it will be lost. This cannot be undone."

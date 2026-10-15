@@ -24,6 +24,6 @@
 deb http://deb.debian.org/debian trixie-updates main contrib non-free non-free-firmware
 deb http://security.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
 
-# NOTE: no backports. AstraOS 0.1.0 Alpha ships only packages from the pinned stable release
+# NOTE: no backports. AstraOS ships only packages from the pinned stable release
 # plus its security and update suites, so a released image cannot silently pick up a newer ABI
 # from an unrelated suite (plan §5).

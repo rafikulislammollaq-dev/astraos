@@ -28,8 +28,10 @@ from typing import Any
 
 __all__ = ["__version__", "APP_NAME", "main"]
 
-#: Kept in step with the repository VERSION file (0.1.0 for the Nova alpha).
-__version__ = "0.1.0"
+#: Kept in step with the repository VERSION file and with config/distribution.env, and
+#: checked by tests/static/test_config.py so that it cannot silently fall behind: it read
+#: 0.1.0 while the release was 0.2.0.
+__version__ = "0.2.0"
 
 APP_NAME = "AstraOS HUD"
 

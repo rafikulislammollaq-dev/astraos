@@ -332,9 +332,12 @@ def test_reported_firewall_state_is_never_overclaimed() -> None:
         f"astraos-info reports {inactive!r} for an inactive firewall; a user would be told "
         "the firewall is protecting them when it is not"
     )
-    assert "0.1.0" in inactive, (
+    assert "default for this release" in inactive, (
         "the inactive message no longer explains that inactive is the default for this "
-        "release, which is what stops it reading as a defect"
+        "release, which is what stops it reading as a defect. This assertion used to look for "
+        "the release number '0.1.0' in that message, which made a security test fail when the "
+        "version was raised and tied the check to a number that has nothing to do with whether "
+        "the report is honest."
     )
     assert active == "active", f"astraos-info reports {active!r} for an active firewall"
     assert unprivileged.startswith("unknown"), (

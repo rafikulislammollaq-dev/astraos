@@ -1,4 +1,4 @@
-AstraOS 0.1.0 Alpha \n \l
+AstraOS @@VERSION@@ @@STAGE@@ \n \l
 
 This is the AstraOS live environment. Documentation: https://astraos.invalid/docs
 AstraOS is an independent distribution based on Debian GNU/Linux and is not an

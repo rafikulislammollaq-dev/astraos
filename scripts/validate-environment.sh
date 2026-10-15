@@ -70,7 +70,7 @@ say "  host architecture: ${HOST_ARCH}"
 case "$HOST_ARCH" in
     x86_64|amd64) ok "host architecture matches the target (${ASTRAOS_ARCH})" ;;
     aarch64|arm64)
-        bad "host is ${HOST_ARCH} but AstraOS 0.1.0 targets ${ASTRAOS_ARCH}"
+        bad "host is ${HOST_ARCH} but AstraOS ${ASTRAOS_VERSION} targets ${ASTRAOS_ARCH}"
         printf '           Cross-building an amd64 image from arm64 needs binfmt_misc and\n'
         printf '           qemu-user-static; that path is not implemented or tested.\n'
         ;;

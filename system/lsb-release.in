@@ -11,6 +11,6 @@
 # wrong paths. The AstraOS codename is exposed through /etc/astraos-release and
 # /etc/os-release (VERSION_CODENAME) instead.
 DISTRIB_ID=AstraOS
-DISTRIB_RELEASE=0.1.0
+DISTRIB_RELEASE=@@VERSION@@
 DISTRIB_CODENAME=trixie
-DISTRIB_DESCRIPTION="AstraOS 0.1.0 Alpha (based on Debian 13 trixie)"
+DISTRIB_DESCRIPTION="AstraOS @@VERSION@@ @@STAGE@@ (based on Debian @@BASE_RELEASE_VERSION@@ @@BASE_SUITE@@)"

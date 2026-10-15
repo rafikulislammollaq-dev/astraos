@@ -8,7 +8,7 @@
 #   2. Validation status is recorded per check, because a build that has been validated
 #      structurally is NOT a build that has been booted.
 #
-# Usage: ./scripts/generate-manifest.sh dist/astraos-0.1.0-alpha-amd64.iso
+# Usage: ./scripts/generate-manifest.sh dist/astraos-<version>-alpha-amd64.iso
 
 set -uo pipefail
 

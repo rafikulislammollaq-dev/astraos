@@ -155,7 +155,8 @@ render() {
 render "${REPO_ROOT}/system/os-release.in"      "${STAGE}/system/os-release"
 render "${REPO_ROOT}/system/issue.in"           "${STAGE}/system/issue"
 render "${REPO_ROOT}/system/issue.net.in"       "${STAGE}/system/issue.net"
-cp -f "${REPO_ROOT}/system/motd"                "${STAGE}/system/motd"
+render "${REPO_ROOT}/system/lsb-release.in"     "${STAGE}/system/lsb-release"
+render "${REPO_ROOT}/system/motd"               "${STAGE}/system/motd"
 cp -f "${REPO_ROOT}/system/default-hostname"    "${STAGE}/system/default-hostname"
 
 say "  staged $(find "$STAGE" -type f | wc -l) file(s)"

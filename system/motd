@@ -1,6 +1,6 @@
       .--------------------------------------.
       |            A S T R A   O S           |
-      |      0.1.0 Alpha  -  codename Nova   |
+      |      @@VERSION@@ @@STAGE@@  -  codename @@CODENAME@@   |
       '--------------------------------------'
 
 AstraOS is an independent Linux distribution based on Debian GNU/Linux.

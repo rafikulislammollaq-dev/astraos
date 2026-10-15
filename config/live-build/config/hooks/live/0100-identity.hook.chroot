@@ -54,6 +54,13 @@ install_file "$STAGE/system/os-release" /usr/lib/os-release
 install_file "$STAGE/system/issue" /etc/issue
 install_file "$STAGE/system/issue.net" /etc/issue.net
 install_file "$STAGE/system/motd" /etc/motd
+# /etc/lsb-release is owned by the lsb-release package when it is installed. AstraOS
+# overwrites it on purpose, the same way it overwrites base-files' /etc/issue and /etc/motd:
+# the file's own header says it is rendered from system/lsb-release.in, and 0600-cleanup
+# preserves /etc/lsb-release into the build-info directory for provenance. Until this line
+# existed nothing installed it, so lsb_release reported Debian on an AstraOS image while the
+# staged, rendered file went unused.
+install_file "$STAGE/system/lsb-release" /etc/lsb-release
 install_file "$STAGE/system/default-hostname" /etc/hostname
 
 # --- Firewall defaults and greeter configuration ------------------------------

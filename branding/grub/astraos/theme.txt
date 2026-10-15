@@ -43,7 +43,7 @@ terminal-border: "0"
         align = "center"
         color = "#FF5CC8"
         font = "DejaVu Sans Mono Regular 12"
-        text = "ASTRA OS  0.1.0 ALPHA"
+        text = "ASTRA OS  0.2.0 ALPHA"
     }
 }
 
