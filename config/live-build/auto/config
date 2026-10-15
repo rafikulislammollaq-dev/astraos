@@ -153,8 +153,13 @@ if supports --linux-packages; then set -- "$@" --linux-packages "linux-image lin
 # `quiet splash` is applied to the normal entry only. The failsafe entry deliberately
 # drops quiet/splash and disables power management so a user can read boot messages and
 # recover from a graphics or ACPI problem (plan §7.4).
-LIVE_APPEND="boot=live components username=${ASTRAOS_LIVE_USER} hostname=${ASTRAOS_LIVE_HOSTNAME} locales=en_US.UTF-8 keyboard-layouts=us keyboard-variant= timezone=UTC live-config.hostname=${ASTRAOS_LIVE_HOSTNAME} quiet splash"
-FAILSAFE_APPEND="boot=live components username=${ASTRAOS_LIVE_USER} hostname=${ASTRAOS_LIVE_HOSTNAME} locales=en_US.UTF-8 keyboard-layouts=us timezone=UTC nolapic noapic acpi=off nomodeset"
+#
+# USER-FULLNAME is not cosmetic. live-config creates the account with the name from
+# this parameter and falls back to "Debian Live user" when it is absent, which is what
+# a 0.2.0 boot showed on the greeter and in the panel's user menu. The value lives in
+# config/distribution.env with the rest of the identity (ASTRAOS_LIVE_FULLNAME).
+LIVE_APPEND="boot=live components username=${ASTRAOS_LIVE_USER} user-fullname=${ASTRAOS_LIVE_FULLNAME} hostname=${ASTRAOS_LIVE_HOSTNAME} locales=en_US.UTF-8 keyboard-layouts=us keyboard-variant= timezone=UTC live-config.hostname=${ASTRAOS_LIVE_HOSTNAME} quiet splash"
+FAILSAFE_APPEND="boot=live components username=${ASTRAOS_LIVE_USER} user-fullname=${ASTRAOS_LIVE_FULLNAME} hostname=${ASTRAOS_LIVE_HOSTNAME} locales=en_US.UTF-8 keyboard-layouts=us timezone=UTC nolapic noapic acpi=off nomodeset"
 if supports --bootappend-live; then set -- "$@" --bootappend-live "${LIVE_APPEND}"; fi
 if supports --bootappend-live-failsafe; then set -- "$@" --bootappend-live-failsafe "${FAILSAFE_APPEND}"; fi
 # The pinned live-build has no boot menu timeout option at all, so the menu uses its own

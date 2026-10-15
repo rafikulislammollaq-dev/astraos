@@ -39,6 +39,7 @@ IDENTITY_HOOK = "config/live-build/config/hooks/live/0100-identity.hook.chroot"
 REMOVEUSER = "installer/calamares/modules/removeuser.conf"
 USERS_CONF = "installer/calamares/modules/users.conf"
 GREETER_DROPIN = "branding/lightdm/lightdm.conf.d/50-astraos.conf"
+LOCKDOWN = "installer/calamares/modules/shellprocess.conf"
 ASTRAOS_INFO = "packages/astraos-base/root/usr/bin/astraos-info"
 SCAN_SECRETS = "packages/astraos-base/root/usr/bin/astraos-scan-secrets"
 
@@ -214,11 +215,41 @@ def test_installer_never_enables_autologin() -> None:
     )
 
     greeter = read(GREETER_DROPIN)
-    assert re.search(r"^autologin-user=\s*$", greeter, re.M), (
-        "the greeter drop-in does not clear autologin-user, so a stray autologin could "
-        "survive from another configuration file"
+    # 0.2.1 moved the lock-down out of this file and into the installer. The drop-in
+    # ships inside the live image as well, and live-config arranges the live medium's
+    # autologin by editing the commented autologin keys in /etc/lightdm/lightdm.conf
+    # while the medium boots; a drop-in that cleared autologin-user cancelled that, so
+    # a 0.2.0 live boot could stop at the greeter and ask for a password the user had
+    # never been given. The rule this test exists for is asserted where it now lives.
+    assert not re.search(r"^autologin-user=", strip_comments(greeter), re.M), (
+        "the greeter drop-in sets autologin-user again. The same file is copied into "
+        "the live image, where that key cancels the autologin live-config arranges, so "
+        "a live boot would stop at a password prompt."
     )
     assert "allow-guest=false" in greeter, "the greeter drop-in does not disable guest sessions"
+
+    # The half of the policy that survives onto the disk is the installer's job: it
+    # runs on the target after unpackfs, where the live autologin can be undone.
+    lockdown = read(LOCKDOWN)
+    assert re.search(r"^[ \t]*autologin-user=[ \t]*$", lockdown, re.M), (
+        "the installer's lock-down step does not clear autologin-user, so the live "
+        "session's autologin would follow the installation onto the disk"
+    )
+    assert re.search(r"^[ \t]*autologin-session=[ \t]*$", lockdown, re.M), (
+        "the installer's lock-down step does not clear autologin-session"
+    )
+    assert re.search(r"^[ \t]*autologin-user-timeout=0[ \t]*$", lockdown, re.M), (
+        "the installer's lock-down step does not set autologin-user-timeout to 0"
+    )
+    assert "#autologin-user=" in lockdown, (
+        "the installer's lock-down step does not neutralise the autologin that "
+        "live-config wrote into /etc/lightdm/lightdm.conf; the installer copies that "
+        "file onto the disk verbatim"
+    )
+    assert "*live*.conf" in lockdown, (
+        "the installer's lock-down step does not remove live-only LightDM drop-ins "
+        "from the target"
+    )
 
 
 def test_installer_ships_no_fixed_credentials() -> None:
