@@ -89,12 +89,32 @@ monospace face so digits do not jitter as they change.
 
 ## 4. Layout
 
-Matching the reference designs:
+One bar, at the bottom, 44px tall, full width. This is the Windows 11 arrangement, because
+the people this distribution is built for arrive from Windows and already know where the
+Start button is.
 
-- **Top panel** (30px): application menu, window list, tray, clock.
-- **Bottom dock** (40px): launcher icons, workspace switcher, show-desktop.
-- **Workspace pills**: the coloured workspace indicators from the references, provided by
-  the Xfce workspace switcher.
+- **Centre:** the ring Start button (whiskermenu, icon-only) followed by the task buttons
+  — docklike, one icon per application, a dot for running instances, pinned launchers for
+  Files, Terminal, Firefox, Editor and Welcome. Two invisible expandable separators push
+  that cluster to the middle of the bar. The centre is not perfectly centred, because the
+  right-hand cluster is wider; Windows 11 has the same asymmetry.
+- **Right:** the notification tray, volume, battery, the ticking mono clock (`%H:%M:%S`)
+  and the show-desktop sliver.
+- **Workspace switching** keeps the keyboard habits (Super+arrows, Ctrl+Alt+arrows). The
+  workspace pager stays available from the panel's preferences rather than on the bar.
+
+The 0.1.0 two-bar layout — a 30px top panel with the window list, over a 40px bottom dock
+— was removed in 0.2.0. Two bars cost vertical space on the 1366×768 screens this
+distribution has to run on, and they split the same information across two places. The
+HUD identity is carried by the wallpaper, the window decorations, the neon terminal and
+the boot splash instead.
+
+**The layout is a file, and the file has to be where xfce4-panel looks.** The panel
+definitions live at the channel root (`/panels/panel-N`) and each plugin under
+`/plugins/plugin-N`, whose value is the plugin's type. A wrapper property — which 0.2.0
+had — is not migrated and not reported: xfce4-panel simply finds no panel and builds
+Debian's default layout instead, which is how a live session came to show a stock top bar
+over the AstraOS wallpaper. `tests/static/test_desktop_skel.py` asserts the paths.
 
 ## 5. The ring mark
 
