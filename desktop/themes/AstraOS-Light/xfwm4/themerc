@@ -28,7 +28,7 @@
 #   WINDOW_TITLEBAR_HEIGHT  30px  -> height of title_1.png .. title_4.png and of
 #                                      the button rows. xfwm4 has no "titlebar
 #                                      height" key; it measures the image.
-#   WINDOW_BUTTON_SIZE      18px  -> width/height of the button bitmaps
+#   WINDOW_BUTTON_SIZE      24px  -> width/height of the button bitmaps
 #                                      (menu, stick, shade, hide, maximize,
 #                                      close). There is no "button size" key.
 #   WINDOW_CORNER_RADIUS    10px  -> corner geometry of the title bitmaps.
@@ -143,7 +143,7 @@ border_color=#D8DCE6
 # --- Window buttons ------------------------------------------------------
 # WINDOW_BUTTON_SPACING=4: the gap between adjacent button pixmaps. button
 # offset is the distance from the button row to the titlebar edge; it mirrors the
-# same 4px so the row sits evenly inside a 30px titlebar next to an 18px button.
+# same 4px so the row sits evenly inside a 30px titlebar next to a 24px button.
 button_spacing=4
 button_offset=4
 

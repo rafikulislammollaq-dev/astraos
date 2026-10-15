@@ -296,14 +296,19 @@ BUTTONS = ("close", "maximize", "hide", "menu", "stick", "shade")
 XFWM4_STATES = ("active", "inactive", "toggled")
 
 
-def _render_button(path: Path, name: str, pal: ThemePalette, state: str) -> None:
-    """One titlebar button.
+def _render_button(path: Path, name: str, pal: ThemePalette, state: str, size: int) -> None:
+    """One titlebar button, drawn at `size` pixels square.
 
     The glyph is drawn twice: a wider pass in the outline colour and a narrower pass in
     the ink colour. That is the standard way to get a crisp outlined mark at any size
-    without a separate outline asset, and it is what keeps a 16px button legible.
+    without a separate outline asset, and it is what keeps a small button legible.
+
+    `size` is WINDOW_BUTTON_SIZE. It used to be the literal 18 written here, which made
+    the token decorative: turning it up changed the line the renderer prints at the end
+    and nothing else, because every button bitmap stayed 18x18 and xfwm4 draws a button
+    at the size of its image. The images are the only thing xfwm4 measures, so a button
+    that is too small to hit is a token that never reached the pixels.
     """
-    size = 18
     canvas = Canvas(size, size)
 
     # An engaged toggle button is drawn in the accent, which is how a stuck window or a
@@ -393,7 +398,7 @@ def render_xfwm4_theme(out_dir: Path, theme_name: str, pal: ThemePalette,
         # Titlebar buttons.
         for button in BUTTONS:
             path = out_dir / f"{button}-{state}.png"
-            _render_button(path, button, pal, state)
+            _render_button(path, button, pal, state, metrics.button)
             written.append(path)
 
     return written
