@@ -52,7 +52,11 @@ else
 fi
 
 : "${ASTRAOS_NAME:=AstraOS}"
-: "${ASTRAOS_VERSION:=0.1.0}"
+# No default for the version. One of '0.1.0' sat here while config/distribution.env said
+# 0.2.0, so any build that fell back would have written onto the medium a version number
+# that no release ever had - a fabricated value, which plan §28 Rule 4 forbids. A missing
+# version is a failed build instead, and the message names the file that should have set it.
+: "${ASTRAOS_VERSION:?the staged distribution.env did not set ASTRAOS_VERSION}"
 : "${ASTRAOS_RELEASE_STAGE:=alpha}"
 : "${ASTRAOS_ARCH:=amd64}"
 : "${ASTRAOS_BASE_DISTRIBUTION:=Debian}"

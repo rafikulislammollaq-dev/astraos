@@ -108,6 +108,38 @@ def test_pretty_name_contains_version() -> None:
     )
 
 
+def test_iso_identity_carries_the_release_version() -> None:
+    """The ISO's own name for itself drifts silently, and it did.
+
+    Bumping the release to 0.2.0 updated ASTRAOS_VERSION and ASTRAOS_PRETTY_NAME but left
+    the ISO volume id and label reading 0.1.0, so the medium would have announced a release
+    that was not the one being built. ASTRAOS_ISO_VOLUME_ID is not decoration for a human
+    to read: scripts/configure-live-build.sh passes it to `lb config --iso-volume`, so it
+    becomes the ISO9660 volume id, and `isoinfo` is how anyone checks which image they have.
+    """
+    config = astraos_env.distribution()
+    version = config["ASTRAOS_VERSION"]
+    label = config["ASTRAOS_ISO_LABEL"]
+    volume = config["ASTRAOS_ISO_VOLUME_ID"]
+
+    assert version in label, (
+        f"ASTRAOS_ISO_LABEL is {label!r}, which does not name the version {version!r} "
+        "being built, so the medium would announce the wrong release"
+    )
+    assert config["ASTRAOS_RELEASE_STAGE"] in label, (
+        f"ASTRAOS_ISO_LABEL is {label!r} and does not name the release stage; an alpha "
+        "image has to say so on its own label"
+    )
+
+    # ISO9660 volume ids are upper case, and the dots of a version become underscores.
+    expected = f"ASTRAOS_{version.replace('.', '_')}_{config['ASTRAOS_ARCH'].upper()}"
+    assert volume == expected, (
+        f"ASTRAOS_ISO_VOLUME_ID is {volume!r}, but version {version!r} and architecture "
+        f"{config['ASTRAOS_ARCH']!r} imply {expected!r}. The volume id is what isoinfo "
+        "reports, so it has to be derivable from the release, not maintained by hand."
+    )
+
+
 def test_architecture_is_consistent() -> None:
     config = astraos_env.distribution()
     assert config["ASTRAOS_ARCH"] in ("amd64", "arm64"), (

@@ -35,13 +35,55 @@ grep_q() {
     check "$description" grep -qs -- "$pattern" "$file"
 }
 
-printf '%s verifying AstraOS 0.1.0 Alpha image contents\n' "$PREFIX"
+# grep-fx "description" FILE LINE - the line must appear exactly as written, with no
+# regular expression involved. Used for version checks, where the expected value comes
+# from another file and escaping its dots would be the only alternative.
+grep_fx() {
+    description="$1"; file="$2"; line="$3"
+    check "$description" grep -qsxF -- "$line" "$file"
+}
+
+# --- The release's own version, read rather than repeated ---------------------
+#
+# This script used to assert that /etc/os-release matched a literal '0\.1\.0'. When the
+# release moved to 0.2.0 that literal was the only place in the repository still saying
+# 0.1.0, and it failed a complete image build for no reason other than the bump: both
+# identity files had been rendered correctly at 0.2.0 from config/distribution.env.
+#
+# Reading the value makes the assertion stronger as well as less brittle. It now checks
+# that the two identity files the image ships agree with each other, which is a real
+# invariant, where before it checked only that one of them matched a constant kept in a
+# third place.
+release_field() {  # release_field FIELD -> the value of FIELD in /etc/astraos-release
+    grep -m1 "^$1=" /etc/astraos-release 2>/dev/null | cut -d= -f2- | tr -d '"'
+}
+RELEASE_VERSION="$(release_field VERSION)"
+
+if [ -f /etc/astraos-release ]; then
+    printf '%s verifying %s %s %s image contents\n' "$PREFIX" \
+        "$(release_field NAME)" "$RELEASE_VERSION" "$(release_field RELEASE_STAGE)"
+else
+    printf '%s verifying the AstraOS image contents\n' "$PREFIX"
+fi
 
 # --- Distribution identity ----------------------------------------------------
 check "os-release exists"                 test -f /etc/os-release
 grep_q "os-release reports ID=astraos"    /etc/os-release '^ID=astraos$'
 grep_q "os-release declares the Debian base" /etc/os-release '^ID_LIKE=debian$'
-grep_q "os-release declares 0.1.0"        /etc/os-release '^VERSION_ID="0\.1\.0"$'
+# The expected version comes from the image's own release file, not from a literal here,
+# so a version bump cannot leave this assertion behind. See release_field above.
+case "$RELEASE_VERSION" in
+    '' | unknown)
+        check "astraos-release declares a concrete version" false
+        ;;
+    *)
+        check "astraos-release declares a concrete version ($RELEASE_VERSION)" true
+        grep_fx "os-release VERSION_ID agrees with astraos-release" \
+            /etc/os-release "VERSION_ID=\"$RELEASE_VERSION\""
+        grep_fx "os-release ASTRAOS_VERSION agrees with astraos-release" \
+            /etc/os-release "ASTRAOS_VERSION=\"$RELEASE_VERSION\""
+        ;;
+esac
 check "astraos-release exists"            test -f /etc/astraos-release
 check "astraos-info command is installed" test -x /usr/bin/astraos-info
 

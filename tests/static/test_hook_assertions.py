@@ -3,7 +3,7 @@
 A chroot hook only ever runs on a build host, at the end of the chroot stage, after every
 package has been installed. Nothing on a development machine executes one, so a hook
 assertion that no longer matches the file it inspects is discovered after a full build
-cycle. Both of the checks below were written after exactly that happened:
+cycle. The checks below were written after exactly that happened:
 
   * 0300-installer's hook required an unquoted `defaultFileSystemType: ext4`, while the
     shipped Calamares configuration is valid YAML with the value quoted. The image build
@@ -11,6 +11,9 @@ cycle. Both of the checks below were written after exactly that happened:
   * 0700-verify required `/usr/bin/ssh` to be absent, while 50-networking.list.chroot
     deliberately selects openssh-client. No build satisfying the package selection could
     ever pass that check.
+  * 0700-verify required /etc/os-release to declare "0.1.0" as a written-out literal, while
+    config/distribution.env had moved to 0.2.0. Every package built and 47 other assertions
+    passed; the image was refused because the version had been raised.
 
 These are pins, not parsers: the pattern has to appear in the hook, and it has to hold for
 the file the repository ships. A hook pattern is only as good as the file it is compared
@@ -202,4 +205,42 @@ def test_the_passwordless_rule_check_reads_rules_and_not_prose() -> None:
     assert compiled.search("%astra ALL=(ALL:ALL) NOPASSWD: ALL"), (
         "the passwordless-rule pattern does not match a real passwordless rule, so it would "
         "not catch the thing it exists to catch"
+    )
+
+
+def test_no_hook_writes_the_release_version_as_a_literal() -> None:
+    """A version literal in a hook turns a release bump into a failed image build.
+
+    This is the case that cost the most, and it is the same shape as the two above: an
+    assertion that was true when written and stopped being true for a reason nobody was
+    watching. 0700-verify required /etc/os-release to contain 'VERSION_ID="0\\.1\\.0"' while
+    config/distribution.env said 0.2.0. Every package built, all 47 other image assertions
+    passed, and the build died because the version was raised — the one change that is
+    supposed to be routine.
+
+    The hook now reads the version out of the image's own /etc/astraos-release, where it is
+    rendered from config/distribution.env, so the assertion checks that the two identity
+    files the image ships agree with each other instead of comparing one of them with a
+    constant kept in a third place. This test keeps a literal from growing back, for the
+    current version and for the next one.
+
+    Commented-out examples are allowed: 0800-disk-info quotes the exact medium string a
+    0.1.0 build produced, and that record is worth keeping.
+    """
+    version = astraos_env.distribution()["ASTRAOS_VERSION"]
+    pattern = re.compile(rf"(?<![\d.]){re.escape(version)}(?![\d.])")
+
+    offenders: list[str] = []
+    for hook_path in sorted(HOOKS_DIR.iterdir()):
+        if not hook_path.is_file():
+            continue
+        for number, line in enumerate(_without_comments(_read(hook_path)).splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{hook_path.name}:{number}: {line.strip()}")
+
+    assert not offenders, (
+        f"a hook writes the release version {version!r} as a literal, so the next version "
+        "bump will stop the build instead of changing it. Read the version from the image "
+        "(see release_field in 0700-verify.hook.chroot) or from the staged distribution.env:\n  "
+        + "\n  ".join(offenders)
     )
