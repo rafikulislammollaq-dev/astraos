@@ -49,6 +49,14 @@ switched off, which produced a server that died with SIGILL and no output at all
 first model it loaded. The last flag makes the installed program one self-contained file
 instead of an executable that still needs the build tree for its libraries. The same
 applies to whisper with `astra-ai setup --build whisper` (or `--build all` for both).
+
+There is a third way that skips the compiler without risking the wrong CPU: AstraOS's own
+CI builds both programs with exactly these flags (the Build AI engine workflow) and
+publishes them as a workflow artifact together with `SHA256SUMS.txt` and
+`BUILD-INFO.txt`. Download the artifact, copy `llama-server` and `whisper-cli` into
+`~/.local/share/astraos/ai/bin/`, and `astra-ai status` shows the path it found. A binary
+downloaded from anywhere else is still the thing to avoid: nobody there built it for this
+CPU.
 Voice needs one more thing: `astra-ai setup --voice` covers espeak-ng for speaking and a
 whisper model for transcribing, and `astra ai say TEXT` speaks a line through the
 machine's own speakers.

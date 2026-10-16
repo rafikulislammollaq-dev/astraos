@@ -190,6 +190,15 @@ CI-specific notes:
 - The workflow summary ends with an explicit statement of what it did **not** test:
   booting, installing and everything that follows.
 
+There is a second CI workflow, `.github/workflows/build-ai-engine.yml`, which has nothing
+to do with the image: it builds the assistant's runtime (`llama-server`, `whisper-cli`)
+through `astra-ai setup --build all`, checks the binaries against the SIGILL class this
+hardware measured (no FMA/BMI2/F16C, no RPATH into the build tree), runs the engine on an
+emulated Sandy Bridge with a real model, and publishes everything as the
+`astra-ai-engine-linux-x86_64-avx` artifact. It runs on every push that changes
+`packages/astraos-ai/root/usr`, so the twenty-minute compile never has to happen on the
+user's desktop.
+
 ## 9. After a successful build
 
 A structurally valid ISO is **not** a working operating system. Boot it:

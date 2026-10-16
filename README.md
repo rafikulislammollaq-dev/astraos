@@ -47,6 +47,23 @@ Tested from the source tree on 2026-10-16 in WSL on the same hardware:
   Three defects that stopped the very first frame were found and fixed by doing
   this (see `fix(hud)` in the log for 2026-10-16).
 
+Built and proven on GitHub Actions on 2026-10-16 (Build AI engine run #1, about
+5 minutes, from the commit that added the workflow):
+
+- The assistant's engine compiles through the assistant's own command,
+  `astra-ai setup --build all`, and the built binaries pass the checks this
+  hardware taught us: no FMA, BMI2 or F16C instruction, no RPATH into the build
+  tree, no missing library.
+- The engine loads a real model and answers over HTTP on an *emulated Sandy
+  Bridge* (`qemu-x86_64 -cpu SandyBridge`) - the same CPU class as this machine,
+  whose missing FMA/BMI2 once killed the process with SIGILL and no output.
+- A model downloads with `astra-ai setup --model`, `astra-ai ask` answers and
+  stops, `astra-ai work --json` takes a request through the ladder, and the
+  worker's JSON grammar is shown to be enforced even when the model is told to
+  answer in prose. (The model in this proof is the 360M router-class entry, the
+  smallest in the catalogue: a smoke test of the engine, not a test of the
+  ladder's answer quality.)
+
 Not tested: the installer, installing to disk, Wi-Fi, GPUs, physical machines,
 UEFI boot, audio, printing, Bluetooth, and the assistant's web page.
 
@@ -198,6 +215,23 @@ consistent, not that AstraOS works. Booting the ISO in a VM is the real test.
 
 ---
 
+## The assistant's engine, built in CI
+
+Compiling llama.cpp costs about twenty minutes of every core on this hardware, so it does
+not happen on this hardware. The **Build AI engine** workflow builds `llama-server` and
+`whisper-cli` on GitHub Actions - through the same command a user runs,
+`astra-ai setup --build all`, so the workflow cannot drift from the flag list in
+`setup.py` - proves the binaries (including actually running the engine on an emulated
+Sandy Bridge), and uploads them as the `astra-ai-engine-linux-x86_64-avx` artifact with
+`SHA256SUMS.txt` and `BUILD-INFO.txt`.
+
+To install a completed build: open the latest run on the Actions tab, download and unzip
+the artifact, copy `llama-server` and `whisper-cli` into `~/.local/share/astraos/ai/bin/`,
+and run `astra-ai status`, which prints the path it found. Building on the machine still
+works and is still documented in `docs/AI.md`: `astra-ai setup --build all`.
+
+---
+
 ## Repository layout
 
 ```
@@ -235,8 +269,11 @@ of HTML, CSS and Make. The operating system itself comes from Debian packages.
 7. See the AstraOS HUD on a booted ISO's screen. It renders from the source tree
    under GTK 3 on a virtual display (2026-10-16), but no built image has shown it
    on a real screen yet.
-8. Run the assistant end to end with a real model
-   (`astra-ai setup --model spark-x2.5-1.7b-q4_k_m`), and reach its page from a phone.
+8. Run the assistant end to end on this machine with the recommended ladder. The
+   engine, the `ask`/`work` path and the worker's JSON grammar are now proven in CI
+   (Build AI engine, 2026-10-16, including an emulated Sandy Bridge and the 360M
+   model), and the 1.7B executor is downloaded here; what remains is running the
+   ladder on this machine's own CPU and reaching its web page from a phone.
 
 ---
 

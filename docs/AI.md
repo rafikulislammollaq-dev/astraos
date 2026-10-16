@@ -280,6 +280,16 @@ NAME` fetches one model, and `astra-ai setup --build llama` (or `whisper`, or
 `all`) compiles the runtime from source. `astra-ai setup --voice` covers both
 halves of voice. Each is an explicit command; nothing downloads on its own.
 
+Compiling on this hardware takes about twenty minutes of every core, so the
+distribution builds the runtime for itself: every change under
+`packages/astraos-ai/root/usr` triggers the **Build AI engine** workflow, which
+runs `astra-ai setup --build all` with the pinned flags, proves the result
+(including running the engine on an emulated Sandy Bridge with a real model),
+and publishes `astra-ai-engine-linux-x86_64-avx` as a GitHub Actions artifact.
+Download it, copy `llama-server` and `whisper-cli` into
+`~/.local/share/astraos/ai/bin/`, and `astra-ai status` shows the path it found -
+the number of compilers you had to run stays zero.
+
 After any of this, `astra ai status` reports whether the model is ready, and
 `astra ai start` serves the page. The server never needs a restart to notice a
 missing tool: each endpoint reports "not installed" with the command that would
