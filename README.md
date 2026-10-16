@@ -16,8 +16,8 @@ Debian release, and not a website pretending to be an operating system.
 |---|---|---|
 | 1 | Source tree and static checks pass | Yes |
 | 2 | ISO builds in CI | Yes (Build ISO run 38864588609, 2026-10-16: image built in about 18 minutes, 25/25 structural checks, `structural=PASS`, ISO 2,432,696,320 bytes) |
-| 3 | ISO boots in a virtual machine | **Yes** (VirtualBox by hand, live session, 2026-10-15; QEMU in CI, run 38881934636, 2026-10-16 — the image's own self-test reported PASS, 39 checks) |
-| 4 | Network and browser work out of the box | **Network proven in CI** (run 38881934636: NetworkManager active, an IPv4 address, a real name resolved by DNS); **no browser has been launched in a booted image yet** |
+| 3 | ISO boots in a virtual machine | **Yes** (VirtualBox by hand, live session, 2026-10-15; QEMU in CI through the ISO's own boot menus on BIOS and UEFI, run 38913161772, 2026-10-16 — the image's own self-test reported PASS, 51 checks) |
+| 4 | Network and browser work out of the box | **Network proven in CI** (run 38913161772: NetworkManager active, an IPv4 address, a real name resolved by DNS); **no browser has been launched in a booted image yet** |
 | 5 | Installer runs and installed system boots | Not tested yet |
 | 6 | Tested on physical hardware | Not tested yet |
 | 7 | Secure Boot, signed images, stable release | Not supported |
@@ -140,10 +140,11 @@ the ISO stores the system as a compressed squashfs.
 2. **Copy and paste between the host and a virtual machine needs Guest Additions**,
    which the image does not ship. Right Ctrl releases the mouse; inside the terminal
    copy is Ctrl+Shift+C and paste is Ctrl+Shift+V.
-3. **Physical hardware, UEFI boot, and the installer are untested.** The image boots
-   in virtual machines — by hand in VirtualBox through the live menu (2026-10-15) and
-   in CI under QEMU (run 38881934636) — but nothing has run on physical hardware, no
-   boot has gone through UEFI, and Calamares has not been run at all.
+3. **Physical hardware and the installer are untested.** The image boots in virtual
+   machines — by hand in VirtualBox through the live menu (2026-10-15), and in CI
+   under QEMU through its own boot menus on BIOS and UEFI (run 38913161772) — but
+   nothing has run on physical hardware, no installation has been performed, and
+   Calamares has not been run at all.
 4. **The ISO is larger than it needs to be** (about 2.4 GB: APT recommends are on, and
    the codec, Wine and Flatpak sets are included).
 5. **`/etc/os-release` may be overwritten by a future upgrade of Debian's `base-files`.**
