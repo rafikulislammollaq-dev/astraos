@@ -14,6 +14,11 @@ cycle. The checks below were written after exactly that happened:
   * 0700-verify required /etc/os-release to declare "0.1.0" as a written-out literal, while
     config/distribution.env had moved to 0.2.0. Every package built and 47 other assertions
     passed; the image was refused because the version had been raised.
+  * 0300-installer's password-requirement check used `grep -A4E`; GNU grep reads that as
+    `-A 4E` ("invalid context length argument"), the error went to /dev/null, and the
+    assertion refused run 38909791960's image, whose packages and other assertions were
+    all in place. The check is two plain greps now, and
+    test_no_hook_passes_an_attached_flag_after_a_context_flag refuses the shape.
 
 These are pins, not parsers: the pattern has to appear in the hook, and it has to hold for
 the file the repository ships. A hook pattern is only as good as the file it is compared
@@ -59,6 +64,27 @@ HOOK_ASSERTIONS: list[tuple[str, str, str, str, bool]] = [
         r'^defaultFileSystemType:[[:space:]]*"?ext4"?',
         "installer/calamares/modules/partition.conf",
         "/etc/calamares/modules/partition.conf",
+        True,
+    ),
+    (
+        "0300-installer.hook.chroot",
+        r"^setRootPassword:[[:space:]]*false",
+        "installer/calamares/modules/users.conf",
+        "/etc/calamares/modules/users.conf",
+        True,
+    ),
+    (
+        "0300-installer.hook.chroot",
+        r"^passwordRequirements:",
+        "installer/calamares/modules/users.conf",
+        "/etc/calamares/modules/users.conf",
+        True,
+    ),
+    (
+        "0300-installer.hook.chroot",
+        r"^[[:space:]]+minLength:[[:space:]]*[1-9][0-9]*[[:space:]]*$",
+        "installer/calamares/modules/users.conf",
+        "/etc/calamares/modules/users.conf",
         True,
     ),
 ]
@@ -129,6 +155,31 @@ def test_hook_assertions_match_the_files_this_repository_ships() -> None:
 
     assert not problems, "hook assertions and the shipped files disagree:\n  " + "\n  ".join(
         problems
+    )
+
+
+def test_no_hook_passes_an_attached_flag_after_a_context_flag() -> None:
+    """`grep -A4E` is `grep -A 4E`: "invalid context length argument".
+
+    Run 38909791960 (2026-10-16) died at the end of the chroot stage because of exactly
+    this spelling: the context flag and the expression flag had been merged into one
+    word, GNU getopt consumed "4E" as the context length, the error was suppressed with
+    2>/dev/null, and the empty result refused an image whose packages and other
+    assertions were all fine. A flag that takes a numeric argument must stand alone
+    (`-A 4 -E`), and this test is what notices before a runner is spent - the pattern
+    tables above cannot, because the pattern itself was correct when the build died.
+    """
+    merged = re.compile(r"-[ABCm]\d+[A-Za-z]")
+    offenders: list[str] = []
+    for hook_path in sorted(HOOKS_DIR.iterdir()):
+        if not hook_path.is_file():
+            continue
+        for number, line in enumerate(_without_comments(_read(hook_path)).splitlines(), 1):
+            if merged.search(line):
+                offenders.append(f"{hook_path.name}:{number}: {line.strip()}")
+    assert not offenders, (
+        "a hook merges a numeric flag with other letters, which grep(1) misreads "
+        "(e.g. -A4E becomes -A 4E); write the flags separately:\n  " + "\n  ".join(offenders)
     )
 
 

@@ -143,7 +143,13 @@ else
     fail "users.conf does not set setRootPassword: false; the installer would offer a root password even though the root account must stay disabled (plan §13.1)"
 fi
 
-if grep -A4E '^passwordRequirements:' "$USERS_CONF" 2>/dev/null | grep -qE '^[[:space:]]+minLength:[[:space:]]*[1-9][0-9]*[[:space:]]*$'; then
+# Two plain greps, not one with context: `grep -A4E` is read by GNU grep as `-A 4E`
+# ("invalid context length argument"), the error goes to /dev/null, and the assertion
+# then refuses a correct image - run 38909791960 died at the end of the chroot stage on
+# exactly that spelling. Both patterns are pinned against this repository's users.conf
+# by tests/static/test_hook_assertions.py, which also refuses the flag shape everywhere.
+if grep -qsE '^passwordRequirements:' "$USERS_CONF" \
+        && grep -qsE '^[[:space:]]+minLength:[[:space:]]*[1-9][0-9]*[[:space:]]*$' "$USERS_CONF"; then
     printf '%s ok    an empty password is not accepted (minLength >= 1)\n' "$PREFIX"
 else
     fail "users.conf does not require a non-empty password (passwordRequirements: minLength >= 1); the users module accepts an empty password when no requirements are configured"

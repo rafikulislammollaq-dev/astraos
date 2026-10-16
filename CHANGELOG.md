@@ -180,7 +180,14 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   password was possible. `setRootPassword: false`, `user:`/`shell:` and
   `passwordRequirements: minLength: 1` replace them, the dead `username:` block is
   gone, and the build hook now refuses an image whose users.conf would offer a root
-  password or accept an empty one.
+  password or accept an empty one. The first run that carried the slice
+   (38909791960) died at the end of the chroot stage on the hook's own new assertion: it
+   used `grep -A4E`, which GNU grep reads as `-A 4E` — "invalid context length argument"
+   — so the pattern never ran and an image whose packages and other assertions were all
+   in place was refused. The assertion is two plain greps now, verified against the
+   shipped file before it was committed, and `tests/static/test_hook_assertions.py`
+   both pins the patterns and refuses that flag shape; the installer's first end-to-end
+   run is still pending.
 
 - **`astra doctor` no longer reads "Status: inactive" as active.** Its pattern was the
   unanchored `*"active"*`, which also matches "inactive" — the same defect the security
