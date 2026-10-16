@@ -241,6 +241,15 @@ first green run (38881934636, 2026-10-16) did: login prompt at 143.7 s of guest 
 window (`--timeout 120`) and the guest's own wait for the session both carry generous
 margin over that. A host with KVM does not pay the emulation cost.
 
+The screenshot step is not decoration — the roadmap's HUD item rests on a captured
+image of the booted desktop — so it is verified: the guest turns blanking off and
+repaints the session before it reports its result (its `screenshot-ready` check), and
+the host measures each capture and retries a flat image while the guest still holds
+the session. A flat capture that survives the retries is still kept, and the
+transcript says so. The first green run's image was black this way: QEMU's stdvga
+emulation (8.2 on the runner; fixed upstream in 9.0.2) clears the shared framebuffer
+when the guest blanks the screen. See `CHANGELOG.md`.
+
 ### The boot menus
 
 The self-test above boots a kernel the host script supplied. The `boot-menus` job

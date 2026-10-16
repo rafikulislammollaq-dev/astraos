@@ -15,8 +15,10 @@
 #      evidence;
 #   4. waits for "ASTRAOS-SMOKE: RESULT:" on the serial console - or gives up as soon as
 #      the console shows the boot itself failed;
-#   5. takes a screenshot of the booted desktop through the QEMU monitor, so a build
-#      leaves behind a picture of what a person would have seen;
+#   5. takes a screenshot of the booted desktop through the QEMU monitor and verifies it
+#      has content: a flat capture is retried while the guest still holds the session,
+#      because a QEMU stdvga blanking defect can otherwise leave a healthy boot looking
+#      black (run 38881934636's image was exactly that - see CHANGELOG.md);
 #   6. exits 0 only when the image reported PASS.
 #
 # The workflow .github/workflows/build-iso.yml runs this against the ISO it has just
@@ -330,9 +332,19 @@ while : ; do
 done
 
 # --- 5. a picture of the booted system -------------------------------------------------
-# The guest holds the desktop for this after reporting its result.
+# The guest holds the desktop for this after reporting its result, having just turned
+# blanking off and repainted the screen (its "screenshot-ready" check). The capture is
+# still verified: a QEMU stdvga defect (fixed upstream in 9.0.2; the CI runner ships
+# 8.2) used to clear the shared framebuffer when the guest blanked the screen, which
+# left run 38881934636's image a flat black with only the cursor. A flat capture is
+# retried while the guest still holds the session, and the shot with the most visible
+# content is the one kept.
 if [ -n "$result" ] && kill -0 "$QEMU_PID" 2>/dev/null; then
-    python3 - "$WORK/monitor.sock" "$WORK/screen.ppm" <<'PY'
+    attempt=1
+    best=""
+    best_sd=""
+    while [ "$attempt" -le 3 ]; do
+        python3 - "$WORK/monitor.sock" "$WORK/screen-$attempt.ppm" <<'PY'
 import socket
 import sys
 import time
@@ -346,8 +358,35 @@ s.sendall(("screendump %s\n" % shot_path).encode())
 time.sleep(3.0)  # the write is asynchronous
 s.close()
 PY
-    if [ -f "$WORK/screen.ppm" ] && command -v convert >/dev/null 2>&1; then
-        convert "$WORK/screen.ppm" "$WORK/screen.png" || true
+        shot="$WORK/screen-$attempt.ppm"
+        stats=""
+        if [ -f "$shot" ] && command -v convert >/dev/null 2>&1; then
+            # The standard deviation is the "has content" measure: a flat image is 0,
+            # whatever colour it is. Measuring a 1280x800 PPM this way is quick.
+            stats="$(convert "$shot" -colorspace Gray -format '%[fx:mean] %[fx:standard_deviation]' info: 2>/dev/null || true)"
+        fi
+        sd="$(printf '%s\n' "$stats" | awk '{print $2}')"
+        say "screenshot attempt ${attempt}: mean/sd = ${stats:-unknown}"
+        if [ -f "$shot" ]; then
+            if [ -z "$best" ] || awk -v a="$sd" -v b="$best_sd" 'BEGIN { exit (a > b) ? 0 : 1 }'; then
+                best="$shot"
+                best_sd="$sd"
+            fi
+            if awk -v a="$sd" 'BEGIN { exit (a > 0.01) ? 0 : 1 }'; then
+                break
+            fi
+        fi
+        attempt=$((attempt + 1))
+        sleep 2
+    done
+    if [ -n "$best" ]; then
+        cp -f "$best" "$WORK/screen.ppm"
+        if command -v convert >/dev/null 2>&1; then
+            convert "$WORK/screen.ppm" "$WORK/screen.png" || true
+        fi
+        if ! awk -v a="$best_sd" 'BEGIN { exit (a > 0.01) ? 0 : 1 }'; then
+            say "WARNING: the kept screenshot is a flat image (standard deviation ${best_sd:-unknown}); the QEMU stdvga blanking defect is the known cause"
+        fi
     fi
 fi
 

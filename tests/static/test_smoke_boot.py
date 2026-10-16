@@ -298,6 +298,36 @@ def test_the_guest_phone_section_answers_the_hosts_sequence() -> None:
         assert marker in text, f"the guest no longer waits for {marker!r}"
 
 
+def test_the_guest_prepares_the_screen_for_the_capture() -> None:
+    text = _text(GUEST_SCRIPT)
+    assert "screenshot-ready" in text, (
+        "the capture must show the desktop; the guest has to turn blanking off and "
+        "repaint the screen before it reports its result, not hope for the best"
+    )
+    for token in ("xset s off", "s noblank", "dpms force on", "xset -dpms", "xrefresh"):
+        assert token in text, f"the screen preparation no longer runs {token!r}"
+    assert "runuser" in text, (
+        "the X utilities must run as the session user with the session's DISPLAY and "
+        "XAUTHORITY; root has neither"
+    )
+
+
+def test_the_host_verifies_the_screenshot_has_content() -> None:
+    text = _text(HOST_SCRIPT)
+    assert "standard_deviation" in text, (
+        "a flat capture must be detected: QEMU stdvga's blanking defect (see "
+        "CHANGELOG.md) left the first green run's image flat black although the boot "
+        "was healthy"
+    )
+    assert "screen-$attempt.ppm" in text, (
+        "the retry must capture to separate files so the best one can be kept"
+    )
+    assert "WARNING" in text, (
+        "when even the kept capture is flat, the transcript must say so instead of "
+        "presenting it as a picture of the desktop"
+    )
+
+
 def test_the_host_answers_the_guest_phone_sequence() -> None:
     text = _text(HOST_SCRIPT)
     assert r"phone-code: (\d+)" in text, (

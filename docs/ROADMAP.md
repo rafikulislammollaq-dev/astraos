@@ -143,8 +143,12 @@ updated. Every step proven in CI or recorded as untested.
   machine reports otherwise, the README keeps "Secure Boot is not supported".
 - [ ] **The HUD on a booted image's screen.** The boot self-test's screenshot is
   meant to be the first version of this evidence; the first green run's screenshot
-  came back black (a capture defect — see `CHANGELOG.md`), so making the capture show
-  the desktop comes first.
+  came back black — a QEMU stdvga blanking defect (see `CHANGELOG.md`). The fix exists
+  in the source (2026-10-16, pending its first run): the guest turns blanking off,
+  forces the display on and repaints the session before reporting its result, and the
+  host verifies the capture has content, retrying a flat image while the guest still
+  holds the session. The item stays open until a captured image actually shows the
+  desktop.
 - [ ] **A recovery procedure that has been performed**: snapshot, break, restore,
   in a VM, with Timeshift.
 

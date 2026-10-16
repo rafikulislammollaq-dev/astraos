@@ -273,6 +273,31 @@ PY
     kill "$phone_pid" 2>/dev/null || true
 fi
 
+# --- the screen, ready for the caller's screenshot ------------------------------------
+# The caller takes its picture of this desktop during the hold below, and that picture
+# is evidence (the roadmap's HUD item rests on it). A QEMU stdvga defect - fixed upstream
+# in 9.0.2, not in the 8.2 the CI runner ships - clears the shared framebuffer when the
+# guest blanks the screen, and unblanking then stays black: run 38881934636's captured
+# image was exactly that, a black screen with only the cursor, while this self-test
+# reported a healthy session. So blanking is turned off for the rest of this boot, the
+# display is forced back on if something had turned it off, and the whole screen is
+# repainted (xrefresh) so the framebuffer holds the desktop again even if the defect
+# had already run. x11-xserver-utils and x11-utils ship in the image (25-graphics list).
+XAUTHORITY="/home/${LIVE_USER}/.Xauthority"
+as_user() {
+    runuser -u "$LIVE_USER" -- env DISPLAY=:0 XAUTHORITY="$XAUTHORITY" "$@"
+}
+if as_user xset s off >/dev/null 2>&1 \
+    && as_user xset s noblank >/dev/null 2>&1 \
+    && as_user xset dpms force on >/dev/null 2>&1 \
+    && as_user xset -dpms >/dev/null 2>&1 \
+    && as_user xset s reset >/dev/null 2>&1 \
+    && as_user xrefresh >/dev/null 2>&1; then
+    ok "screenshot-ready" "blanking off, display on, screen repainted"
+else
+    bad "screenshot-ready" "the session could not be asked to unblank and repaint"
+fi
+
 # --- result ---------------------------------------------------------------------------
 say "checks: $CHECKS, failed: $FAILED"
 if [ "$FAILED" -eq 0 ]; then

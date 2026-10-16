@@ -19,6 +19,20 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The screenshot capture is made real (source; its first run is pending).** The
+  first green boot self-test's captured image was a flat black with only the cursor
+  although the session was healthy — QEMU's stdvga emulation (fixed upstream in 9.0.2,
+  not in the 8.2 the CI runner ships) clears the shared framebuffer when the guest
+  blanks the screen, and unblanking then stays black. The guest now turns blanking off
+  (`xset s off`, `s noblank`), forces the display on (`xset dpms force on`, `-dpms`)
+  and repaints the whole screen (`xrefresh`) as its `screenshot-ready` check right
+  before it reports its result; the host measures every capture's standard deviation,
+  retries while the guest still holds the session, keeps the shot with the most
+  content, and says so in the transcript when even that is flat. The image utilities
+  the guest uses (`x11-xserver-utils`, `x11-utils`) already ship. The first run that
+  captures the desktop for real is the proof, and it will be recorded here when it
+  happens.
+
 - **The ISO's own boot menus are exercised (source; its first CI run is pending).** It
   is the menu, not the host, that boots the guest now: `scripts/boot-menu-test.sh`
   boots the built ISO with QEMU's own firmware starting the machine — no kernel, no
