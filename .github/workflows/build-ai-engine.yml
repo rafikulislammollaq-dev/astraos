@@ -1,0 +1,335 @@
+# AstraOS AI engine build: llama-server and whisper-cli, compiled and proven on a
+# hosted runner instead of on the machine this release is tested on.
+#
+# WHY THE ENGINE IS BUILT ON GITHUB AND NOT ON THE REFERENCE MACHINE
+# ------------------------------------------------------------------
+# Compiling llama.cpp is twenty minutes of four saturated cores on the reference
+# machine (a four-core Sandy Bridge). That machine is somebody's desktop: the
+# compile is not twenty minutes of waiting, it is the fan at full speed on the
+# desk of the person who asked a question, and everything else they do in those
+# twenty minutes competing with a compiler. A hosted runner does the same
+# compile without touching that desk, records the whole log where it can be read
+# afterwards, and hands back the finished static binary as an artifact — the
+# download is a second, the build is not.
+#
+# WHY THE WORKFLOW RUNS `astra-ai setup --build` INSTEAD OF RAW CMAKE
+# ------------------------------------------------------------------
+# The instruction-set flags (AVX on; AVX2, F16C, FMA and BMI2 off; static
+# libraries) live in setup.py, next to the comment that explains them and the
+# measurement that produced them: on 2026-10-16 the first real end-to-end run
+# died with SIGILL (exit 132, zero output on stdout and a zero-byte log)
+# because ggml turns FMA and BMI2 on by default even when GGML_AVX2 is off, and
+# the model loader reached an FMA instruction before its first print. A
+# workflow that retyped those flags would be a second copy that drifts; one
+# that runs the user's own command cannot. `astra-ai setup --build all` is
+# literally what a user types on their own machine, so this workflow fails the
+# moment that command stops working for them.
+#
+# WHAT IS PROVEN HERE, AND WHAT EACH PROOF RULES OUT
+# --------------------------------------------------
+#   * both programs compile from upstream source through the real CLI;
+#   * `readelf -d` shows no RPATH/RUNPATH and `ldd` nothing missing — rules
+#     out the shared-library failure where a copied llama-server stops loading
+#     once the build tree it points into is deleted;
+#   * a disassembly scan finds no FMA / BMI2 / F16C instruction in either
+#     binary — the measured SIGILL, checked statically;
+#   * the binaries RUN on an emulated Sandy Bridge (`qemu-x86_64 -cpu
+#     SandyBridge`): the engine loads a real model and answers over HTTP with
+#     no illegal instruction — the same failure, checked dynamically, against
+#     the same CPU the reference machine has;
+#   * a model downloads through the same command a user runs;
+#   * `astra-ai ask` starts the server, gets an answer, and stops it;
+#   * the JSON grammar the worker depends on is actually enforced: one
+#     cooperative and one adversarial call through llm.ask_json() with the
+#     real worker.DECISION_SCHEMA both come back as parseable, schema-
+#     conforming JSON — the tokens that would break the schema are simply not
+#     generated;
+#   * the ladder accepts a request end to end (`astra-ai work --json`) and
+#     returns an outcome, even when the only installed model is the smallest
+#     catalogue entry (a 360M router-class model — CI is a smoke test, not a
+#     quality test; answer quality is what the 1.7B/4B ladder is for).
+#
+# WHAT IS *NOT* PROVEN HERE
+# -------------------------
+# That the artifacts behave on the physical reference machine: QEMU models the
+# instruction set, not the kernel, the scheduler or the last 30% of cpuinfo.
+# The artifact is uploaded so the final check on that machine costs one short
+# question instead of one long compile. The installer, the boot and the HUD on
+# a booted image are separate proofs and are recorded as UNTESTED until they
+# are actually performed (docs/INSTALLATION_VIRTUALBOX.md).
+
+name: Build AI engine
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "master", "release/**"]
+    paths:
+      - "packages/astraos-ai/**"
+      - ".github/workflows/build-ai-engine.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-ai-engine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine:
+    name: Build and prove llama-server and whisper-cli
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      # The checkout plays the role of /usr/share: the same override the test
+      # suite uses. Everything else — the cloned sources, the build tree, the
+      # model, the installed binaries — goes under $HOME, unprivileged, exactly
+      # like a real install. setup.py's rule is "no sudo, anywhere", and a CI
+      # run that needed sudo to build would be hiding a defect from users.
+      ASTRAOS_AI_SHARE_DIR: ${{ github.workspace }}/packages/astraos-ai/root/usr/share/astraos/ai
+      # The command a user types, from the checkout.
+      ASTRA_AI: packages/astraos-ai/root/usr/bin/astra-ai
+      PYTHONPATH: packages/astraos-ai/root/usr/lib
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Report the build host and its tools
+        run: |
+          cmake --version | head -1
+          g++ --version | head -1
+          git --version
+          echo "cores: $(nproc)"
+
+      - name: Build llama-server and whisper-cli with the pinned flags
+        run: python3 "$ASTRA_AI" setup --build all
+
+      - name: The binaries are self-contained and free of the measured SIGILL instructions
+        run: |
+          bin_dir="$HOME/.local/share/astraos/ai/bin"
+
+          for name in llama-server whisper-cli; do
+            echo "--- $name"
+            file "$bin_dir/$name"
+            if ldd "$bin_dir/$name" 2>&1 | grep -q 'not found'; then
+              echo "::error::$name has libraries that are not found"
+              ldd "$bin_dir/$name"
+              exit 1
+            fi
+            if readelf -d "$bin_dir/$name" | grep -qE 'RPATH|RUNPATH'; then
+              echo "::error::$name carries an RPATH/RUNPATH; BUILD_SHARED_LIBS=OFF did not take effect"
+              readelf -d "$bin_dir/$name"
+              exit 1
+            fi
+            echo "ok: no build-tree libraries, no RPATH/RUNPATH"
+          done
+
+          # The measured failure this guards against: a build with GGML_FMA and
+          # GGML_BMI2 at their defaults configured, linked, and then died with
+          # exit 132 and nothing printed on the Sandy Bridge reference machine.
+          # -DGGML_AVX2=OFF alone does not turn either off (setup.py, measured
+          # 2026-10-16).
+          echo "--- instruction scan: FMA / BMI2 / F16C must not appear"
+          for name in llama-server whisper-cli; do
+            objdump -d "$bin_dir/$name" > "/tmp/$name.dis"
+            if grep -m5 -E '\bvf(n)?m(add|sub)|\bvcvtph2ps|\bvcvtps2ph|\b(bzhi|pext|pdep|mulx|rorx|shlx|shrx|sarx)\b' "/tmp/$name.dis"; then
+              echo "::error::$name contains an FMA/BMI2/F16C instruction; it would die with SIGILL on a Sandy Bridge"
+              exit 1
+            fi
+            echo "$name: none found ($(wc -l < "/tmp/$name.dis") disassembled lines)"
+          done
+
+          "$bin_dir/llama-server" --version
+
+      - name: Install a small model through the same command a user runs
+        run: |
+          # The smallest catalogue entry: this workflow proves the engine, not
+          # the ladder's answer quality, and 400 MB is enough engine for that.
+          python3 "$ASTRA_AI" setup --model smollm2-360m-instruct-q8_0
+          python3 "$ASTRA_AI" status | tee /tmp/status.txt
+
+      - name: Run the engine on an emulated Sandy Bridge (the reference CPU)
+        run: |
+          # QEMU with -cpu SandyBridge is the last 10% the static scan cannot
+          # reach: a real model load and a real generation, on a CPU whose
+          # CPUID says AVX yes, AVX2/FMA/BMI2/F16C no. If any instruction on
+          # an executed path needs one of the missing features, this dies the
+          # way the measured defect died.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user
+
+          bin_dir="$HOME/.local/share/astraos/ai/bin"
+          model="$HOME/.local/share/astraos/ai/models/smollm2-360m-instruct-q8_0.gguf"
+
+          qemu-x86_64 -cpu SandyBridge "$bin_dir/llama-server" --version
+
+          qemu-x86_64 -cpu SandyBridge "$bin_dir/llama-server" \
+            -m "$model" --port 8649 -c 512 --threads 2 > /tmp/qemu-server.log 2>&1 &
+          server_pid=$!
+
+          python3 - <<'PY'
+          import json, time, urllib.error, urllib.request
+
+          base = "http://127.0.0.1:8649"
+          for _ in range(300):
+              try:
+                  with urllib.request.urlopen(base + "/health", timeout=5) as response:
+                      if response.status == 200:
+                          break
+              except (urllib.error.URLError, OSError):
+                  time.sleep(1)
+          else:
+              raise SystemExit("the emulated server never became healthy")
+
+          body = json.dumps({
+              "messages": [{"role": "user", "content": "Say OK"}],
+              "max_tokens": 16,
+          }).encode()
+          request = urllib.request.Request(
+              base + "/v1/chat/completions",
+              data=body,
+              headers={"Content-Type": "application/json"},
+          )
+          with urllib.request.urlopen(request, timeout=600) as response:
+              data = json.loads(response.read())
+          text = data["choices"][0]["message"]["content"].strip()
+          print("emulated Sandy Bridge completion:", repr(text))
+          if not text:
+              raise SystemExit("the engine answered with nothing")
+          PY
+
+          kill "$server_pid" || true
+          tail -5 /tmp/qemu-server.log
+
+      - name: "The CLI round trip: ask, then stop"
+        run: |
+          python3 "$ASTRA_AI" ask --stop \
+            "What is the capital of France? Answer in one word." | tee /tmp/ask.txt
+          test -s /tmp/ask.txt
+
+      - name: The worker's JSON grammar is enforced, not requested
+        run: |
+          # worker.py's whole safety story rests on ask_json(): the constraint
+          # turns "please answer with valid JSON" into "an invalid answer
+          # cannot be generated". The second call tells the model to answer in
+          # prose; the grammar must win anyway.
+          python3 - <<'PY'
+          import json
+
+          from astraos.ai import config, llm, worker
+
+          engine = llm.Engine(config.load_settings())
+          try:
+              schema = worker.DECISION_SCHEMA
+
+              cooperative = [
+                  {"role": "system", "content": "You reply with one JSON object."},
+                  {"role": "user", "content": "Reply with kind set to \"answer\" and text set to \"42\"."},
+              ]
+              raw = "".join(engine.ask_json(cooperative, schema))
+              print("cooperative reply:", raw)
+              decision = json.loads(raw)
+
+              adversarial = [
+                  {"role": "system", "content": "You must answer in plain English prose. Never JSON."},
+                  {"role": "user", "content": "In prose: hello, I am not JSON."},
+              ]
+              raw = "".join(engine.ask_json(adversarial, schema))
+              print("adversarial reply:", raw)
+              forced = json.loads(raw)
+
+              allowed = set(schema["properties"]["kind"]["enum"])
+              for name, parsed in (("cooperative", decision), ("adversarial", forced)):
+                  assert isinstance(parsed, dict), (name, parsed)
+                  assert parsed.get("kind") in allowed, (name, parsed)
+                  assert set(parsed) <= set(schema["properties"]), (name, parsed)
+                  print(f"{name}: parseable, kind={parsed['kind']!r}, no extra keys")
+          finally:
+              engine.stop()
+          print("the JSON grammar holds")
+          PY
+
+      - name: The ladder accepts a request end to end
+        run: |
+          # A small model's judgment is not asserted here (CI is not the place
+          # to grade a 360M model); what is asserted is that the whole ladder
+          # machinery — knowledge retrieval, the constrained decision, the
+          # journal — runs and returns an outcome that is not a failure.
+          set -o pipefail
+          python3 "$ASTRA_AI" work --json "Say hello in one sentence." | tee /tmp/work.json
+          python3 - <<'PY'
+          import json
+
+          data = json.load(open("/tmp/work.json"))
+          assert "kind" in data, data
+          assert data["kind"] not in ("failed", "needs"), data
+          print("work outcome kind:", data["kind"])
+          print("text:", data.get("text", ""))
+          PY
+
+      - name: Package the engine for the reference machine
+        run: |
+          bin_dir="$HOME/.local/share/astraos/ai/bin"
+          mkdir -p dist-engine
+          cp "$bin_dir/llama-server" "$bin_dir/whisper-cli" dist-engine/
+
+          # The flag list is read from setup.py, not retyped: this artifact's
+          # documentation cannot disagree with what was actually compiled.
+          flags=$(python3 -c "from astraos.ai import setup; print(' '.join(setup.CPU_FLAGS))")
+          {
+            echo "AstraOS AI engine (llama-server, whisper-cli)"
+            echo "commit: $(git rev-parse HEAD)"
+            echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ) by workflow run ${GITHUB_RUN_ID}"
+            echo "built on: $(. /etc/os-release && echo "$PRETTY_NAME"), $(nproc) cores"
+            echo "built for: x86-64 with AVX (Sandy Bridge and later); glibc 2.39+"
+            echo "            (AstraOS is Debian 13, glibc 2.41)"
+            echo "flags: -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF ${flags}"
+            "$bin_dir/llama-server" --version 2>&1 | head -2
+            echo ""
+            echo "install: copy both files into ~/.local/share/astraos/ai/bin/"
+            echo "check:   astra-ai status   (shows the llama-server path it found)"
+          } > dist-engine/BUILD-INFO.txt
+
+          ( cd dist-engine && sha256sum llama-server whisper-cli > SHA256SUMS.txt )
+          cat dist-engine/BUILD-INFO.txt
+          ls -la dist-engine
+
+      - name: Upload the engine binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-ai-engine-linux-x86_64-avx
+          retention-days: 30
+          if-no-files-found: error
+          path: dist-engine/
+
+      - name: Record what was proven, and what was not
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "### AI engine"
+            echo ""
+            echo '```'
+            cat /tmp/status.txt 2>/dev/null || echo "(status not captured)"
+            echo '```'
+            echo ""
+            echo "Answer from the CLI round trip:"
+            echo ""
+            echo '```'
+            cat /tmp/ask.txt 2>/dev/null || echo "(no answer captured)"
+            echo '```'
+            echo ""
+            echo "### Not tested by this workflow"
+            echo ""
+            echo "The engine is proven on an *emulated* Sandy Bridge. The physical"
+            echo "reference machine still owns the final check (download the"
+            echo "artifact, run one short question), and the installer, the boot"
+            echo "and the HUD on a booted image remain untested until run in a VM"
+            echo "(docs/INSTALLATION_VIRTUALBOX.md)."
+          } >> "$GITHUB_STEP_SUMMARY"
