@@ -32,6 +32,9 @@ DESCRIPTION = "the security baseline is enforced in the shipped configuration"
 SUDOERS = "packages/astraos-base/root/etc/sudoers.d/00-astraos"
 APT_POLICY = "packages/astraos-base/root/etc/apt/apt.conf.d/60-astraos-security"
 UFW_DEFAULTS = "system/security/astraos-firewall.default"
+UFW_CONF = "system/security/astraos-ufw.conf"
+UFW_RULES = "system/security/astraos-ufw-user.rules"
+UFW_RULES6 = "system/security/astraos-ufw-user6.rules"
 SYSCTL = "system/sysctl/60-astraos.conf"
 SECURITY_HOOK = "config/live-build/config/hooks/live/0500-security.hook.chroot"
 CLEANUP_HOOK = "config/live-build/config/hooks/live/0600-cleanup.hook.chroot"
@@ -41,6 +44,7 @@ USERS_CONF = "installer/calamares/modules/users.conf"
 GREETER_DROPIN = "branding/lightdm/lightdm.conf.d/50-astraos.conf"
 LOCKDOWN = "installer/calamares/modules/shellprocess.conf"
 ASTRAOS_INFO = "packages/astraos-base/root/usr/bin/astraos-info"
+ASTRA_DOCTOR = "packages/astraos-winbridge/root/usr/bin/astra"
 SCAN_SECRETS = "packages/astraos-base/root/usr/bin/astraos-scan-secrets"
 
 
@@ -108,13 +112,82 @@ def test_firewall_defaults_deny_inbound() -> None:
     )
 
 
-def test_firewall_is_documented_as_not_enabled() -> None:
-    """The reason the firewall is off must be recorded where it is configured."""
+def test_firewall_state_is_documented_where_it_is_configured() -> None:
+    """The firewall is on by default (2026-10-16); the files must say so together.
+
+    The defaults file explains why, ufw.conf carries the switch and the rule files
+    carry the exceptions. A reader of any one of them must be able to find the others.
+    """
     defaults = read(UFW_DEFAULTS)
-    assert "not enabled" in defaults.lower() or "NOT enabled" in defaults, (
-        "the ufw defaults do not state that the firewall is not enabled by default, so a "
-        "reader could reasonably assume it is active"
+    assert "enabled by default" in defaults, (
+        "the ufw defaults do not state that the firewall is enabled by default, so a "
+        "reader could reasonably assume nothing was decided"
     )
+    assert "/etc/ufw/ufw.conf" in defaults and "user.rules" in defaults, (
+        "the defaults file no longer points at the state file and the rules, so the "
+        "explanation and the implementation can drift apart unnoticed"
+    )
+    enabled = read(UFW_CONF)
+    assert re.search(r"^ENABLED=yes$", enabled, re.M), (
+        "the shipped ufw.conf does not start the firewall on boot; the default-on "
+        "decision would exist in the documentation and nowhere else"
+    )
+    for path in (UFW_RULES, UFW_RULES6):
+        rules = read(path)
+        assert "--dport 8765" in rules, (
+            f"{path} lost the assistant's page rule, so a phone on the local network "
+            "would be refused by the firewall the release itself ships"
+        )
+
+
+def test_firewall_rules_accept_only_the_documented_exceptions() -> None:
+    """The two exceptions are the whole inbound story; nothing else may be ACCEPTed.
+
+    The rules the release ships are the strongest part of the decision, so they are
+    pinned from the source: port, protocol and source range of every ACCEPT line, and
+    a matching `### tuple ###` for each rule - that is the form `ufw` itself reads and
+    rewrites, so a hand-edit that breaks it would silently lose the rule the next time
+    `ufw` touches the file.
+    """
+    expected = {
+        ("tcp", "8765"): {"192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"},
+        ("udp", "5353"): {"192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"},
+    }
+    expected6 = {
+        ("tcp", "8765"): {"fc00::/7", "fe80::/10"},
+        ("udp", "5353"): {"fc00::/7", "fe80::/10"},
+    }
+    for path, wanted, chain in (
+        (UFW_RULES, expected, "ufw-user-input"),
+        (UFW_RULES6, expected6, "ufw6-user-input"),
+    ):
+        rules = read(path)
+        accepted = [
+            line for line in rules.splitlines()
+            if line.startswith(f"-A {chain} ") and "-j ACCEPT" in line
+        ]
+        assert accepted, f"{path} has no ACCEPT rules at all"
+        found: dict[tuple[str, str], set[str]] = {}
+        for line in accepted:
+            port = re.search(r"--dport ([0-9]+)", line)
+            proto = re.search(r"-p (tcp|udp)", line)
+            source = re.search(r"-s (\S+)", line)
+            assert port and proto and source, f"{path}: unparsable ACCEPT line {line!r}"
+            key = (proto.group(1), port.group(1))
+            assert key in wanted, (
+                f"{path} accepts {key} - only the assistant's page (8765/tcp) and "
+                "mDNS (5353/udp) are the documented exceptions"
+            )
+            found.setdefault(key, set()).add(source.group(1))
+            assert f"### tuple ### allow {key[0]} {key[1]} " in rules, (
+                f"{path}: {line!r} has no matching ufw tuple comment; ufw's own parser "
+                "reads the tuples, and a rule without one would be lost the first time "
+                "`ufw` rewrites the file"
+            )
+        assert found == wanted, (
+            f"{path} exceptions are {sorted(found)}, expected {sorted(wanted)}; the "
+            "documented policy and the shipped rules have drifted apart"
+        )
 
 
 def test_kernel_hardening_settings_are_present() -> None:
@@ -351,9 +424,10 @@ def test_reported_firewall_state_is_never_overclaimed() -> None:
     """`astraos-info` must not report an inactive firewall as active.
 
     This is not hypothetical. The patterns were `*active*` and `*inactive*`, and a bare
-    `*active*` also matches "Status: inactive"; because case takes the first match, a fresh
-    install — where ufw is shipped disabled by design — reported `firewall active`. That is
-    a false security claim shown to the user, and a security review would have to trust it.
+    `*active*` also matches "Status: inactive"; because case takes the first match, an
+    install of the release before 2026-10-16 — when ufw was shipped disabled by design —
+    reported `firewall active`. That is a false security claim shown to the user, and a
+    security review would have to trust it.
     """
     inactive = _reported_firewall_state("Status: inactive")
     active = _reported_firewall_state("Status: active")
@@ -363,15 +437,41 @@ def test_reported_firewall_state_is_never_overclaimed() -> None:
         f"astraos-info reports {inactive!r} for an inactive firewall; a user would be told "
         "the firewall is protecting them when it is not"
     )
-    assert "default for this release" in inactive, (
-        "the inactive message no longer explains that inactive is the default for this "
-        "release, which is what stops it reading as a defect. This assertion used to look for "
-        "the release number '0.1.0' in that message, which made a security test fail when the "
-        "version was raised and tied the check to a number that has nothing to do with whether "
-        "the report is honest."
+    assert "sudo ufw enable" in inactive, (
+        "the inactive message no longer says how to turn the firewall back on. The "
+        "firewall is on by default since 2026-10-16, so an inactive one means someone "
+        "turned it off; the report has to hand the user the way back."
+    )
+    assert "default" not in inactive, (
+        f"astraos-info reports {inactive!r} for an inactive firewall, which still reads "
+        "as if being off were what the release ships; it was the default only until "
+        "2026-10-16, and the report is now false"
     )
     assert active == "active", f"astraos-info reports {active!r} for an active firewall"
     assert unprivileged.startswith("unknown"), (
         f"astraos-info reports {unprivileged!r} when ufw cannot be queried, so the "
         "fallback branch is unreachable or misordered"
+    )
+
+
+def test_astra_doctor_anchors_the_firewall_state_like_astraos_info() -> None:
+    """`astra doctor` carried the same unanchored `*active*` pattern.
+
+    "Status: inactive" contains "active"; reporting a firewall that is off as
+    protection is a false claim whether it is the shipped default or a state the user
+    chose. The two tools must read the state the same anchored way, and this test keeps
+    them from drifting apart again.
+    """
+    text = read(ASTRA_DOCTOR)
+    assert '"Status: active"*' in text, (
+        "astra doctor no longer anchors its active pattern, so an inactive firewall "
+        "would be reported as active"
+    )
+    assert '*"active"*' not in text, (
+        'astra doctor is back to the unanchored *"active"* pattern, which also matches '
+        '"Status: inactive"'
+    )
+    assert "sudo ufw enable" in text, (
+        "astra doctor no longer tells the user how to bring the firewall back when it "
+        "is not active; the release starts it on, so the way back is the whole message"
     )

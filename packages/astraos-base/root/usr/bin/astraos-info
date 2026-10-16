@@ -218,11 +218,13 @@ firewall_state() {
         result="$(ufw status 2>/dev/null | head -n1)"
         # The patterns are anchored deliberately. A bare *active* pattern also matches
         # "Status: inactive", and because case takes the first match, an unanchored
-        # pattern reports an inactive firewall as active — a false security claim on a
-        # fresh instalment, where ufw is documented as inactive. Keep the prefix.
+        # pattern reports an inactive firewall as active — a false security claim.
+        # The firewall is on by default since 2026-10-16, so "inactive" means
+        # something turned it off; the message says how to bring it back, and never
+        # claims the off state is what the release ships.
         case "$result" in
             "Status: active"*) printf 'active' ;;
-            "Status: inactive"*) printf 'inactive (the default for this release)' ;;
+            "Status: inactive"*) printf 'inactive (turned off; re-enable with: sudo ufw enable)' ;;
             *) printf 'unknown (run as root: sudo ufw status)' ;;
         esac
     else

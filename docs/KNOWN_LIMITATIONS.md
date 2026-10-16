@@ -139,15 +139,20 @@ ship. See `HARDWARE_COMPATIBILITY.md`.
 The desktop uses open-source drivers only. NVIDIA cards will work through `nouveau`,
 which is slower than the proprietary driver and, on newer chips, may not work at all.
 
-### 3.5 The firewall is not enabled by default
+### 3.5 The firewall's inbound exceptions cover private address ranges only
 
-Nothing listens on the network by default: there is no SSH server, no web server, and no
-remote administration daemon. Enabling a firewall during the live session can break the
-network the user needs to install, so it is left off with a documented policy in
-`/etc/ufw/astraos-policy.conf`.
+The firewall is on by default and inbound is denied. The two exceptions — the
+assistant's page (`8765/tcp`) and mDNS discovery (`5353/udp`) — are scoped to the
+private address ranges (`192.168.0.0/16`, `10.0.0.0/8`, `172.16.0.0/12`, and
+`fc00::/7`, `fe80::/10`). A network that hands the phone a *global* IPv6 address is
+therefore not covered until the user widens the rule:
 
-An application that starts listening is therefore not protected by a host firewall,
-which is the same position the other major desktop distributions take.
+    sudo ufw allow 8765/tcp
+
+`/etc/ufw/astraos-policy.conf` (shipped in the image) says the same thing where the
+rules live. The default-on decision, its reasons and the self-test exercise that
+proves it are recorded in `docs/ROADMAP.md`; the exercise was added 2026-10-16 and
+its first run was pending at the time of writing.
 
 ### 3.6 The installer module set is minimal
 

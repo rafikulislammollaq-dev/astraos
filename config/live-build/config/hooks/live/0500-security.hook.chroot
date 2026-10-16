@@ -9,12 +9,13 @@
 #   /etc/sudoers.d/00-astraos                  no NOPASSWD, no shared password
 #   /etc/apt/apt.conf.d/60-astraos-security    signature verification never disabled
 #   /etc/sysctl.d/60-astraos.conf              kernel and network defaults
-#   /etc/ufw/astraos-policy.conf               documented firewall intent
+#   /etc/ufw/astraos-policy.conf               the firewall's shipped policy, explained
 #
 # This hook does only what a package cannot: it verifies the policy actually landed,
 # locks the root account, corrects dangerous permissions, and refuses to build an image
 # that embeds credentials. Third-party paths owned by other packages (/etc/issue,
-# /etc/motd, /etc/default/ufw, the greeter config) are written by 0100-identity.
+# /etc/motd, /etc/default/ufw, /etc/ufw/ufw.conf, /etc/ufw/user.rules,
+# /etc/ufw/user6.rules, the greeter config) are written by 0100-identity.
 
 set -eu
 
@@ -42,6 +43,14 @@ assert "apt policy present"         test -f /etc/apt/apt.conf.d/60-astraos-secur
 assert "sysctl defaults present"    test -f /etc/sysctl.d/60-astraos.conf
 assert "firewall policy present"    test -f /etc/ufw/astraos-policy.conf
 assert "astraos-release present"    test -f /etc/astraos-release
+
+# The firewall is on by default (docs/ROADMAP.md, 2026-10-16). A build that loses
+# ENABLED=yes would ship a firewall that protects nobody, and the image would look
+# identical otherwise; a build that loses a rule file would ship a firewall whose
+# exceptions are not the documented ones. Both are refusals, not warnings.
+assert "firewall enabled at boot"   grep -q '^ENABLED=yes' /etc/ufw/ufw.conf
+assert "firewall rules present"     grep -q -- '--dport 8765' /etc/ufw/user.rules
+assert "firewall v6 rules present"  grep -q -- '--dport 8765' /etc/ufw/user6.rules
 
 # The sudoers drop-in must be 0440 root:root or sudo refuses to read it.
 if [ -f /etc/sudoers.d/00-astraos ]; then

@@ -553,9 +553,12 @@ do_doctor() {
     # firewall (informational; needs root to query)
     if [ "$(id -u)" -eq 0 ]; then
         _ufw="$(ufw status 2>/dev/null | head -1)"
+        # Anchored like astraos-info's check: "Status: inactive" contains "active",
+        # and an unanchored pattern would report the off state as protection.
         case "$_ufw" in
-            *"active"*) _pass "firewall active (ufw)" ;;
-            *) _warn "firewall inactive" "sudo ufw enable  (policy: docs/SECURITY.md)" ;;
+            "Status: active"*) _pass "firewall active (ufw)" ;;
+            "Status: inactive"*) _warn "firewall inactive" "sudo ufw enable  (this release starts it on; policy: docs/SECURITY.md §3)" ;;
+            *) printf "  ${DIM}firewall: ufw did not answer; run  sudo ufw status${E}\n" ;;
         esac
     else
         printf "  ${DIM}firewall: run  sudo astra doctor  to check ufw${E}\n"

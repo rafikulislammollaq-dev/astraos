@@ -78,9 +78,11 @@ else
     printf '       astraos-info                 release, kernel, hardware, network\n'
     printf '       systemctl --failed           units that failed to start\n\n'
 
-    printf '  4. Optional hardening\n'
-    printf '       The host firewall is documented but not enabled by default.\n'
-    printf '       See /etc/ufw/astraos-policy.conf for the exact rules to apply.\n\n'
+    printf '  4. Know what your firewall is doing\n'
+    printf '       It is already on: incoming connections are denied, and only the\n'
+    printf '       assistant page (8765) and local discovery (5353) are reachable,\n'
+    printf '       from your local network. See /etc/ufw/astraos-policy.conf,\n'
+    printf '       or run:  sudo ufw status verbose\n\n'
 fi
 
 printf '  Coming from Windows?\n'

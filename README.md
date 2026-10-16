@@ -115,7 +115,7 @@ filesystem holds 182,962 files (2,159 MiB extracted).
 | Networking | NetworkManager with applet, wpa_supplicant |
 | Browser | Firefox ESR |
 | Office | LibreOffice |
-| Firewall | ufw installed, not enabled by default |
+| Firewall | ufw enabled by default: incoming denied except the assistant's page (8765/tcp) and local service discovery (5353/udp), both from the local network only |
 | Firmware | Broad set of non-free firmware (about 390 MB compressed) |
 | Package format | `.deb` with APT and dpkg |
 | Root filesystem | ext4 |

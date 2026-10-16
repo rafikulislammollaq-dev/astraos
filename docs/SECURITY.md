@@ -35,7 +35,7 @@ Rationale for every service is written into the image at
 
 **Enabled because the desktop needs them:** NetworkManager, lightdm, bluetooth, cups,
 thermald, systemd-timesyncd, udisks2, upower, accounts-daemon, rsyslog, cron, avahi,
-lm-sensors, ufw (policy engine only, firewall not active).
+lm-sensors, ufw (the inbound firewall itself; on from boot — §3).
 
 **Deliberately not enabled:** `ssh.service`, `sshd.service`, `cups-browsed.service`.
 
@@ -53,30 +53,36 @@ systemctl list-unit-files --state=enabled
 
 ## 3. Firewall
 
-`/etc/default/ufw` ships with `DEFAULT_INPUT_POLICY="DROP"`,
-`DEFAULT_OUTPUT_POLICY="ACCEPT"` and `DEFAULT_FORWARD_POLICY="DROP"`.
-`/etc/ufw/astraos-policy.conf` documents the exact rules to apply.
+The host firewall is **on by default** (decided 2026-10-16; `docs/ROADMAP.md`).
+`/etc/default/ufw` ships `DEFAULT_INPUT_POLICY="DROP"`, `DEFAULT_OUTPUT_POLICY="ACCEPT"`
+and `DEFAULT_FORWARD_POLICY="DROP"`; `/etc/ufw/ufw.conf` sets `ENABLED=yes`; and the
+exceptions that exist live in `/etc/ufw/user.rules` and `/etc/ufw/user6.rules`, explained
+rule by rule in `/etc/ufw/astraos-policy.conf`:
 
-**The firewall is not enabled by default.** Reasons:
+- **`8765/tcp`, the assistant's page**, from the private ranges (`192.168.0.0/16`,
+  `10.0.0.0/8`, `172.16.0.0/12`, and `fc00::/7`, `fe80::/10`). On the machine itself the
+  page needs no pairing; from the network it answers `401` until a phone pairs with the
+  six-digit code shown on the computer, so what the LAN can reach is an authentication
+  surface, not data.
+- **`5353/udp`, mDNS**, from the same ranges: the avahi traffic that finds printers. A
+  firewall that silently breaks printing is a firewall the user turns off.
 
-1. Nothing listens: no SSH server, no web server, no remote administration daemon.
-2. Enabling it during the live session can break the network the user needs in order to
-   install.
+Everything else inbound is dropped (and logged, `LOGLEVEL=low`); outbound is allowed;
+forwarding is denied. DHCP replies are allowed by ufw's own `before.rules`
+(`--sport 67 --dport 68`), so the old concern — an active firewall breaking the network
+the live session needs — does not hold; it was the reason earlier releases left it off.
 
-To enable it:
+**Where this is proven.** The boot self-test checks that ufw reports active, that the
+default incoming policy is deny, and that the page's rule is loaded, and the phone
+exercise doubles as the proof that the allowed path works *while* the firewall is up.
+The stronger, behavioural half: the guest watches a port that no rule allows while the
+caller deliberately probes it from outside — with the firewall on, nothing may arrive,
+and the guest fails its own check if anything does (the exercise was added 2026-10-16;
+its first CI run was pending at the time of writing). The build's security hook refuses
+to build an image where the rule files or `ENABLED=yes` disappear.
 
-```bash
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow out 67,68/udp    # DHCP
-sudo ufw allow out 53           # DNS
-sudo ufw allow out 5353/udp     # mDNS
-sudo ufw enable
-sudo ufw status verbose
-```
-
-Those outbound allowances exist because a default-deny *outbound* policy breaks DHCP, DNS
-and local discovery — the failure mode plan §13.4 warns about.
+Global IPv6 addresses are not covered by the shipped rules. `KNOWN_LIMITATIONS.md` §3.5
+records that, and widening is one documented command (`sudo ufw allow 8765/tcp`).
 
 ---
 

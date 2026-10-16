@@ -8,7 +8,7 @@
 #
 #   /etc/os-release, /usr/lib/os-release, /etc/issue, /etc/issue.net, /etc/motd
 #       owned by base-files
-#   /etc/default/ufw
+#   /etc/default/ufw, /etc/ufw/ufw.conf, /etc/ufw/user.rules, /etc/ufw/user6.rules
 #       owned by ufw
 #   /etc/lightdm/lightdm-gtk-greeter.conf
 #       owned by lightdm-gtk-greeter
@@ -63,9 +63,17 @@ install_file "$STAGE/system/motd" /etc/motd
 install_file "$STAGE/system/lsb-release" /etc/lsb-release
 install_file "$STAGE/system/default-hostname" /etc/hostname
 
-# --- Firewall defaults and greeter configuration ------------------------------
-log "installing ufw defaults and greeter configuration"
+# --- Firewall defaults, the firewall itself, and greeter configuration ---------
+# The firewall is on by default since 2026-10-16 (docs/ROADMAP.md): ufw.conf sets
+# ENABLED=yes and the rule files carry the only two inbound exceptions (the
+# assistant's page and mDNS discovery). All four files are ufw-package paths, so -
+# like /etc/default/ufw above - they are written here rather than shipped by an
+# AstraOS package. docs/SECURITY.md §3 explains each rule.
+log "installing ufw defaults and rules (firewall enabled by default) and greeter configuration"
 install_file "$STAGE/system/security/astraos-firewall.default" /etc/default/ufw
+install_file "$STAGE/system/security/astraos-ufw.conf" /etc/ufw/ufw.conf
+install_file "$STAGE/system/security/astraos-ufw-user.rules" /etc/ufw/user.rules
+install_file "$STAGE/system/security/astraos-ufw-user6.rules" /etc/ufw/user6.rules
 install_file "$STAGE/branding/lightdm/lightdm-gtk-greeter.conf" /etc/lightdm/lightdm-gtk-greeter.conf
 
 printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n::1\t\tlocalhost ip6-localhost ip6-loopback\n' \

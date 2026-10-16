@@ -3,13 +3,18 @@
 # AstraOS firewall defaults (plan §13.4).
 #
 # Design intent:
-#   * Default inbound policy is DENY. Nothing listens by default: no sshd, no web
-#     server, no remote administration daemon is installed.
+#   * Default inbound policy is DENY, and the firewall is enabled by default: the
+#     state lives in /etc/ufw/ufw.conf (ENABLED=yes) and the exceptions in
+#     /etc/ufw/user.rules and /etc/ufw/user6.rules. Only two things may be reached
+#     from the local network - the assistant's page (8765/tcp, pairing-gated) and
+#     local service discovery (5353/udp, what finds printers) - and the boot
+#     self-test proves the picture: the page's port answers from outside while a
+#     watched, not-allowed port stays silent.
 #   * Default outbound policy is ALLOW. A desktop must be able to browse, update and
-#     reach the network without the user editing firewall rules.
-#   * The firewall is NOT enabled in the live session. Enabling it there can break the
-#     user's network access during installation, and the live session is short-lived.
-#     docs/SECURITY.md documents how to enable and inspect it after installation.
+#     reach the network without the user editing firewall rules. DHCP replies are
+#     allowed by ufw's own before.rules, which is why an active firewall cannot
+#     break the network during installation - the reason earlier releases left it
+#     off (the decision was reversed on 2026-10-16; docs/ROADMAP.md, SECURITY.md §3).
 #
 # This file is checked into the repository and installed into the image, so the shipped
 # policy is reviewable in the same place as the code that applies it.

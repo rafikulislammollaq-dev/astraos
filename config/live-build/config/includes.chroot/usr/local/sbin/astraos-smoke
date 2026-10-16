@@ -166,7 +166,35 @@ fi
 # up and every name lookup fails. Resolving a real name is the only honest check.
 run "dns" getent hosts deb.debian.org
 
-# --- 8. the phone page (only when the caller asked: astraos.phone=1) -----------------
+# --- 8. the firewall ------------------------------------------------------------------
+# On by default since 2026-10-16 (docs/ROADMAP.md, docs/SECURITY.md §3): inbound is
+# denied, and exactly two things are reachable from the local network - the assistant's
+# page and mDNS (what finds printers). The behavioural half of the proof is inside the
+# phone section: a port no rule allows is watched there while the caller of this script
+# deliberately probes it from outside.
+ufw_status=$(ufw status 2>/dev/null || true)
+case "$ufw_status" in
+    "Status: active"*)
+        ok "firewall-active" "ufw reports active"
+        ;;
+    *)
+        bad "firewall-active" "ufw status: $(printf '%s' "$ufw_status" | head -n 1)"
+        ;;
+esac
+
+if ufw status verbose 2>/dev/null | grep -q '^Default: deny (incoming)'; then
+    ok "firewall-default-deny" "incoming is denied unless a rule allows it"
+else
+    bad "firewall-default-deny" "the default incoming policy is not deny"
+fi
+
+if printf '%s\n' "$ufw_status" | grep -Eq '^8765/tcp[[:space:]]+ALLOW IN[[:space:]]+192\.168\.0\.0/16'; then
+    ok "firewall-page-allowed" "the assistant's port is reachable from local networks"
+else
+    bad "firewall-page-allowed" "8765/tcp from 192.168.0.0/16 is not in ufw status"
+fi
+
+# --- 9. the phone page (only when the caller asked: astraos.phone=1) -----------------
 # The mesh's first slice: the computer serves the assistant page on the local network,
 # a phone pairs with a code shown on the computer, and revoking ends its access. The
 # "phone" here is the CI host itself, reaching the guest through QEMU's port forward;
@@ -177,6 +205,39 @@ if grep -q 'astraos.phone' /proc/cmdline; then
     phone_log=/tmp/astraos-phone.log
     python3 /usr/lib/astraos/ai/server.py --lan --pair --port 8765 >"$phone_log" 2>&1 &
     phone_pid=$!
+
+    # The firewall's blocked-port half, part 1: watch a port that no rule allows. The
+    # caller of this script probes it from the outside while the arc below runs; with
+    # the firewall on the probe dies here and nothing arrives, with the firewall off
+    # the arrival is recorded and check 7 fails. The listener records arrivals.
+    : > /tmp/astraos-probe-hits
+    rm -f /tmp/astraos-probe-ready
+    python3 - <<'PY' >/dev/null 2>&1 &
+import socket
+sock = socket.socket()
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sock.bind(("0.0.0.0", 8766))
+sock.listen(16)
+with open("/tmp/astraos-probe-ready", "w") as handle:
+    handle.write("listening\n")
+while True:
+    conn, _ = sock.accept()
+    with open("/tmp/astraos-probe-hits", "a") as handle:
+        handle.write("hit\n")
+    conn.close()
+PY
+    probe_pid=$!
+    waited=0
+    while [ "$waited" -lt 15 ]; do
+        [ -f /tmp/astraos-probe-ready ] && break
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if [ -f /tmp/astraos-probe-ready ]; then
+        ok "firewall-probe-listening" "port 8766 is watched for the blocked-port proof"
+    else
+        bad "firewall-probe-listening" "the probe listener did not come up"
+    fi
 
     # 1. the code appears (the host needs it to pair)
     waited=0
@@ -269,6 +330,18 @@ PY
     else
         bad "phone-refused-after-revoke" "no refusal after revoking within 120s"
     fi
+
+    # 7. the blocked-port proof, part 2: the caller probed 8766 while the arc above ran
+    # (its attempt is recorded in phone-host.log). Any arrival here would mean the
+    # firewall let through a connection that no rule allows.
+    hits=$(wc -l < /tmp/astraos-probe-hits 2>/dev/null) || hits=0
+    [ -n "$hits" ] || hits=0
+    if [ "$hits" -eq 0 ]; then
+        ok "firewall-blocks-other-ports" "no connection reached the watched port"
+    else
+        bad "firewall-blocks-other-ports" "$hits connection(s) reached port 8766"
+    fi
+    kill "$probe_pid" 2>/dev/null || true
 
     kill "$phone_pid" 2>/dev/null || true
 fi

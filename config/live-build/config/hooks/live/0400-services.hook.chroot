@@ -68,7 +68,7 @@ enable_unit rsyslog.service               "persistent logging for diagnostics (p
 enable_unit cron.service                  "scheduled maintenance including unattended-upgrades"
 enable_unit avahi-daemon.service          "mDNS local service discovery"
 enable_unit lm-sensors.service            "hardware sensor readings for the panel plugin"
-enable_unit ufw.service                   "host firewall policy engine; rules are documented in docs/SECURITY.md"
+enable_unit ufw.service                   "inbound firewall, enabled by default; rules in /etc/ufw/user.rules (policy: docs/SECURITY.md §3)"
 
 # The boot self-test ships in every image and runs only when the kernel command line
 # contains astraos.ci (the unit's own ConditionKernelCommandLine), so enabling it changes

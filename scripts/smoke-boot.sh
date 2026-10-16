@@ -125,6 +125,7 @@ cleanup() {
         cp -f "$WORK/serial.log" "$OUT_DIR/serial.log" 2>/dev/null || true
         cp -f "$WORK/qemu.out" "$OUT_DIR/qemu.out" 2>/dev/null || true
         cp -f "$WORK/phone-host.log" "$OUT_DIR/phone-host.log" 2>/dev/null || true
+        cp -f "$WORK/phone-host.out" "$OUT_DIR/phone-host.out" 2>/dev/null || true
         if [ -f "$WORK/screen.png" ]; then
             cp -f "$WORK/screen.png" "$OUT_DIR/screenshot.png"
         elif [ -f "$WORK/screen.ppm" ]; then
@@ -193,14 +194,17 @@ say "booting $ISO (self-test timeout ${TIMEOUT_MINUTES} min)"
 # what the runner can spare - four cores and 4 GiB let the parallel boot actually run in
 # parallel, and zram is not asked to make up for a memory shortage a test can simply
 # avoid.
-# The user-mode network forwards one port (18765 on the host to 8765 in the guest) so
-# that this host can act as the phone in step 4a: without the forward, the guest's
-# assistant page is unreachable from outside and the exercise could not run.
+# The user-mode network forwards two ports. 18765 -> 8765 is how this host acts as the
+# phone in step 4a: without it the guest's assistant page is unreachable from outside
+# and the exercise could not run. 18766 -> 8766 is the firewall proof's other half: the
+# guest watches 8766, nothing in its rules allows it, and the driver's probe of 18766
+# must time out - any connection that instead reaches 8766 is recorded by the guest,
+# which fails its own check.
 qemu-system-x86_64 "${ACCEL[@]}" \
     -m 4096 -smp 4 -vga std \
     -cdrom "$ISO" \
     -kernel "$WORK/vmlinuz" -initrd "$WORK/initrd.img" -append "$APPEND" \
-    -nic user,model=e1000,hostfwd=tcp:127.0.0.1:18765-:8765 \
+    -nic user,model=e1000,hostfwd=tcp:127.0.0.1:18765-:8765,hostfwd=tcp:127.0.0.1:18766-:8766 \
     -display none -no-reboot \
     -serial "file:$WORK/serial.log" \
     -monitor "unix:$WORK/monitor.sock,server,nowait" \
@@ -244,7 +248,15 @@ def request(method, path, payload=None, token=None):
     req = urllib.request.Request(BASE + path, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
-            return resp.status, json.loads(resp.read().decode("utf-8"))
+            body = resp.read().decode("utf-8", "replace")
+            try:
+                return resp.status, json.loads(body)
+            except ValueError:
+                # The pairing page at "/" is HTML. Parsing it as JSON killed this
+                # driver at its very first request in run 38894494223 - before its
+                # first transcript line - and the silence made the guest's failed
+                # pairing look like its own bug for a whole CI cycle.
+                return resp.status, {"text": body}
     except urllib.error.HTTPError as exc:
         try:
             return exc.code, json.loads(exc.read().decode("utf-8"))
@@ -254,55 +266,89 @@ def request(method, path, payload=None, token=None):
         return 0, {"detail": str(exc)}
 
 
-deadline = time.time() + 900
-code = None
-while time.time() < deadline and code is None:
+def drive():
+    deadline = time.time() + 900
+    code = None
+    while time.time() < deadline and code is None:
+        try:
+            with open(serial_path, "r", errors="replace") as handle:
+                text = handle.read()
+        except OSError:
+            text = ""
+        match = re.search(r"phone-code: (\d+)", text)
+        if match:
+            code = match.group(1)
+        else:
+            time.sleep(2)
+
+    if code is None:
+        log("host: the guest never printed a pairing code; giving up")
+        return
+
+    log("host: pairing code read from the serial console: " + code)
+
+    # The firewall's blocked-port half: 8766 is a port no rule allows, watched by the
+    # guest while this arc runs. With the firewall on, this connect dies at the guest:
+    # QEMU's forward accepts it, then nothing ever answers, so the timeout is the
+    # expected result. A reply or a clean disconnect would mean the connection got
+    # through - the guest counts arrivals itself and fails its own check.
     try:
-        with open(serial_path, "r", errors="replace") as handle:
-            text = handle.read()
-    except OSError:
-        text = ""
-    match = re.search(r"phone-code: (\d+)", text)
-    if match:
-        code = match.group(1)
+        with urllib.request.urlopen("http://127.0.0.1:18766/", timeout=6):
+            log("host: firewall probe -> 18766 answered: the firewall did not block it"
+                " (the guest's own check decides)")
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, TimeoutError):
+            log("host: firewall probe -> 18766 timed out: blocked by the guest firewall (expected)")
+        elif isinstance(exc.reason, ConnectionRefusedError):
+            log("host: firewall probe -> 18766 refused: no forward is listening on the"
+                " host side (the guest's check cannot be trusted)")
+        else:
+            log("host: firewall probe -> 18766 reached the guest, got %r: the firewall"
+                " did not block it (the guest's own check decides)" % (exc.reason,))
+    except Exception as exc:  # the transcript must always say what happened
+        log("host: firewall probe -> 18766 %r" % (exc,))
+
+    # The page loads for anyone (it is where the code is typed), and an unpaired guest
+    # is refused: that is what "localhost until paired" means from the outside.
+    status, _payload = request("GET", "/")
+    log("host: page GET -> %s (expected 200)" % status)
+    status, payload = request("GET", "/api/health")
+    log("host: unpaired health GET -> %s needs_pairing=%s (expected 401/True)"
+        % (status, payload.get("needs_pairing")))
+
+    status, payload = request("POST", "/api/pair", {"code": code})
+    token = str(payload.get("token") or "")
+    log("host: pair POST with the code -> %s (expected 200)" % status)
+    if not token:
+        log("host: no token came back; giving up")
+        return
+
+    status, payload = request("GET", "/api/health", token=token)
+    log("host: paired health GET -> %s ready=%s (expected 200)"
+        % (status, payload.get("ready")))
+
+    # The computer revokes the phone; keep asking until the answer turns 401. That
+    # refused request is the last event the guest waits for.
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        status, _payload = request("GET", "/api/health", token=token)
+        if status == 401:
+            log("host: after revocation health GET -> 401 (expected): the phone is out")
+            break
+        time.sleep(3)
     else:
-        time.sleep(2)
+        log("host: the revoked token was still accepted after 300s")
 
-if code is None:
-    log("host: the guest never printed a pairing code; giving up")
-    sys.exit(0)
 
-log("host: pairing code read from the serial console: " + code)
-
-# The page loads for anyone (it is where the code is typed), and an unpaired guest is
-# refused: that is what "localhost until paired" means from the outside.
-status, _payload = request("GET", "/")
-log("host: page GET -> %s (expected 200)" % status)
-status, payload = request("GET", "/api/health")
-log("host: unpaired health GET -> %s needs_pairing=%s (expected 401/True)"
-    % (status, payload.get("needs_pairing")))
-
-status, payload = request("POST", "/api/pair", {"code": code})
-token = str(payload.get("token") or "")
-log("host: pair POST with the code -> %s (expected 200)" % status)
-if not token:
-    log("host: no token came back; giving up")
-    sys.exit(0)
-
-status, payload = request("GET", "/api/health", token=token)
-log("host: paired health GET -> %s ready=%s (expected 200)" % (status, payload.get("ready")))
-
-# The computer revokes the phone; keep asking until the answer turns 401. That refused
-# request is the last event the guest waits for.
-deadline = time.time() + 300
-while time.time() < deadline:
-    status, _payload = request("GET", "/api/health", token=token)
-    if status == 401:
-        log("host: after revocation health GET -> 401 (expected): the phone is out")
-        break
-    time.sleep(3)
-else:
-    log("host: the revoked token was still accepted after 300s")
+# Run 38894494223's lesson: this driver died at its first request (the pairing page's
+# HTML parsed as JSON) before writing a single transcript line, and the silence cost a
+# whole CI cycle. request() now tolerates non-JSON bodies, and any future crash logs
+# itself before the process ends.
+try:
+    drive()
+except Exception as exc:
+    log("host: unexpected failure: %s: %s" % (type(exc).__name__, exc))
+    raise
 PY
 PHONE_DRIVER_PID=$!
 

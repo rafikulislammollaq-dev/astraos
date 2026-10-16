@@ -19,6 +19,21 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The firewall is on by default (source; its first CI run is pending).** The decision
+  recorded in the roadmap — ufw shipped disabled by design — is reversed: a firewall
+  that waits to be enabled protects exactly the users who never enable it. `ENABLED=yes`
+  now ships in `/etc/ufw/ufw.conf`, and the exceptions live in `/etc/ufw/user.rules`
+  (IPv4) and `/etc/ufw/user6.rules` (IPv6): the assistant's page (`8765/tcp`,
+  pairing-gated) and mDNS (`5353/udp`, what finds printers), both only from the private
+  ranges. Everything else inbound is dropped and logged. DHCP replies were already
+  allowed by ufw's own `before.rules`, which answers the old "it could break the
+  installer's network" reason rather than ignoring it. The self-test now checks the
+  active state, the deny default and the page rule, and the caller probes a port no rule
+  allows while the guest watches it — with the firewall up, nothing may arrive, and the
+  guest fails its own check if anything does. `/etc/ufw/astraos-policy.conf` explains
+  every rule where it lives; `docs/SECURITY.md` §3 and `docs/KNOWN_LIMITATIONS.md` §3.5
+  record the scope (private ranges only) and how to widen it.
+
 - **The screenshot capture is made real (source; its first run is pending).** The
   first green boot self-test's captured image was a flat black with only the cursor
   although the session was healthy — QEMU's stdvga emulation (fixed upstream in 9.0.2,
@@ -135,6 +150,22 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   `libdvdnav4` pulls the read library at the soname the release actually ships.
 
 ### Fixed
+
+- **`astra doctor` no longer reads "Status: inactive" as active.** Its pattern was the
+  unanchored `*"active"*`, which also matches "inactive" — the same defect the security
+  tests pin in `astraos-info`. The firewall being on by default makes the misreport rarer
+  but not less false; both tools now anchor on `"Status: active"*`, and the test suite
+  pins both.
+
+- **The phone exercise's host driver (source; its first green run is pending).** The
+  first run that carried it (run 38894494223) booted, reached the desktop, and the guest
+  passed `phone-armed` and `phone-localhost` — then the host half died silently at its
+  first request: it loaded the pairing page through the QEMU port forward and parsed the
+  HTML body as JSON, so the uncaught `JSONDecodeError` ended the driver before its first
+  transcript line, and the four pairing checks that depend on the host failed. The driver
+  now tolerates a non-JSON body (only the page is one), logs any unexpected failure
+  instead of dying invisibly, and its stderr is kept with the evidence; the pairing arc
+  itself was never in question and needs a clean re-run to prove.
 
 - **The boot self-test's kernel command line carried `findiso=/live/filesystem.squashfs`,
   and the first CI boot of a built image died because of it** (run 38864588609,

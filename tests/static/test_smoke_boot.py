@@ -335,3 +335,55 @@ def test_the_host_answers_the_guest_phone_sequence() -> None:
     for marker in ("/api/pair", "/api/health"):
         assert marker in text, f"the host no longer drives {marker}"
     assert "phone-host.log" in text, "the host's phone steps must leave evidence"
+
+
+def test_the_host_driver_survives_a_non_json_body() -> None:
+    """Run 38894494223: the driver parsed every response body as JSON.
+
+    Its first request is the pairing page at "/" - HTML - and the uncaught
+    JSONDecodeError ended the process before its first transcript line, so
+    phone-host.log held a single line and the guest's failed pairing looked like the
+    guest's own bug for a whole CI cycle. The success path must tolerate a non-JSON
+    body, and any future crash must leave a line behind instead of silence.
+    """
+    text = _text(HOST_SCRIPT)
+    assert '{"text": body}' in text, (
+        "request() must fall back for a non-JSON body instead of dying on the page"
+    )
+    assert "host: unexpected failure" in text, (
+        "an unexpected driver failure must be logged, not swallowed into silence"
+    )
+    assert "phone-host.out" in text, (
+        "the driver's stderr must be kept with the evidence: a traceback in it is how "
+        "the next silent failure tells its story without costing another CI cycle"
+    )
+
+
+def test_the_host_script_forwards_the_firewall_probe_port() -> None:
+    text = _text(HOST_SCRIPT)
+    assert "hostfwd=tcp:127.0.0.1:18766-:8766" in text, (
+        "the blocked-port probe is meaningless without its own forward: without it the "
+        "connect would be refused on the host side, which proves nothing about the "
+        "firewall"
+    )
+    assert "firewall probe" in text, (
+        "the driver must actually attempt the probe and leave the attempt in "
+        "phone-host.log"
+    )
+
+
+def test_the_guest_proves_the_firewall_is_on_and_blocking() -> None:
+    text = _text(GUEST_SCRIPT)
+    for marker in ("firewall-active", "firewall-default-deny", "firewall-page-allowed"):
+        assert marker in text, f"the self-test no longer asserts {marker}"
+    assert 'sock.bind(("0.0.0.0", 8766))' in text, (
+        "the guest watches a port nothing allows; the host's probe of it must die at "
+        "the firewall and be counted there"
+    )
+    assert "firewall-blocks-other-ports" in text and "/tmp/astraos-probe-hits" in text, (
+        "the arrival count is the behavioural half of the proof and must fail the "
+        "guest's own check when anything arrives"
+    )
+    assert "firewall-probe-listening" in text, (
+        "a listener that never came up would make an empty arrival count a false proof"
+    )

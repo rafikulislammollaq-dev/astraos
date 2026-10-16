@@ -66,6 +66,7 @@ point: it is better to state six things that are true than twenty that are aspir
 | Kernels/network defaults hardened | `/etc/sysctl.d/60-astraos.conf` |
 | No secrets in the repository or the image | Test suite scans the repository; the build scans `/etc` |
 | Screen locks by default | Xfce session defaults: blank after 10 minutes, lock after 15 |
+| Inbound firewall on by default | ufw with `ENABLED=yes`; only the assistant's page (`8765/tcp`) and mDNS (`5353/udp`) from private ranges; asserted at build time |
 
 ## Security limitations — read these
 
@@ -73,9 +74,11 @@ AstraOS 0.1.0 Alpha is **not** a hardened system, and the project makes no claim
 is. Specifically:
 
 1. **No security audit has been performed.** Not by an external party, not internally.
-2. **The firewall is not enabled by default.** Nothing listens by default, so this is
-   defensible, but it does mean an application that starts listening has no host
-   firewall in front of it. `/etc/ufw/astraos-policy.conf` documents how to enable it.
+2. **The firewall's inbound exceptions cover private address ranges only.** The
+   firewall itself is on by default (docs/SECURITY.md §3), but the assistant's page and
+   mDNS are scoped to `192.168.0.0/16`, `10.0.0.0/8`, `172.16.0.0/12`, `fc00::/7` and
+   `fe80::/10`; a network with public IPv6 addresses needs `sudo ufw allow 8765/tcp`
+   (docs/KNOWN_LIMITATIONS.md §3.5).
 3. **Disk encryption is available through Calamares but has not been tested.** Never
    assume a system is encrypted unless you chose encryption during installation and can
    confirm it with `lsblk` and `cryptsetup status`.

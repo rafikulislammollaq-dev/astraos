@@ -125,10 +125,16 @@ updated. Every step proven in CI or recorded as untested.
 - [ ] **An APT repository for the `astraos-*` packages**, so installed systems
   receive updates. None exists today; an installed system currently gets Debian
   packages and nothing else.
-- [ ] **Firewall decision.** ufw ships disabled by design (policy in
-  `/etc/ufw/astraos-policy.conf`, pinned by the tests). Decide whether default-on —
-  with the assistant's page as the only listener — becomes the new default, and
-  prove the result in the self-test.
+- [ ] **Firewall decision: default-on.** Decided and implemented on 2026-10-16: ufw
+  starts on boot (`ENABLED=yes` in `/etc/ufw/ufw.conf`, installed by the identity
+  hook), inbound is denied, and exactly two things are reachable from the local
+  network — the assistant's page (`8765/tcp`, pairing-gated) and mDNS (`5353/udp`,
+  what finds printers). DHCP replies are covered by ufw's own `before.rules`, so the
+  old "it could break the installer's network" reason is answered, not ignored. The
+  self-test carries the proof: it checks the active state, the deny default and the
+  page rule, and the phone exercise runs with the firewall up while the caller's
+  probe of a watched, not-allowed port must leave no arrival in the guest. The
+  checkbox flips on the first self-test run green in CI.
 - [ ] **The assistant's web page on a phone**: localhost until paired, then the LAN
   with pairing and the firewall on. The pairing half exists in the source
   (2026-10-16) as its first slice: `astra-ai pair` shows a six-digit code, a phone on
