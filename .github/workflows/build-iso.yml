@@ -37,7 +37,7 @@ on:
         type: boolean
         default: true
       smoke_boot:
-        description: "After building, boot the ISO in QEMU and run its self-test"
+        description: "After building, boot the ISO in QEMU (the self-test, then the boot menus)"
         type: boolean
         default: true
 
@@ -190,9 +190,12 @@ jobs:
             echo ""
             echo "### Not tested by this workflow"
             echo ""
-            echo "The build job assembles the image and validates its structure. The"
-            echo "smoke-boot job boots the built ISO in QEMU and runs the image's own"
-            echo "self-test; when that job is skipped, the image was **not** booted."
+            echo "The build job assembles the image and validates its structure. Two"
+            echo "jobs then boot it: smoke-boot starts the kernel taken out of the ISO"
+            echo "and runs the image's own self-test; boot-menus boots the ISO through"
+            echo "its own boot menus (syslinux on BIOS, GRUB on UEFI) and waits for the"
+            echo "live system's login prompt. When those jobs are skipped, the image was"
+            echo "**not** booted."
             echo ""
             echo "Neither job runs the installer or boots an installed system. That"
             echo "requires a virtual machine and is described in"
@@ -258,3 +261,83 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
           path: smoke-out/
+
+  boot-menus:
+    name: Boot the ISO through its own boot menus
+    needs: build
+    if: ${{ needs.build.result == 'success' && inputs.smoke_boot }}
+    runs-on: ubuntu-24.04
+    # Two emulated boots, firmware and bootloader included. The measured direct-kernel
+    # emulated boot (run 38881934636) reached its login prompt in about 144 s; the menu
+    # path adds firmware and the bootloader in front of that, and each run keeps the
+    # wait scripts/boot-menu-test.sh was given (25 min). This ceiling covers both runs
+    # plus the ISO download and the QEMU/OVMF install with margin.
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Download the ISO
+        uses: actions/download-artifact@v4
+        with:
+          name: astraos-iso
+          path: iso
+
+      - name: Install QEMU and the UEFI firmware
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf
+
+      - name: Boot through the syslinux menu (BIOS)
+        run: ./scripts/boot-menu-test.sh --medium bios --out menus-bios iso/*.iso
+
+      - name: Boot through the GRUB menu (UEFI)
+        # Even when the BIOS run failed, the UEFI evidence is worth having: the two
+        # firmware paths fail for different reasons, and one dispatch should show both.
+        if: always()
+        run: ./scripts/boot-menu-test.sh --medium efi --out menus-efi iso/*.iso
+
+      - name: Summarise the boot-menu runs
+        if: always()
+        run: |
+          {
+            echo "### Boot menus"
+            echo ""
+            echo "Each run boots the ISO through QEMU's own firmware and the ISO's own"
+            echo "bootloader menu - the host supplies no kernel and no command line - and"
+            echo "succeeds when the live system's login prompt appears on the serial"
+            echo "console."
+            echo ""
+            for medium in bios efi; do
+              log="menus-${medium}/serial.log"
+              if [ ! -f "$log" ]; then
+                echo "- **${medium}**: no serial log was produced"
+              elif grep -qF 'login:' "$log"; then
+                echo "- **${medium}**: reached the login prompt"
+              else
+                echo "- **${medium}**: did NOT reach the login prompt (see the artifact)"
+              fi
+            done
+            echo ""
+            echo '```'
+            for medium in bios efi; do
+              log="menus-${medium}/serial.log"
+              if [ -f "$log" ]; then
+                echo "--- ${medium}: last serial lines"
+                tail -n 5 "$log"
+              fi
+            done
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the boot-menu evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astraos-boot-menus
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            menus-bios/
+            menus-efi/

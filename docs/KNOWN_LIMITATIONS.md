@@ -26,7 +26,9 @@ hardware.** What has happened, with the record:
   `astraos-boot-self-test` (`serial.log` is the record; the screenshot captured through
   the QEMU monitor came back black — a capture defect, tracked in `CHANGELOG.md`). The
   test starts the kernel and initrd taken from the ISO and attaches the ISO as the live
-  medium; the ISO's own boot menus are not exercised by CI yet.
+  medium; the ISO's own boot menus are not exercised by CI yet (the exercise exists in
+  the source as of 2026-10-16 — `scripts/boot-menu-test.sh`, the `boot-menus` job — and
+  is pending its first run).
 - **2026-10-16, CI build (run 38864588609): structural validation PASS** — 25/25 checks,
   `structural=PASS` in the build manifest, image 2,432,696,320 bytes.
 - **2026-10-15, VirtualBox by hand:** the image booted from the live menu to the Xfce
@@ -90,9 +92,9 @@ hardware.
 
 | Area | Status | What testing it requires |
 |---|---|---|
-| Booting the live ISO | **CI PASS** (the ISO's kernel and initrd, the ISO as the live medium) | Physical hardware; the ISO's own boot menus |
-| Legacy BIOS boot | UNTESTED | A VM configured for BIOS |
-| UEFI boot | UNTESTED | A VM configured for UEFI |
+| Booting the live ISO | **CI PASS** (the ISO's kernel and initrd, the ISO as the live medium) | Physical hardware; the ISO's own boot menus (exercise added 2026-10-16, first run pending) |
+| Legacy BIOS boot | UNTESTED | A VM configured for BIOS (exercise added 2026-10-16, first run pending) |
+| UEFI boot | UNTESTED | A VM configured for UEFI (exercise added 2026-10-16, first run pending) |
 | Live desktop startup | **CI PASS** (LightDM active, Xfce session as `astra`) | Booting the image by hand and interacting |
 | Mouse, keyboard and display resolution in the live session | UNTESTED | Booting the image |
 | Live session applications (browser, file manager, terminal) | UNTESTED | Booting the image |

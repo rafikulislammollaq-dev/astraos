@@ -110,12 +110,18 @@ updated. Every step proven in CI or recorded as untested.
   checks — a real hostname lookup, so the 0.1.0 DNS defect cannot return silently. Two
   harness defects were fixed to get here (`findiso`; a systemd ordering cycle, see
   `CHANGELOG.md`). The test boots the ISO's kernel with the ISO as its live medium;
-  exercising the syslinux and GRUB boot menus remains open (below).
+  exercising the syslinux and GRUB boot menus is the `boot-menus` exercise below
+  (added 2026-10-16, pending its first run).
 - [ ] **Calamares installer end to end in a VM**, and the installed system boots.
   openQA is the established tool for driving an installer in CI; the manual
   procedure in `docs/INSTALLATION_VIRTUALBOX.md` stays until then.
 - [ ] **Boot menu paths exercised in CI**: syslinux (BIOS) and GRUB-EFI, not only
-  the kernel extracted from the ISO.
+  the kernel extracted from the ISO. The exercise exists in the source (2026-10-16):
+  `scripts/boot-menu-test.sh` boots the ISO with QEMU's own firmware — the host
+  supplies no kernel and no command line — accepts the menu's default entry through the
+  QEMU monitor, and waits for the login prompt that the ISO's own menu entries put on
+  the serial console; the `boot-menus` job runs it for both firmwares and uploads both
+  logs. The checkbox flips on the first run green in CI.
 - [ ] **An APT repository for the `astraos-*` packages**, so installed systems
   receive updates. None exists today; an installed system currently gets Debian
   packages and nothing else.

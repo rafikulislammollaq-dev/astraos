@@ -19,6 +19,25 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The ISO's own boot menus are exercised (source; its first CI run is pending).** It
+  is the menu, not the host, that boots the guest now: `scripts/boot-menu-test.sh`
+  boots the built ISO with QEMU's own firmware starting the machine — no kernel, no
+  initrd, no command line supplied — accepts the bootloader menu's default entry with
+  Enter injected through the QEMU monitor, and passes only when the live system's login
+  prompt appears on the serial console. Two media: `bios` (syslinux via the ISO's El
+  Torito boot record, plain SeaBIOS) and `efi` (GRUB via OVMF attached as a matched
+  pflash code + variable-store pair; the system firmware files are never written to —
+  the variable store is always a private copy). The pass condition can only be met if
+  the shipped menu entries carry the serial console, so `console=ttyS0,115200n8` is now
+  part of `LIVE_APPEND` in `config/live-build/auto/config` — deliberate for real
+  hardware as well: a machine with a serial port gets boot messages and a login prompt
+  there. `astraos.ci` stays out of `LIVE_APPEND` (it would power real desktops off) and
+  out of the menu script; the existing mirror test and the new
+  `tests/static/test_boot_menu.py` hold both ends. The workflow gained a `boot-menus`
+  job (both media per dispatch, the UEFI run still performed when the BIOS run failed,
+  evidence uploaded as `astraos-boot-menus`). The first CI run is the proof, and it
+  will be recorded here when it happens.
+
 - **The assistant's page can now be reached from a phone — by pairing.** The roadmap's
   Stage 1 phone-page item got its first slice: `astra-ai serve --lan` opens the page to
   the local network, but every request from anything that is not the computer itself is

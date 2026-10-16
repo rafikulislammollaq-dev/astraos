@@ -158,7 +158,17 @@ if supports --linux-packages; then set -- "$@" --linux-packages "linux-image lin
 # this parameter and falls back to "Debian Live user" when it is absent, which is what
 # a 0.2.0 boot showed on the greeter and in the panel's user menu. The value lives in
 # config/distribution.env with the rest of the identity (ASTRAOS_LIVE_FULLNAME).
-LIVE_APPEND="boot=live components username=${ASTRAOS_LIVE_USER} user-fullname=${ASTRAOS_LIVE_FULLNAME} hostname=${ASTRAOS_LIVE_HOSTNAME} locales=en_US.UTF-8 keyboard-layouts=us keyboard-variant= timezone=UTC live-config.hostname=${ASTRAOS_LIVE_HOSTNAME} quiet splash"
+#
+# console=ttyS0,115200n8 is deliberate and shipped. A machine with a serial port gets
+# full boot messages and a login prompt there - the standard way to debug a box whose
+# display never comes up - and it is what puts the login prompt of the ISO's own boot
+# entries on the wire, which is how scripts/boot-menu-test.sh proves that the shipped
+# menus boot a live system (docs/BUILDING.md, "The boot menus"). The exercise boots the
+# ISO through its real menus with nothing supplied by the host, so that parameter only
+# does its job here. astraos.ci is deliberately NOT in this string: it makes the guest
+# run its self-test and power the machine off, which belongs to a CI host asking for it,
+# never to a boot menu on a user's desktop. tests/static/test_boot_menu.py pins both.
+LIVE_APPEND="boot=live components username=${ASTRAOS_LIVE_USER} user-fullname=${ASTRAOS_LIVE_FULLNAME} hostname=${ASTRAOS_LIVE_HOSTNAME} locales=en_US.UTF-8 keyboard-layouts=us keyboard-variant= timezone=UTC live-config.hostname=${ASTRAOS_LIVE_HOSTNAME} quiet splash console=ttyS0,115200n8"
 FAILSAFE_APPEND="boot=live components username=${ASTRAOS_LIVE_USER} user-fullname=${ASTRAOS_LIVE_FULLNAME} hostname=${ASTRAOS_LIVE_HOSTNAME} locales=en_US.UTF-8 keyboard-layouts=us timezone=UTC nolapic noapic acpi=off nomodeset"
 if supports --bootappend-live; then set -- "$@" --bootappend-live "${LIVE_APPEND}"; fi
 if supports --bootappend-live-failsafe; then set -- "$@" --bootappend-live-failsafe "${FAILSAFE_APPEND}"; fi

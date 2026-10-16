@@ -189,7 +189,7 @@ CI-specific notes:
 - The artifact is retained for 14 days. Builds are not archived permanently.
 - The workflow summary ends with an explicit statement of what it did **not** test: the
   installer and an installed system. Booting the live image is covered by the
-  `smoke-boot` job below.
+  `smoke-boot` job below, the ISO's own boot menus by the `boot-menus` job under it.
 
 There is a second CI workflow, `.github/workflows/build-ai-engine.yml`, which has nothing
 to do with the image: it builds the assistant's runtime (`llama-server`, `whisper-cli`)
@@ -240,6 +240,38 @@ first green run (38881934636, 2026-10-16) did: login prompt at 143.7 s of guest 
 `RESULT: PASS (39 checks, 0 failed)`, the whole boot job 6m28s on 4 vCPU / 4 GiB. The CI
 window (`--timeout 120`) and the guest's own wait for the session both carry generous
 margin over that. A host with KVM does not pay the emulation cost.
+
+### The boot menus
+
+The self-test above boots a kernel the host script supplied. The `boot-menus` job
+(added 2026-10-16; its first CI run was pending at the time of writing) exercises the
+other half: the path a real machine takes. It boots the ISO in QEMU with QEMU's own
+firmware starting the machine, so nothing is supplied by the host — the menu is what
+boots the guest —
+
+1. firmware starts the ISO's El Torito boot record (BIOS) or its EFI system partition
+   (UEFI);
+2. the bootloader's menu appears, and its default entry is accepted with Enter injected
+   through the QEMU monitor (the menu timeout is live-build's default, which the pinned
+   release cannot change — see `docs/KNOWN_LIMITATIONS.md` §3.10);
+3. the menu entry boots the kernel with the command line the menu itself carries;
+4. the live system's login prompt appears on the serial console. That prompt is the
+   pass condition, and it can only appear because `console=ttyS0,115200n8` is part of
+   `LIVE_APPEND` — the entry, not the test host, produced it.
+
+Two runs per dispatch, one per firmware path (`--medium bios`, `--medium efi`), each
+with a 25-minute wait; the EFI run needs the OVMF firmware (`ovmf` package). The ISO's
+menu entries do not carry `astraos.ci`, so the guest runs no self-test and does not
+power off: it stops at the login prompt and the script stops the machine. Evidence
+(`serial.log`, `qemu.out`) is uploaded as the `astraos-boot-menus` artifact.
+
+The same script runs locally against any built ISO and needs no root — nothing is
+mounted:
+
+```bash
+./scripts/boot-menu-test.sh --medium bios --out out-bios dist/astraos-*.iso
+./scripts/boot-menu-test.sh --medium efi  --out out-efi  dist/astraos-*.iso
+```
 
 ## 9. After a successful build
 
