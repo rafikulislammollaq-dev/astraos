@@ -10,7 +10,9 @@ failure is handled — recorded with its cause, not hidden.
 The blueprints for the promised experiences — the first boot, profiles, one
 store, roll-backable updates, the phone link, the system assistant, privacy,
 reach, creator packs and the community rails — are in
-[`docs/blueprints/`](blueprints/README.md). They are plans too.
+[`docs/blueprints/`](blueprints/README.md). They are plans too. The long-horizon
+pillars behind this direction — the mesh, the timeline, the canvas and the graph —
+are designed there as well, beyond the stages.
 
 The founding engineering brief for the distribution itself is
 [`PROJECT_PLAN.md`](PROJECT_PLAN.md); this roadmap extends it for the AI-era
@@ -303,6 +305,60 @@ because familiarity on an unproven base would be decoration.
 - [ ] **Reach**: refurbishers, schools and small offices; the old PC in the corner
   as a private AI server for a household or a classroom over local Wi-Fi — the
   Stage 1 phone page is the first step.
+
+## Beyond the stages — the long horizon
+
+The stages are the schedule; underneath them runs the direction they all serve —
+three pillars, designed in blueprints whose first slices sit inside the stages and
+whose whole has no schedule yet:
+
+- **Everywhere — the mesh.** Your devices act as one computer: one identity, a
+  session that follows you, any screen as a window, heavy work placed where it
+  fits, an optional always-on Anchor at home. The design is
+  [`blueprints/MESH.md`](blueprints/MESH.md); its first slices are the Stage 1
+  phone page and Stage 5's Astra Link
+  ([`blueprints/PHONE_LINK.md`](blueprints/PHONE_LINK.md)).
+- **Remembers — the timeline.** Rewind the system, branch it to try something
+  risky, merge what was good, and search your own past — locally, encrypted,
+  opt-in by source, with forgetting that really forgets. The design is
+  [`blueprints/TIMELINE.md`](blueprints/TIMELINE.md); the system layer is
+  [`blueprints/UNBREAKABLE.md`](blueprints/UNBREAKABLE.md) in Stages 3 and 5.
+- **Shapes — the canvas.** Say what you want; the screen for it is built from
+  permissioned pieces, used, and dissolved; what you pin stays as it was. The
+  design is [`blueprints/CANVAS.md`](blueprints/CANVAS.md); its first slices are
+  the Stage 4 Missions interface and the Stage 7 skill manifests.
+- **Meaning — the graph.** Files stay files; on top of them, things and links let
+  a person search by describing. The design is
+  [`blueprints/GRAPH.md`](blueprints/GRAPH.md); its first slice is the Stage 6
+  Vault, narrow on purpose.
+
+None of the four has a schedule yet, and the working rules below apply unchanged:
+an item is done only when a run, a test or an artifact proves it, and the four
+files say in their own words that nothing of them exists.
+
+Ten tests would prove the whole direction once its pieces exist. They are targets,
+not claims, and none of them can run today:
+
+1. **The river test.** Lose a laptop in water; on a new one, be productive within
+   20 minutes.
+2. **The ransom test.** Run ransomware in a lab, rewind, and lose less than five
+   minutes of work.
+3. **The bad update test.** Break a system update on purpose; the machine boots
+   the previous system by itself.
+4. **The grandmother test.** A first-time user completes five everyday tasks
+   without help, in the Simple profile.
+5. **The friend's TV test.** From QR code to your desktop on a stranger's screen
+   in under 30 seconds, with nothing left behind afterwards.
+6. **The airplane test.** Everything essential works with no internet, and
+   changes merge correctly on landing.
+7. **The old laptop test.** A ten-year-old laptop with 4 GB of memory feels fast,
+   with heavy work offloaded.
+8. **The forget test.** Delete a memory and prove it cannot be recovered from the
+   index or any backup.
+9. **The audit test.** An independent party rebuilds the OS from source and gets
+   bit-for-bit identical results.
+10. **The exit test.** Export everything to open formats and open it on a plain
+    Linux install in under an hour.
 
 ## How success is measured
 

@@ -2,8 +2,9 @@
 
 docs/blueprints/ holds the designs for the experiences AstraOS promises but has
 not built: the first-boot question, profiles, one store, roll-backable updates,
-the phone link, the system assistant, privacy, reach, creator packs and the
-community rails. A blueprint is a plan; the risks are that one starts reading
+the phone link, the system assistant, privacy, reach, creator packs, the
+community rails, and the long-horizon pillars (the mesh, the timeline, the
+canvas, the graph). A blueprint is a plan; the risks are that one starts reading
 like state, or that a rewrite quietly drops the honest limits each design
 records. These checks pin the shape and a few load-bearing sentences, not the
 content.
@@ -35,6 +36,10 @@ NAMES = (
     "REACH",
     "CREATORS",
     "COMMUNITY",
+    "MESH",
+    "TIMELINE",
+    "CANVAS",
+    "GRAPH",
 )
 
 SECTIONS = (
@@ -56,6 +61,10 @@ LOAD_BEARING_LIMITS = {
     "REACH": "aarch64",
     "CREATORS": "Adobe",
     "COMMUNITY": "cannot be designed into existence",
+    "MESH": "the data is truly gone",
+    "TIMELINE": "The outside world cannot be rewound",
+    "CANVAS": "Closed programs stay closed",
+    "GRAPH": "never the only copy",
 }
 
 

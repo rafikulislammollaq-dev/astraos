@@ -25,6 +25,15 @@ roadmap's design principle deserves concrete answers:
 | [REACH.md](REACH.md) | old laptops to new rigs; what "runs on everything" honestly covers | Stages 1–2 |
 | [CREATORS.md](CREATORS.md) | audio, video, design and development packs that work out of the box | Stage 5 |
 | [COMMUNITY.md](COMMUNITY.md) | docs, languages, forums, a roadmap people can help steer | every stage |
+| [MESH.md](MESH.md) | your devices as one computer: identity, the private network, the scheduler, Doorways | long horizon (slices in Stages 1, 5 and 7) |
+| [TIMELINE.md](TIMELINE.md) | rewind, branch, merge and opt-in memory of your own past | long horizon (system layer in Stages 3 and 5) |
+| [CANVAS.md](CANVAS.md) | screens built from a sentence: capabilities, plans, the component kit | long horizon (slices in Stages 4 and 7) |
+| [GRAPH.md](GRAPH.md) | data by meaning — files stay files | long horizon (first slice: the Vault, Stage 6) |
+
+The first ten blueprints cover the experiences inside the roadmap's stages. The last
+four are the long-horizon pillars behind the whole direction — the mesh, the
+timeline, the canvas and the graph; their first slices live inside the stages, and
+the whole of them has no schedule yet, which each file says in its own words.
 
 Every blueprint has the same four sections: *the promise* (what a person gets),
 *how it works* (the actual mechanism), *honest boundaries* (what is refused,
