@@ -233,6 +233,11 @@ It needs `qemu-system-x86_64`, `python3`, and root (or `sudo`) for the loop moun
 is used when the host allows it; otherwise QEMU emulates the CPU — slower, not
 different.
 
+The emulated path is the slow one, and CI runs it: run 38871459329 (2026-10-16)
+measured 45 minutes of emulation that ended with LightDM still starting. The CI window
+(`--timeout 120`) and the guest's own wait for the session both carry margin over that
+measurement. A host with KVM does not pay the emulation cost.
+
 ## 9. After a successful build
 
 A structurally valid ISO is **not** a working operating system. Boot it:

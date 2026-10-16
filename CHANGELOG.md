@@ -78,9 +78,27 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   device scan, which is also how the ISO's own boot entry finds it - the by-hand
   VirtualBox boot of the previous image had already proven that path. The driver now also
   stops waiting as soon as the serial console shows `BOOT FAILED!` or a kernel panic
-  instead of burning its whole timeout, its window carries margin for a TCG boot nothing
-  has yet clocked (45 minutes), and `tests/static/test_smoke_boot.py` fails if `findiso`
-  is ever added back or if the driver stops mirroring `LIVE_APPEND`.
+  instead of burning its whole timeout, its window carries margin over the first clocked
+  TCG boot (the entry below records the measurement), and
+  `tests/static/test_smoke_boot.py` fails if `findiso` is ever added back or if the
+  driver stops mirroring `LIVE_APPEND`.
+
+- **The second CI boot reached the login prompt and never ran its self-test** (run
+  38871459329, 2026-10-16). The findiso fix worked - the serial console shows the live
+  system booting to `astra-live login:` - but systemd deleted the self-test unit's start
+  job on the way: `Job astraos-smoke.service/start deleted to break ordering cycle`,
+  `[ SKIP ] Ordering cycle found, skipping astraos-smoke.service`. The unit was
+  `WantedBy=multi-user.target` while ordered `After=graphical.target`; a unit is started
+  as part of the transaction of the target that wants it (which orders it before that
+  target), and graphical.target is itself ordered after multi-user.target - a circle,
+  and systemd breaks circles by silently deleting jobs. `[Install]` now says
+  `WantedBy=graphical.target`, the target the unit already orders after; the unit's
+  header comment and `tests/static/test_smoke_boot.py` record the cycle so it cannot
+  return silently. The same run was the first to clock a TCG boot: 45 minutes of
+  emulation ended with LightDM still starting. The workflow's self-test window is now
+  120 minutes (job ceiling 150), the guest gets 4 cores and 4 GiB, the guest script
+  waits for the session itself, and the unit's start timeout covers that wait. The
+  README's tested-claims list stays held until a run reports PASS.
 
 - **The live session had no working DNS: `/etc/resolv.conf` was a 0-byte file.** Pinging
   an IP worked; pinging a name did not. Two authorities were both enabled —

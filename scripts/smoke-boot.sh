@@ -172,8 +172,12 @@ else
 fi
 
 say "booting $ISO (self-test timeout ${TIMEOUT_MINUTES} min)"
+# Run 38871459329 put a number on the emulation: 45 minutes of boot with LightDM still
+# starting. Emulated boot is the CI path, so give the guest what the runner can spare -
+# four cores and 4 GiB let the parallel boot actually run in parallel, and zram is not
+# asked to make up for a memory shortage a test can simply avoid.
 qemu-system-x86_64 "${ACCEL[@]}" \
-    -m 2048 -smp 2 -vga std \
+    -m 4096 -smp 4 -vga std \
     -cdrom "$ISO" \
     -kernel "$WORK/vmlinuz" -initrd "$WORK/initrd.img" -append "$APPEND" \
     -nic user,model=e1000 \

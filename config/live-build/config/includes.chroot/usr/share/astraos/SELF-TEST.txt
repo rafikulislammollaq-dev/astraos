@@ -3,10 +3,10 @@ AstraOS self-test
 
 WHAT IT IS
 
-  The machine describing itself. The unit astraos-smoke.service runs
-  /usr/local/sbin/astraos-smoke after the desktop is up, prints one line per check to
-  the serial console and the journal, holds the desktop for a screenshot and powers the
-  machine off. The image's CI boot test (scripts/smoke-boot.sh, run by the smoke-boot
+  The machine describing itself. The unit astraos-smoke.service starts once the
+  graphical boot has been reached, waits for the session if it is still loading, prints
+  one line per check to the serial console and the journal, holds the desktop for a
+  screenshot and powers the machine off. The image's CI boot test (scripts/smoke-boot.sh, run by the smoke-boot
   job of .github/workflows/build-iso.yml) is the same script under automation.
 
 HOW TO RUN IT

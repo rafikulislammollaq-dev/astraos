@@ -153,6 +153,65 @@ def test_the_unit_runs_only_with_the_switch() -> None:
     assert "ExecStart=/usr/local/sbin/astraos-smoke" in text
 
 
+def test_the_unit_is_wanted_by_the_target_it_orders_after() -> None:
+    """Run 38871459329: systemd silently deleted the self-test's start job.
+
+    The serial console showed:
+        Found ordering cycle on astraos-smoke.service/start
+        Found dependency on graphical.target/start
+        Found dependency on multi-user.target/start
+        [ SKIP ] Ordering cycle found, skipping astraos-smoke.service
+
+    A unit is started as part of the transaction of the target that wants it (which
+    orders it before that target); After=graphical.target ordered it after graphical;
+    graphical.target is itself ordered after multi-user.target. WantedBy=multi-user
+    closed that circle, so systemd deleted the job and the machine booted without ever
+    running its check. This test keeps the two lines in agreement.
+    """
+    text = _text(UNIT)
+    assert "After=graphical.target" in text
+    assert "WantedBy=graphical.target" in text, (
+        "the unit is ordered After=graphical.target, so it must be wanted by "
+        "graphical.target; WantedBy=multi-user.target made systemd skip the unit "
+        "with an ordering cycle in run 38871459329"
+    )
+    assert "WantedBy=multi-user.target" not in text
+    assert "Before=multi-user.target" not in text
+
+
+def test_the_unit_start_timeout_covers_the_emulated_wait() -> None:
+    text = _text(UNIT)
+    match = re.search(r"TimeoutStartSec=(\d+)", text)
+    assert match and int(match.group(1)) >= 1200, (
+        "the guest waits up to ten minutes for the session under emulation, then "
+        "checks, holds the desktop and powers off; a shorter start timeout would "
+        "kill the self-test halfway (run 38871459329 showed the wait's real size)"
+    )
+
+
+def test_the_guest_self_test_waits_for_the_session_not_just_the_socket() -> None:
+    text = _text(GUEST_SCRIPT)
+    assert 'pgrep -u "$LIVE_USER" xfwm4' in text
+    assert "-lt 300" in text, (
+        "the session wait budget shrank; under QEMU emulation LightDM and the Xfce "
+        "session can take minutes to come up (run 38871459329)"
+    )
+
+
+def test_the_boot_windows_carry_margin_over_the_measured_boot() -> None:
+    text = _text(WORKFLOW)
+    match = re.search(r"smoke-boot\.sh --timeout (\d+)", text)
+    assert match, "the boot step no longer passes a self-test window"
+    assert int(match.group(1)) >= 90, (
+        "run 38871459329 measured 45 minutes of emulation ending with LightDM still "
+        "starting; a shorter window can never pass"
+    )
+    assert "timeout-minutes: 150" in text, (
+        "the smoke-boot job ceiling must carry margin over the driver's 120-minute "
+        "self-test window (run 38871459329)"
+    )
+
+
 def test_the_services_hook_enables_the_self_test_unit() -> None:
     assert "enable_unit astraos-smoke.service" in _text(SERVICES_HOOK), (
         "the unit is inert without the condition, but it must be pulled into the boot "

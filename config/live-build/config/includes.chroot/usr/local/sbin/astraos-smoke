@@ -81,10 +81,16 @@ esac
 # --- 2. the display and the session -------------------------------------------------
 # The live medium logs the throwaway account in automatically (live-config arranges it;
 # installed systems get it locked down), so a successful boot ends in a running Xfce
-# session, not at a greeter. The X socket appears first; wait for it so a slow
-# software-rendered boot is not mistaken for a failure.
+# session, not at a greeter. The unit starts once the graphical boot has been reached,
+# but on an emulated CPU (CI's QEMU without KVM) the session itself can keep loading
+# for minutes after that, so wait for the session - the socket appearing is not the
+# finish line. Run 38871459329 showed how wide that window is: 45 minutes of emulation
+# ended with LightDM still starting.
 waited=0
-while [ ! -S /tmp/.X11-unix/X0 ] && [ "$waited" -lt 90 ]; do
+while [ "$waited" -lt 300 ]; do
+    if [ -S /tmp/.X11-unix/X0 ] && pgrep -u "$LIVE_USER" xfwm4 >/dev/null 2>&1; then
+        break
+    fi
     sleep 2
     waited=$((waited + 1))
 done
@@ -92,7 +98,7 @@ done
 if [ -S /tmp/.X11-unix/X0 ]; then
     ok "x-display" "/tmp/.X11-unix/X0 after $((waited * 2))s"
 else
-    bad "x-display" "no X socket after 180s"
+    bad "x-display" "no X socket after $((waited * 2))s"
 fi
 
 run "lightdm" systemctl is-active lightdm

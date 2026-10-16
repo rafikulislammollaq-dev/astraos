@@ -16,6 +16,21 @@
 #   When the checks are done the script holds the desktop for the screenshot and then
 #   powers the machine off; scripts/smoke-boot.sh waits for the QEMU process to exit.
 #   That is only ever reached with astraos.ci present, so it cannot surprise a user.
+#
+# WHY WantedBy=graphical.target, NOT multi-user.target
+#   The first CI boot that reached userspace (run 38871459329, 2026-10-16) showed
+#   systemd silently deleting this unit's start job:
+#
+#     multi-user.target: Job astraos-smoke.service/start deleted to break ordering
+#       cycle ... Found dependency on graphical.target/start
+#     [ SKIP ] Ordering cycle found, skipping astraos-smoke.service
+#
+#   A unit is started as part of the transaction of the target that wants it, which
+#   orders it before that target; After=graphical.target ordered this unit after
+#   graphical.target; and graphical.target is itself ordered after multi-user.target.
+#   That circle is a systemd ordering cycle, and systemd breaks cycles by deleting
+#   jobs - the machine booted, but never ran its check. WantedBy=graphical.target
+#   keeps the unit and its ordering inside one target: no cycle.
 
 [Unit]
 Description=AstraOS self-test (runs only with astraos.ci on the kernel command line)
@@ -32,7 +47,9 @@ ExecStart=/usr/local/sbin/astraos-smoke
 # the journal, so the same run can be read live and afterwards.
 StandardOutput=journal+console
 StandardError=journal+console
-TimeoutStartSec=600
+# The script may wait ten minutes for the session (an emulated CPU can be that slow),
+# then check, hold the desktop and power off; the start timeout must cover all of it.
+TimeoutStartSec=1200
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target

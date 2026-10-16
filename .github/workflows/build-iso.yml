@@ -207,10 +207,13 @@ jobs:
     if: ${{ needs.build.result == 'success' && inputs.smoke_boot }}
     runs-on: ubuntu-24.04
     # An emulated boot of a live desktop image plus the self-test. KVM is used when the
-    # runner provides it; QEMU emulation is the fallback - slower, not different. Nothing
-    # has yet clocked a full TCG boot of this image, so both timeouts carry margin: the
-    # driver's self-test window (45 min) and this ceiling.
-    timeout-minutes: 75
+    # runner provides it; QEMU emulation is the fallback - slower, not different.
+    # Run 38871459329 (2026-10-16) clocked what no earlier run had: 45 minutes of
+    # emulation ended with LightDM still starting (the self-test unit itself had been
+    # skipped by an ordering cycle, fixed in the unit file). Both windows carry margin
+    # over that measurement now: the driver's self-test window (120 min) and this
+    # ceiling.
+    timeout-minutes: 150
 
     steps:
       - name: Check out the repository
@@ -230,7 +233,7 @@ jobs:
       - name: Boot the ISO and run its self-test
         run: |
           ls -la iso/
-          ./scripts/smoke-boot.sh --timeout 45 --out smoke-out iso/*.iso
+          ./scripts/smoke-boot.sh --timeout 120 --out smoke-out iso/*.iso
 
       - name: Summarise the self-test
         if: always()
