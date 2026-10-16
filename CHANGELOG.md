@@ -67,6 +67,20 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- **The live session had no working DNS: `/etc/resolv.conf` was a 0-byte file.** Pinging
+  an IP worked; pinging a name did not. Two authorities were both enabled —
+  `NetworkManager.service` and `resolvconf.service` — and each deferred to the other:
+  NetworkManager saw `resolvconf` installed and handed name resolution over to it, and
+  `resolvconf` found the `/run/resolvconf/resolv.conf` symlink it manages replaced by an
+  empty regular file (live-build replaces the path), so it wrote nothing. Nothing owned
+  the file. The fix is that the image no longer installs `resolvconf` at all:
+  NetworkManager writes `/etc/resolv.conf` itself, which is the Debian 13 way and the
+  reason `resolvconf` is deprecated. This class of defect does not stop a build — apt
+  resolves the set happily and the image ships broken — so
+  `tests/static/test_packages.py::test_resolvconf_is_not_installed_alongside_networkmanager`
+  fails if it is ever added back, the boot self-test resolves a real name as one of its
+  checks, and the assistant's `set-dns` knowledge file teaches the diagnosis.
+
 - The validator then failed that image on eight "live filesystem does NOT contain" checks at
   once, while a ninth passed. Nothing was missing: the squashfs held 152,556 inodes including
   every path the checks looked for, and the image verification hook had already confirmed the

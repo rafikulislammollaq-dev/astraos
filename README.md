@@ -116,48 +116,22 @@ the ISO stores the system as a compressed squashfs.
 
 ## Known issues
 
-1. **DNS does not work out of the box in the live session.**
-   `/etc/resolv.conf` is empty, so names do not resolve (pinging an IP works,
-   pinging `google.com` fails).
-   Workaround, run in the AstraOS terminal (note the `v` in `resolv`):
+1. **Secure Boot is not supported.** A machine enforcing it will refuse to boot the
+   medium; turn Secure Boot off to try AstraOS.
+2. **Copy and paste between the host and a virtual machine needs Guest Additions**,
+   which the image does not ship. Right Ctrl releases the mouse; inside the terminal
+   copy is Ctrl+Shift+C and paste is Ctrl+Shift+V.
+3. **Physical hardware, UEFI and BIOS firmware boot, and the installer are untested.**
+   The image has been booted by hand in VirtualBox (live session, 2026-10-15), but
+   nothing has run on physical hardware and Calamares has not been run at all.
+4. **The ISO is larger than it needs to be** (about 2.4 GB: APT recommends are on, and
+   the codec, Wine and Flatpak sets are included).
+5. **`/etc/os-release` may be overwritten by a future upgrade of Debian's `base-files`.**
+   Cosmetic: AstraOS's own tools read `/etc/astraos-release`.
+6. **The theme is colour-only**; window decorations use the upstream xfwm4 theme.
 
-   ```
-   echo "nameserver 10.0.2.3" | sudo tee /etc/resolv.conf
-   ```
-
-   `10.0.2.3` is VirtualBox NAT's DNS server. On other hosts or on real networks use
-   your router's address or `8.8.8.8`. The change is lost on reboot (live session).
-
-   **Fixed in 0.2.0.** The cause was confirmed by unpacking the 0.1.0
-   `filesystem.squashfs`: `/etc/resolv.conf` is a **0-byte regular file**, because
-   live-build replaces the path instead of leaving the `/run/resolvconf/resolv.conf`
-   symlink that `resolvconf(8)` manages. Both authorities were enabled —
-   `NetworkManager.service` and `resolvconf.service` are both in
-   `multi-user.target.wants` — and each deferred to the other: NetworkManager saw
-   `resolvconf` installed and handed DNS over to it, and `resolvconf` found its
-   symlink replaced and wrote nothing. Nothing owned the file.
-
-   `resolvconf` has been removed from `config/package-lists/50-networking.list.chroot`.
-   NetworkManager writes DNS itself, and Debian 13 treats `resolvconf` as deprecated.
-   `tests/static/test_packages.py::test_resolvconf_is_not_installed_alongside_networkmanager`
-   fails if it is ever added back, because this class of bug does not stop the build —
-   apt resolves the set happily and the image ships broken.
-
-2. Structural validation of the ISO **passes on every build**: the 2026-10-16 image
-   records `structural=PASS` with 25 passing checks (bootloaders, kernel, initramfs,
-   live filesystem, AstraOS contents). The validator only sees the image from the
-   outside; what is still untested — physical hardware, UEFI and BIOS firmware boot,
-   the installer — is listed in `docs/KNOWN_LIMITATIONS.md` §2. The boot test script
-   still reports BLOCKED when no ISO is in `dist/`, which is not a pass.
-3. Copy and paste between the host and the VM needs VirtualBox Guest Additions, which
-   are not part of the image.
-4. The ISO is larger than it needs to be (APT recommends enabled, much firmware,
-   LibreOffice, compilers).
-5. Secure Boot is not supported.
-6. `/etc/os-release` may be overwritten by a future upgrade of Debian's `base-files`.
-7. Only a colour GTK theme ships, with the upstream xfwm4 window theme.
-
-See `docs/KNOWN_LIMITATIONS.md` for the full list.
+Fixed defects are recorded in `CHANGELOG.md`. The complete list of limitations, in more
+detail than this summary, is `docs/KNOWN_LIMITATIONS.md`.
 
 ---
 
@@ -189,8 +163,7 @@ See `docs/KNOWN_LIMITATIONS.md` for the full list.
    tick Skip Unattended Installation.
 4. Hardware: 4096 MB RAM, 2 CPUs, 25 GB disk. Finish.
 5. Start the VM, choose **Live system (amd64)**, wait for the desktop.
-6. Open Firefox. 0.2.0 builds configure DNS themselves; the workaround in Known issues
-   above applies only to the broken 0.1.0 image.
+6. Open Firefox. 0.2.0 builds configure DNS themselves; nothing to fix first.
 7. Press Right Ctrl to release the mouse from the VM.
    In the terminal, copy is Ctrl+Shift+C and paste is Ctrl+Shift+V.
 
