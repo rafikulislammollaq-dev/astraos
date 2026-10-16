@@ -3,7 +3,7 @@
 #
 # WHAT THIS IS
 #   A machine describing itself. The systemd unit starts it only when the kernel command
-#   line contains "astraos.ci"; every line below goes to the serial console, and the
+#   line contains "astraos.ci=1"; every line below goes to the serial console, and the
 #   RESULT line tells scripts/smoke-boot.sh whether the image did what it claims.
 #
 #   In a normal boot the unit's condition keeps this script from running at all. Nothing
@@ -63,6 +63,17 @@ if [ -r /etc/os-release ]; then
 fi
 
 say "begin"
+
+# Two systems boot with this script: the live medium (astraos.ci=1; the boot
+# self-test) and the installed system the install exercise produced
+# (astraos.ci.installed=1). They differ in what the boot ends in - a live session
+# versus a login greeter - and every difference below hangs off this switch.
+MODE=live
+if grep -q 'astraos.ci.installed' /proc/cmdline; then
+    MODE=installed
+fi
+say "mode: $MODE"
+
 say "os: ${PRETTY_NAME:-unknown}"
 say "kernel: $(uname -r), architecture $(uname -m)"
 say "cpu: $(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo | head -n 1)"
@@ -79,17 +90,20 @@ case "${PRETTY_NAME:-}" in
 esac
 
 # --- 2. the display and the session -------------------------------------------------
-# The live medium logs the throwaway account in automatically (live-config arranges it;
-# installed systems get it locked down), so a successful boot ends in a running Xfce
-# session, not at a greeter. The unit starts once the graphical boot has been reached,
-# but on an emulated CPU (CI's QEMU without KVM) the session itself can keep loading
-# after that, so wait for the session - the socket appearing is not the finish line.
-# The first green CI run (38881934636) saw the session come up 22 s in; the wait budget
-# stays generous because emulated boots vary.
+# The live medium logs the throwaway account in automatically (live-config arranges it),
+# so a successful live boot ends in a running Xfce session. The installed system does
+# the opposite on purpose: no autologin, so the boot ends at the LightDM greeter - and
+# the install exercise's lockdown step exists to guarantee exactly that. On an emulated
+# CPU the session keeps loading after the unit starts, so wait for the real landmark:
+# the window manager on the live boot, the greeter process on the installed one.
 waited=0
 while [ "$waited" -lt 300 ]; do
-    if [ -S /tmp/.X11-unix/X0 ] && pgrep -u "$LIVE_USER" xfwm4 >/dev/null 2>&1; then
-        break
+    if [ -S /tmp/.X11-unix/X0 ]; then
+        if [ "$MODE" = installed ]; then
+            pgrep -f 'lightdm.*greeter' >/dev/null 2>&1 && break
+        else
+            pgrep -u "$LIVE_USER" xfwm4 >/dev/null 2>&1 && break
+        fi
     fi
     sleep 2
     waited=$((waited + 1))
@@ -103,10 +117,57 @@ fi
 
 run "lightdm" systemctl is-active lightdm
 
-if pgrep -u "$LIVE_USER" xfwm4 >/dev/null 2>&1; then
-    ok "session" "xfwm4 running as $LIVE_USER"
+if [ "$MODE" = installed ]; then
+    if pgrep -f 'lightdm.*greeter' >/dev/null 2>&1; then
+        ok "installed-greeter" "the installed system shows a login greeter, not a session"
+    else
+        bad "installed-greeter" "no greeter process is running"
+    fi
 else
-    bad "session" "xfwm4 is not running as $LIVE_USER"
+    if pgrep -u "$LIVE_USER" xfwm4 >/dev/null 2>&1; then
+        ok "session" "xfwm4 running as $LIVE_USER"
+    else
+        bad "session" "xfwm4 is not running as $LIVE_USER"
+    fi
+fi
+
+# --- 2b. the installed system's promises (installed boot only) ------------------------
+# These are the installer's own lockdown claims, re-checked from outside the installer:
+# what its shellprocess step wrote into the target must be true on the target itself.
+if [ "$MODE" = installed ]; then
+    if [ -s /etc/lightdm/lightdm.conf.d/90-astraos-installed.conf ]; then
+        ok "installed-policy-file" "/etc/lightdm/lightdm.conf.d/90-astraos-installed.conf"
+    else
+        bad "installed-policy-file" "the installer's autologin policy file is missing or empty"
+    fi
+
+    autologin=$(grep -rsE '^[[:space:]]*autologin-user=[^[:space:]]+' /etc/lightdm/ 2>/dev/null | head -n 1)
+    if [ -z "$autologin" ]; then
+        ok "installed-no-autologin" "no autologin is configured under /etc/lightdm"
+    else
+        bad "installed-no-autologin" "an autologin survived: $autologin"
+    fi
+
+    if getent passwd "$LIVE_USER" >/dev/null 2>&1; then
+        bad "installed-no-live-user" "the live account $LIVE_USER exists on the installed system"
+    else
+        ok "installed-no-live-user" "the live account $LIVE_USER is gone"
+    fi
+
+    good=0
+    detail=""
+    for name in $(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 { print $1 }'); do
+        home=$(getent passwd "$name" | awk -F: '{ print $6 }')
+        if [ -d "$home" ] && id -nG "$name" 2>/dev/null | grep -qw sudo; then
+            good=$((good + 1))
+            detail="${detail}${name} "
+        fi
+    done
+    if [ "$good" -ge 1 ]; then
+        ok "installed-user" "administrator account(s): ${detail}"
+    else
+        bad "installed-user" "no account with uid >= 1000, a home directory and sudo membership"
+    fi
 fi
 
 # --- 3. every AstraOS package is installed ------------------------------------------
@@ -207,7 +268,7 @@ fi
 # "phone" here is the CI host itself, reaching the guest through QEMU's port forward;
 # it answers the "phone-code:" marker this section prints. The section runs only when
 # scripts/smoke-boot.sh asked for it with astraos.phone=1, so a hand boot with
-# astraos.ci alone is unchanged.
+# astraos.ci=1 alone is unchanged.
 if grep -q 'astraos.phone' /proc/cmdline; then
     phone_log=/tmp/astraos-phone.log
     python3 /usr/lib/astraos/ai/server.py --lan --pair --port 8765 >"$phone_log" 2>&1 &
@@ -367,6 +428,14 @@ XAUTHORITY="/home/${LIVE_USER}/.Xauthority"
 as_user() {
     runuser -u "$LIVE_USER" -- env DISPLAY=:0 XAUTHORITY="$XAUTHORITY" "$@"
 }
+if [ "$MODE" = installed ]; then
+    # No user session to borrow: the greeter owns the display, and the X authority
+    # meant to be readable on the installed system is lightdm's own.
+    XAUTHORITY=/var/run/lightdm/root/:0
+    as_user() {
+        env DISPLAY=:0 XAUTHORITY="$XAUTHORITY" "$@"
+    }
+fi
 if as_user xset s off >/dev/null 2>&1 \
     && as_user xset s noblank >/dev/null 2>&1 \
     && as_user xset dpms force on >/dev/null 2>&1 \

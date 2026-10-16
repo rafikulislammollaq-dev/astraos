@@ -1,0 +1,141 @@
+#!/bin/sh
+# AstraOS install driver - the guest half of scripts/install-boot-test.sh.
+#
+# WHAT THIS IS
+#   The automated half of an end-to-end install exercise: a real boot of a real ISO
+#   installing itself onto a real (virtual) disk, with the real Calamares UI driven
+#   from the outside. The systemd unit starts this script only when the kernel command
+#   line contains the exact word "astraos.ci.install=1"; a normal boot never meets it,
+#   and the boot self-test's own switch does not fire during this boot either.
+#
+#   The script prepares the installer for being driven remotely - CI-only module
+#   presets delivered through a 9p share, a fixed window geometry so a click sent from
+#   the host lands where it was aimed - then starts Calamares and records what happened
+#   into the share. It never partitions, formats or boots anything itself: every
+#   destructive step is Calamares', performed through its own UI. This is an install,
+#   not a reimplementation of one.
+#
+# OUTPUT CONTRACT (grepped by scripts/install-boot-test.sh; keep the markers stable):
+#   ASTRAOS-INSTALL: <text>
+#   ASTRAOS-INSTALL: calamares exited rc=<n>
+#
+# THE SHARE (QEMU -virtfs, mount tag astraos-ci; read-write, this is evidence out)
+#   in : modules/partition.conf, modules/users.conf  - CI presets built by the host
+#   out: calamares-console.log                       - calamares -d, both streams
+#   out: calamares-session.log                       - its structured session log
+#   out: settings-installed.conf, configs.sha256     - what the installer actually saw
+#   out: done                                        - "rc=<n>" (the phase-1 verdict)
+#
+# WHY THE WINDOW IS PINNED
+#   The host drives the UI with clicks at fixed coordinates (QEMU's monitor). Calamares
+#   sizes its window from the branding file and may grow it per page; the CI-only
+#   "noexpand" + fixed size appended below remove that freedom, so the coordinates are
+#   stable across runs. The shipped branding is untouched on disk; this happens in the
+#   live session's overlay and dies with the boot.
+
+export LC_ALL=C
+
+say() { printf 'ASTRAOS-INSTALL: %s\n' "$*"; }
+
+SEED=/mnt/astraos-ci
+MODULES=/etc/calamares/modules
+BRANDING=/usr/share/calamares/branding/astraos
+
+# The live user, as the self-test reads it too: from the kernel command line.
+LIVE_USER=$(sed -n 's/.*username=\([^ ]*\).*/\1/p' /proc/cmdline | head -n 1)
+LIVE_USER=${LIVE_USER:-astra}
+
+# --- the seed ------------------------------------------------------------------------
+mkdir -p "$SEED"
+tries=0
+until mount -t 9p -o trans=virtio,version=9p2000.L astraos-ci "$SEED" 2>/dev/null; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 30 ]; then
+        say "cannot mount the 9p share after 30 tries; nothing to do"
+        exit 1
+    fi
+    sleep 2
+done
+say "seed mounted"
+
+if [ ! -f "$SEED/modules/users.conf" ] || [ ! -f "$SEED/modules/partition.conf" ]; then
+    say "the seed carries no module presets; refusing to drive an unprepared installer"
+    exit 1
+fi
+
+# --- the session ---------------------------------------------------------------------
+# Calamares needs the live session's X server. Wait for it with a bounded patience (an
+# emulated boot can be slow), then say exactly what was missing if it never came.
+tries=0
+until [ -S /tmp/.X11-unix/X0 ] && pgrep -u "$LIVE_USER" xfwm4 >/dev/null 2>&1; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 120 ]; then
+        say "the live session never came up; cannot start the installer"
+        printf 'rc=no-session\n' > "$SEED/done"
+        sync
+        systemctl poweroff || poweroff || halt -p
+        exit 1
+    fi
+    sleep 2
+done
+say "live session is up"
+
+# --- prepare the installer (CI-only; everything here dies with the live boot) ---------
+cp "$SEED/modules/partition.conf" "$SEED/modules/users.conf" "$MODULES/" || {
+    say "cannot install the module presets"
+    exit 1
+}
+
+# The finished page must not wait for a click in CI; the host clicks through the wizard,
+# not through a stack of pages that would each need its own timing. The shipped
+# settings.conf keeps quit-at-end: false for human installs.
+sed -i 's/^quit-at-end:.*/quit-at-end: true/' /etc/calamares/settings.conf
+
+# Fixed geometry for the remote pointer (see the header). Appended only if absent, and
+# never a duplicate: a repeated key in this YAML is a lie about which value is in use.
+if ! grep -qE '^windowExpanding:' "$BRANDING/branding.desc"; then
+    {
+        printf '\n# CI-only (appended by astraos-install): fixed geometry for the remote pointer.\n'
+        printf 'windowExpanding: noexpand\n'
+        printf 'windowSize: 800px,520px\n'
+        printf 'windowPlacement: center\n'
+    } >> "$BRANDING/branding.desc"
+fi
+
+# Evidence of what the installer actually saw, written back through the share.
+cp /etc/calamares/settings.conf "$SEED/settings-installed.conf"
+sha256sum "$MODULES/partition.conf" "$MODULES/users.conf" "$SEED/settings-installed.conf" \
+    > "$SEED/configs.sha256" 2>/dev/null || true
+
+rm -f "$SEED/done" "$SEED/calamares-console.log" "$SEED/calamares-session.log"
+
+# --- run the installer -----------------------------------------------------------------
+XAUTHORITY="/home/${LIVE_USER}/.Xauthority"
+export DISPLAY=:0
+export XAUTHORITY
+live_uid=$(id -u "$LIVE_USER" 2>/dev/null || true)
+if [ -n "$live_uid" ] && [ -d "/run/user/$live_uid" ]; then
+    export XDG_RUNTIME_DIR="/run/user/$live_uid"
+fi
+
+say "starting calamares"
+calamares -d >> "$SEED/calamares-console.log" 2>&1
+rc=$?
+
+# The structured log is the record of every step the wizard took.
+for candidate in /root/.cache/calamares/session.log /var/log/calamares/session.log; do
+    if [ -f "$candidate" ]; then
+        cp "$candidate" "$SEED/calamares-session.log" 2>/dev/null || true
+        break
+    fi
+done
+
+printf 'rc=%s\n' "$rc" > "$SEED/done"
+sync
+say "calamares exited rc=$rc"
+
+# Let the last writes reach the host before the VM goes down.
+sleep 2
+sync
+say "end"
+systemctl poweroff || poweroff || halt -p

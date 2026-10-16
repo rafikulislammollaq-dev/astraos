@@ -10,7 +10,7 @@ rather than being discovered an ISO build later:
     own boot entry would have booted, and the difference would be invisible;
   * the guest's output contract (the markers scripts/smoke-boot.sh greps for) must be
     kept, or a PASS image fails the workflow for the wrong reason;
-  * the self-test must never run during a normal boot: the unit is gated on "astraos.ci",
+  * the self-test must never run during a normal boot: the unit is gated on "astraos.ci=1",
     because a mechanical power-off on a user's desktop is not a feature;
   * a non-executable script inside the image would fail the self-test for a reason that
     has nothing to do with the image, so the staging step must set the mode itself - a
@@ -147,8 +147,14 @@ def test_the_guest_self_test_ends_by_powering_the_machine_off() -> None:
 
 def test_the_unit_runs_only_with_the_switch() -> None:
     text = _text(UNIT)
-    assert "ConditionKernelCommandLine=astraos.ci" in text, (
-        "without the condition the self-test would run on user machines"
+    # The condition is the exact word "astraos.ci=1", not the bare prefix "astraos.ci":
+    # systemd matches a condition without "=" against the beginning of a command line
+    # word, so "astraos.ci" would also fire for the install exercise's boots
+    # ("astraos.ci.install=1", "astraos.ci.installed=1") - and a self-test that takes
+    # screenshots and powers the machine off mid-install is not a self-test.
+    assert "ConditionKernelCommandLine=astraos.ci=1" in text, (
+        "without the condition the self-test would run on user machines; without the "
+        "=1 it would also run during the install exercise's boots"
     )
     assert "ExecStart=/usr/local/sbin/astraos-smoke" in text
 
@@ -284,8 +290,8 @@ def test_the_host_script_forwards_the_phone_page_port() -> None:
 def test_the_guest_phone_section_answers_the_hosts_sequence() -> None:
     text = _text(GUEST_SCRIPT)
     assert "astraos.phone" in text, (
-        "the phone section must be gated on its own switch, not on astraos.ci, so "
-        "a hand boot with astraos.ci alone is unchanged")
+        "the phone section must be gated on its own switch, not on astraos.ci=1, so "
+        "a hand boot with astraos.ci=1 alone is unchanged")
     assert "server.py --lan --pair" in text, (
         "the guest must start the page with pairing armed, not bare --lan")
     assert "/api/unpair" in text, "the guest revokes every phone from the computer"

@@ -34,6 +34,12 @@ hardware.** What has happened, with the record:
 - **2026-10-15, VirtualBox by hand:** the image booted from the live menu to the Xfce
   desktop; the README's "What has been tested" records the details.
 
+An automated end-to-end exercise now exists in the source (2026-10-16):
+`scripts/install-boot-test.sh`, run by CI as the `install-boot` job, installs the ISO
+onto a blank disk by driving the ISO's own Calamares UI over the QEMU monitor and then
+boots that disk alone. It is **pending its first run**; until a run record exists,
+nothing in this section changes.
+
 **Consequence:** statements about the live system booting in a virtual machine, and about
 the live session's networking, are now backed by recorded runs. Everything about
 *installing* — the installer, the installed system, disk encryption — and everything about

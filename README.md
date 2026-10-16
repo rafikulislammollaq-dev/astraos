@@ -106,11 +106,11 @@ filesystem holds 182,962 files (2,159 MiB extracted).
 | Application store | Flatpak with the Flathub remote configured system-wide; no applications preinstalled |
 | Windows software | Wine (64-bit applications) and winetricks |
 | System tools | `gdebi`, `timeshift`, `inxi`, `speech-dispatcher` |
-| Self-test | `astraos-smoke` reports the machine, session, packages and networking on request (kernel command line `astraos.ci`); the CI boot test runs it on every build |
+| Self-test | `astraos-smoke` reports the machine, session, packages and networking on request (kernel command line `astraos.ci=1`); the CI boot test runs it on every build |
 | Display manager | LightDM (GTK greeter) |
 | Display server | X11 |
 | Boot splash | Plymouth, AstraOS theme |
-| Installer | Calamares, configured and branded (not yet tested) |
+| Installer | Calamares, configured and branded; the CI install exercise is pending its first run |
 | Bootloader | GRUB (UEFI) and syslinux (BIOS), hybrid ISO. Secure Boot disabled |
 | Networking | NetworkManager with applet, wpa_supplicant |
 | Browser | Firefox ESR |
@@ -215,9 +215,15 @@ consistent, not that AstraOS works.
 
 CI goes one step further on every image it builds: the `smoke-boot` job boots the ISO
 in QEMU and runs the image's own self-test (`astraos-smoke`, started only when
-`astraos.ci` is on the kernel command line), keeping the serial log and a screenshot of
+`astraos.ci=1` is on the kernel command line), keeping the serial log and a screenshot of
 the booted desktop as the `astraos-boot-self-test` artifact. The same check runs by
 hand with `./scripts/smoke-boot.sh dist/astraos-*.iso` (see `docs/BUILDING.md`).
+
+An `install-boot` job goes further still: it installs the ISO onto a blank disk through
+the ISO's own Calamares UI, driven over the QEMU monitor, then boots the installed disk
+alone and requires the image's self-test in its installed mode. The exercise exists in
+the source as of 2026-10-16 (`scripts/install-boot-test.sh`) and is pending its first
+run; `docs/BUILDING.md` describes it.
 
 ---
 

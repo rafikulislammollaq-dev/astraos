@@ -15,7 +15,7 @@
 # against the archive by scripts/verify-package-availability.py before any build.
 #
 # "Is it there, and does this machine actually have it?" is answered by the boot
-# self-test: boot any AstraOS medium with astraos.ci on the kernel command line and the
+# self-test: boot any AstraOS medium with astraos.ci=1 on the kernel command line and the
 # machine reports what it found (docs/BUILDING.md, "The boot self-test").
 
 # --- Hardware video decode (VA-API) -------------------------------------------

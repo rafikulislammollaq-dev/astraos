@@ -2,20 +2,20 @@
 #
 # WHAT THIS IS
 #   The unit that lets a machine describe itself. It runs only when the kernel command
-#   line contains "astraos.ci" (ConditionKernelCommandLine below), so a normal user boot
+#   line contains "astraos.ci=1" (ConditionKernelCommandLine below), so a normal user boot
 #   never sees it. scripts/smoke-boot.sh boots a built ISO in QEMU with that switch and a
 #   serial console, waits for the self-test's output, takes a screenshot of the booted
 #   desktop, and fails the Build ISO workflow if any check failed.
 #
 #   It ships in every image (not just CI) because a hardware bug report is worth far more
-#   with this output attached: boot any AstraOS medium with astraos.ci on the command line
+#   with this output attached: boot any AstraOS medium with astraos.ci=1 on the command line
 #   and the machine reports what it has. See /usr/share/astraos/SELF-TEST.txt and
 #   docs/BUILDING.md, "The boot self-test".
 #
 # THE MACHINE POWERS ITSELF OFF
 #   When the checks are done the script holds the desktop for the screenshot and then
 #   powers the machine off; scripts/smoke-boot.sh waits for the QEMU process to exit.
-#   That is only ever reached with astraos.ci present, so it cannot surprise a user.
+#   That is only ever reached with astraos.ci=1 present, so it cannot surprise a user.
 #
 # WHY WantedBy=graphical.target, NOT multi-user.target
 #   The first CI boot that reached userspace (run 38871459329, 2026-10-16) showed
@@ -31,11 +31,19 @@
 #   That circle is a systemd ordering cycle, and systemd breaks cycles by deleting
 #   jobs - the machine booted, but never ran its check. WantedBy=graphical.target
 #   keeps the unit and its ordering inside one target: no cycle.
+#
+# WHY THE CONDITION IS astraos.ci=1, NOT astraos.ci
+#   systemd's ConditionKernelCommandLine matches a condition without "=" against the
+#   beginning of any command line word - "astraos.ci" also matches "astraos.ci.install=1"
+#   and "astraos.ci.installed=1", the switches of the install exercise's two boots.
+#   The exercise must never run this self-test (it would take screenshots and power the
+#   machine off mid-install), so the condition names the exact word; the exercise's own
+#   units do the same, and the three switches stay out of each other's way.
 
 [Unit]
-Description=AstraOS self-test (runs only with astraos.ci on the kernel command line)
+Description=AstraOS self-test (runs only with astraos.ci=1 on the kernel command line)
 Documentation=file:/usr/share/astraos/SELF-TEST.txt
-ConditionKernelCommandLine=astraos.ci
+ConditionKernelCommandLine=astraos.ci=1
 Wants=graphical.target
 After=graphical.target
 After=lightdm.service

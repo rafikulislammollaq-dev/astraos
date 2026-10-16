@@ -103,7 +103,7 @@ does not appear.
 ## 4. Report format
 
 Most of this can be produced by the machine itself. Every AstraOS medium carries a
-self-test: add `astraos.ci` to the kernel command line in the boot menu (and
+self-test: add `astraos.ci=1` to the kernel command line in the boot menu (and
 `console=ttyS0,115200n8` if it has a serial port) and the machine boots, checks its
 identity, desktop session, packages, networking and the stack above, prints one line per
 check and powers off. `/usr/share/astraos/SELF-TEST.txt` inside the image documents it;

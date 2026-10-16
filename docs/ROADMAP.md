@@ -113,8 +113,11 @@ updated. Every step proven in CI or recorded as untested.
   exercising the syslinux and GRUB boot menus is the `boot-menus` exercise below
   (added 2026-10-16, pending its first run).
 - [ ] **Calamares installer end to end in a VM**, and the installed system boots.
-  openQA is the established tool for driving an installer in CI; the manual
-  procedure in `docs/INSTALLATION_VIRTUALBOX.md` stays until then.
+  The exercise exists in the source (2026-10-16): `scripts/install-boot-test.sh`
+  installs the ISO onto a blank disk by driving the ISO's own Calamares UI over the
+  QEMU monitor, then boots that disk alone and requires the image's self-test in its
+  installed mode; pending its first run. The manual procedure in
+  `docs/INSTALLATION_VIRTUALBOX.md` stays either way.
 - [ ] **Boot menu paths exercised in CI**: syslinux (BIOS) and GRUB-EFI, not only
   the kernel extracted from the ISO. The exercise exists in the source (2026-10-16):
   `scripts/boot-menu-test.sh` boots the ISO with QEMU's own firmware — the host

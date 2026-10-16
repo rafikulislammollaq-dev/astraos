@@ -19,6 +19,33 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The installer is exercised end to end in CI, against the real Calamares UI
+  (source; its first run is pending).** `scripts/install-boot-test.sh` boots the built
+  ISO in QEMU with `astraos.ci.install=1` on its command line, installs it onto a blank
+  20 GiB disk through the ISO's own installer, and then boots that disk alone — no
+  medium attached — and requires the image's own self-test in its installed mode. The
+  switch is deliberately not the self-test's: the install driver's unit conditions on
+  the exact word `astraos.ci.install=1`, and the self-test's unit was tightened from
+  the bare prefix `astraos.ci` to the exact word `astraos.ci=1`, because systemd
+  matches a condition without `=` against the beginning of a command line word — the
+  shared prefix would have let each run during the other's boot, and a self-test that
+  screenshots the desktop and powers the machine off mid-install would eat the disk.
+  The wizard is driven from outside: Return advances the pages whose defaults are
+  correct (the one blank disk arrives selected with Erase pre-selected, through
+  CI-only presets appended to copies of the shipped module configs — never edited
+  into them, never duplicated), a per-run password generated on the host is typed
+  into the users page's two password fields, and a screendump precedes every step so
+  a wrong coordinate is visible in the evidence instead of guessed about. The
+  installed half runs the self-test's new installed-mode branch — a login greeter
+  instead of a live session, no autologin, no live account, and the installer's
+  lock-down file verified from outside the installer — and the host additionally
+  requires the login prompt to name the installed account's hostname. The guest half
+  (`astraos-install` and its unit) ships in every ISO and starts only when its exact
+  word is on the command line. The workflow gained the `install-boot` job
+  (`install_boot` in the manual trigger; evidence uploaded as
+  `astraos-install-test`). The first run is the proof, and it will be recorded here
+  when it happens.
+
 - **The firewall is on by default (source; its first CI run is pending).** The decision
   recorded in the roadmap — ufw shipped disabled by design — is reversed: a firewall
   that waits to be enabled protects exactly the users who never enable it. `ENABLED=yes`

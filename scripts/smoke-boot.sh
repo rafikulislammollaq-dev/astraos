@@ -173,7 +173,7 @@ APPEND="$APPEND keyboard-layouts=us keyboard-variant= timezone=UTC"
 APPEND="$APPEND live-config.hostname=${ASTRAOS_LIVE_HOSTNAME}"
 APPEND="$APPEND quiet splash"
 # astraos.phone=1 asks the guest for its phone-page section: the pairing exercise the
-# host answers in step 4a below. A hand boot with astraos.ci alone is unchanged.
+# host answers in step 4a below. A hand boot with astraos.ci=1 alone is unchanged.
 APPEND="$APPEND console=ttyS0,115200n8 astraos.ci=1 astraos.phone=1"
 
 # --- 3. QEMU --------------------------------------------------------------------------

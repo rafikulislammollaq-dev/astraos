@@ -1,0 +1,51 @@
+# AstraOS install exercise (CI only).
+#
+# WHAT THIS IS
+#   The unit behind scripts/install-boot-test.sh: a real ISO installs itself onto a
+#   real (virtual) disk, with the real Calamares UI driven from the outside over QEMU's
+#   monitor. The driver (astraos-install) prepares the installer with CI-only presets
+#   delivered through a 9p share, starts Calamares on the live session's display, and
+#   writes what happened back into the share. The unit runs only when the kernel
+#   command line contains the exact word "astraos.ci.install=1" - no normal boot, and
+#   not the boot self-test, ever meets it.
+#
+# WHY WantedBy=graphical.target
+#   Same ordering lesson as astraos-smoke.service (see that unit, and run 38871459329):
+#   a unit wanted by multi-user.target that also orders itself after graphical.target
+#   forms a cycle, and systemd breaks cycles by deleting jobs - the unit would silently
+#   never run. Keeping the unit and its ordering inside graphical.target avoids it.
+#
+# THE GUEST POWERS ITSELF OFF
+#   When Calamares exits, the driver records the result in the share and powers the
+#   machine off; scripts/install-boot-test.sh waits for the QEMU process. That is only
+#   ever reached with astraos.ci.install=1 present.
+#
+# WHY THE CONDITION IS THE EXACT WORD "astraos.ci.install=1"
+#   systemd matches a condition without "=" against the beginning of a command line
+#   word, and the bare prefix "astraos.ci.install" is a prefix of BOTH
+#   "astraos.ci.install=1" (this exercise's install boot) and "astraos.ci.installed=1"
+#   (the installed-mode boot that tests the result). The bare form would therefore
+#   start this driver - 9p share, Calamares and all - on the very boot that must prove
+#   the finished system, where the share does not exist and the failed unit would
+#   pollute the evidence the self-test is producing.
+
+[Unit]
+Description=AstraOS install exercise (runs only with astraos.ci.install=1 on the kernel command line)
+ConditionKernelCommandLine=astraos.ci.install=1
+Wants=graphical.target
+After=graphical.target
+After=lightdm.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/astraos-install
+# Both streams go to the serial console and to the journal, so a run can be watched
+# live and read afterwards.
+StandardOutput=journal+console
+StandardError=journal+console
+# Waiting for the live session, then a full emulated install, then the log write-back:
+# the start timeout must cover the whole exercise after boot.
+TimeoutStartSec=5400
+
+[Install]
+WantedBy=graphical.target

@@ -76,6 +76,11 @@ enable_unit ufw.service                   "inbound firewall, enabled by default;
 # the machine to describe itself (docs/BUILDING.md, "The boot self-test").
 enable_unit astraos-smoke.service         "boot self-test; runs only with astraos.ci on the kernel command line"
 
+# The install exercise is the same contract one step further: it runs only with
+# astraos.ci.install on the command line and drives a real Calamares install for
+# scripts/install-boot-test.sh (docs/BUILDING.md, "The install exercise").
+enable_unit astraos-install.service       "install exercise; runs only with astraos.ci.install on the kernel command line"
+
 # --- Deliberately not enabled -------------------------------------------------
 # Each of these is installed or present, but enabling it would widen the attack
 # surface or slow boot without a user-facing benefit (plan §13.2).

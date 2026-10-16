@@ -21,7 +21,7 @@
 #   3. waits for the live system's login prompt on the serial console. The menu entry
 #      itself puts it there: console=ttyS0,115200n8 is part of LIVE_APPEND in
 #      config/live-build/auto/config, so the prompt appears only when the shipped menus
-#      are right. The ISO's entries do NOT carry astraos.ci, so the guest runs no
+#      are right. The ISO's entries do NOT carry astraos.ci=1, so the guest runs no
 #      self-test and does not power off here: it stops at the login prompt, and this
 #      script stops the machine;
 #   4. keeps serial.log and qemu.out as evidence and exits 0 only when the prompt

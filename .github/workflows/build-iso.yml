@@ -40,6 +40,10 @@ on:
         description: "After building, boot the ISO in QEMU (the self-test, then the boot menus)"
         type: boolean
         default: true
+      install_boot:
+        description: "After building, install the ISO onto a blank disk in QEMU and boot the result"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -190,15 +194,18 @@ jobs:
             echo ""
             echo "### Not tested by this workflow"
             echo ""
-            echo "The build job assembles the image and validates its structure. Two"
+            echo "The build job assembles the image and validates its structure. Three"
             echo "jobs then boot it: smoke-boot starts the kernel taken out of the ISO"
             echo "and runs the image's own self-test; boot-menus boots the ISO through"
             echo "its own boot menus (syslinux on BIOS, GRUB on UEFI) and waits for the"
-            echo "live system's login prompt. When those jobs are skipped, the image was"
-            echo "**not** booted."
+            echo "live system's login prompt; install-boot installs the ISO onto a blank"
+            echo "disk through the ISO's own installer and boots that disk alone, with"
+            echo "no medium attached. When those jobs are skipped, the image was **not**"
+            echo "booted."
             echo ""
-            echo "Neither job runs the installer or boots an installed system. That"
-            echo "requires a virtual machine and is described in"
+            echo "install-boot's first run is pending; until a green one is recorded,"
+            echo "CI has never produced an installed system. The manual path - real"
+            echo "hardware, or a virtual machine someone drives by hand - remains"
             echo "docs/INSTALLATION_VIRTUALBOX.md."
             echo ""
             echo "The manifest records them as UNTESTED until they are actually performed."
@@ -341,3 +348,71 @@ jobs:
           path: |
             menus-bios/
             menus-efi/
+
+  install-boot:
+    name: Install the ISO onto a disk and boot it
+    needs: build
+    if: ${{ needs.build.result == 'success' && inputs.install_boot }}
+    runs-on: ubuntu-24.04
+    # Two emulated boots with a full Calamares install between them (the long pole),
+    # plus converting and loop-mounting the installed disk on the host.
+    # scripts/install-boot-test.sh budgets each half by itself (--timeout is per
+    # half); this ceiling covers both halves plus the ISO download and the QEMU
+    # install with margin.
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Download the ISO
+        uses: actions/download-artifact@v4
+        with:
+          name: astraos-iso
+          path: iso
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils imagemagick
+
+      - name: Install the ISO and boot the installed system
+        run: |
+          ls -la iso/
+          ./scripts/install-boot-test.sh --timeout 45 --out install-out iso/*.iso
+
+      - name: Summarise the install exercise
+        if: always()
+        run: |
+          {
+            echo "### Install exercise"
+            echo ""
+            echo "The first boot installs the ISO onto a blank disk through the ISO's"
+            echo "own Calamares UI, driven over the QEMU monitor; the second boots that"
+            echo "disk alone, with no medium attached, and expects the image's own"
+            echo "self-test in its installed mode."
+            echo ""
+            if [ -f install-out/done ]; then
+              echo "- installer report: \`$(cat install-out/done)\`"
+            else
+              echo "- installer report: none was written"
+            fi
+            echo ""
+            echo '```'
+            if [ -f install-out/serial2.log ]; then
+              grep 'ASTRAOS-SMOKE:' install-out/serial2.log \
+                || echo "no self-test output on the installed system's console"
+            else
+              echo "the installed system never wrote to a serial console"
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the install evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astraos-install-test
+          retention-days: 14
+          if-no-files-found: warn
+          path: install-out/

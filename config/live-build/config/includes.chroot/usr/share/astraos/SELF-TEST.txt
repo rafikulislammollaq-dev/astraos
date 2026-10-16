@@ -11,7 +11,7 @@ WHAT IT IS
 
 HOW TO RUN IT
 
-  It runs only when the kernel command line contains "astraos.ci", so it can never
+  It runs only when the kernel command line contains "astraos.ci=1", so it can never
   surprise a user. To make any AstraOS medium test itself:
 
     1. at the boot menu, edit the entry (e for GRUB) and add to the kernel line:

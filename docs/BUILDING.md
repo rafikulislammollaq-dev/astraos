@@ -216,7 +216,7 @@ part of CI that runs the image. It:
 
 The guest half ships in every ISO at
 `config/live-build/config/includes.chroot/usr/local/sbin/astraos-smoke`, behind
-`astraos-smoke.service`, which `ConditionKernelCommandLine=astraos.ci` keeps inert
+`astraos-smoke.service`, which `ConditionKernelCommandLine=astraos.ci=1` keeps inert
 during a normal boot. Any AstraOS medium can describe itself: add `astraos.ci=1` to the
 kernel command line in the boot menu and the machine boots, checks itself, prints one
 line per check, holds the desktop for a moment and powers off. That output — which
@@ -250,6 +250,62 @@ transcript says so. The first green run's image was black this way: QEMU's stdvg
 emulation (8.2 on the runner; fixed upstream in 9.0.2) clears the shared framebuffer
 when the guest blanks the screen. See `CHANGELOG.md`.
 
+### The install exercise
+
+The sections above boot the image; the `install-boot` job (on by default;
+`install_boot` in the manual trigger) is the one that installs it. Two boots, one
+exercise:
+
+1. the ISO's live kernel starts with `astraos.ci.install=1` on its command line. The
+   exact word matters: the install driver's unit conditions on it, the self-test's
+   unit conditions on `astraos.ci=1`, and systemd matches a condition without `=`
+   against the beginning of a command line word — so the shared bare prefix
+   `astraos.ci` would let each fire during the other's boot, and a self-test that
+   screenshots the desktop and powers the machine off in the middle of an install is
+   not a self-test;
+2. `astraos-install` (the guest half, shipped in every ISO) mounts the CI 9p share,
+   copies the presets the host put there over its module configuration, pins the
+   Calamares window to 800x520 in the centre of the screen, starts the real
+   Calamares, and reports the exit code into the share when it ends;
+3. the host drives the wizard over the QEMU monitor: Return advances the pages whose
+   defaults are already correct (locale, keyboard, the partition page — the one
+   blank disk arrives selected with Erase pre-selected — and the summary, whose Next
+   is unconditionally enabled in the pinned Calamares), and the users page gets a
+   per-run generated password typed into its two fields. A screendump precedes every
+   step, so a coordinate that is wrong is visible in the evidence instead of being
+   guessed about;
+4. the host converts the installed disk, loop-mounts it, appends the serial console
+   and the installed-mode switches (`astraos.ci=1 astraos.ci.installed=1
+   username=<live user>`) to every kernel line of the installed GRUB configuration,
+   and boots the disk alone — no ISO and no host-supplied kernel: firmware,
+   bootloader and kernel all come from the installation;
+5. the installed system's self-test runs in its installed mode: with
+   `astraos.ci.installed=1` on the command line, the same `astraos-smoke` script
+   expects a login greeter instead of a live session, no autologin under
+   `/etc/lightdm`, no live account on the system, and the installer's lock-down file
+   `/etc/lightdm/lightdm.conf.d/90-astraos-installed.conf` — the installer's own
+   checks, made from outside the installer. The host additionally requires the login
+   prompt to name the installed account's hostname, and captures a greeter
+   screenshot with the same flat-image guard as the self-test above.
+
+The pass conditions are the guests' own: Calamares must write `rc=0` into the share
+and its session log must mention the destructive modules (`unpackfs`, `bootloader`),
+and the installed self-test must report `RESULT: PASS` in installed mode. Evidence —
+both serial logs, the Calamares session log, every UI screendump, the patched
+`grub.cfg`, the greeter shot — is uploaded as the `astraos-install-test` artifact.
+The roadmap's installer item flips only when a run of this exercise is green; that
+run is still pending.
+
+The same script runs locally against any built ISO:
+
+```bash
+./scripts/install-boot-test.sh --out out-install dist/astraos-*.iso
+```
+
+It needs `qemu-system-x86_64`, `qemu-img`, `python3`, `losetup`, and root (or
+`sudo`) for the loop mounts. Like the self-test, KVM is used when the host allows
+it; emulation is the fallback — slower, not different.
+
 ### The boot menus
 
 The self-test above boots a kernel the host script supplied. The `boot-menus` job
@@ -270,7 +326,7 @@ boots the guest —
 
 Two runs per dispatch, one per firmware path (`--medium bios`, `--medium efi`), each
 with a 25-minute wait; the EFI run needs the OVMF firmware (`ovmf` package). The ISO's
-menu entries do not carry `astraos.ci`, so the guest runs no self-test and does not
+menu entries do not carry `astraos.ci=1`, so the guest runs no self-test and does not
 power off: it stops at the login prompt and the script stops the machine. Evidence
 (`serial.log`, `qemu.out`) is uploaded as the `astraos-boot-menus` artifact.
 
