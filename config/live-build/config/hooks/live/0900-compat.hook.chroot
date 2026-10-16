@@ -1,0 +1,52 @@
+#!/bin/sh
+# AstraOS compatibility hook (chroot stage).
+#
+# WHAT AND WHY
+#   flatpak is installed by 45-compatibility.list.chroot, but a Flatpak without a remote
+#   is a tool with nothing to offer. This hook points the system-wide remote at Flathub -
+#   the store users mean when they say "install an app" - and records the decision in
+#   /usr/share/astraos/COMPAT-REPORT.txt so it can be audited like the service policy
+#   (plan §13.2).
+#
+#   The remote is a *pointer*: nothing is downloaded when it is added, and no application
+#   is preinstalled. Installing one remains the user's explicit decision, exactly like
+#   apt needs one.
+#
+# WHY THIS RUNS AFTER 0700-verify
+#   It needs the network, which no other hook does, and a flake here must not fail a build
+#   that is otherwise sound. The warning is loud, the report says FAILED, and the boot
+#   self-test checks "flatpak remotes" when the image starts - so a missing remote cannot
+#   hide.
+
+set -eu
+
+PREFIX='[astraos:compat]'
+log() { printf '%s %s\n' "$PREFIX" "$*"; }
+
+REPORT=/usr/share/astraos/COMPAT-REPORT.txt
+mkdir -p /usr/share/astraos
+{
+    printf '# AstraOS compatibility decisions\n'
+    printf '# Generated during the build by 0900-compat.hook.chroot.\n'
+    printf '# Format: name|result|detail\n'
+} > "$REPORT"
+
+if ! command -v flatpak >/dev/null 2>&1; then
+    log "WARNING: flatpak is not installed; no remote added"
+    printf 'flathub|NOT-CONFIGURED|%s\n' "flatpak not installed" >> "$REPORT"
+    exit 0
+fi
+
+export LC_ALL=C
+# Output is captured instead of written to a file: the cleanup hook has already run, and
+# a stray log in /tmp would end up inside the image.
+if output=$(flatpak remote-add --system --if-not-exists flathub \
+        https://flathub.org/repo/flathub.flatpakrepo 2>&1); then
+    log "flathub remote added system-wide (no applications are preinstalled)"
+    printf 'flathub|configured|%s\n' "system-wide remote, no applications preinstalled" >> "$REPORT"
+else
+    first_line=$(printf '%s\n' "$output" | head -n 1)
+    log "WARNING: could not add the flathub remote: ${first_line:-no output}"
+    log "WARNING: the boot self-test reports this as a failed check"
+    printf 'flathub|FAILED|%s\n' "${first_line:-no output}" >> "$REPORT"
+fi

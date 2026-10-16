@@ -187,8 +187,9 @@ CI-specific notes:
 - The container runs with `--privileged`, because `live-build` mounts filesystems and
   chroots. It uses the same scripts as a local build, so CI cannot drift from this document.
 - The artifact is retained for 14 days. Builds are not archived permanently.
-- The workflow summary ends with an explicit statement of what it did **not** test:
-  booting, installing and everything that follows.
+- The workflow summary ends with an explicit statement of what it did **not** test: the
+  installer and an installed system. Booting the live image is covered by the
+  `smoke-boot` job below.
 
 There is a second CI workflow, `.github/workflows/build-ai-engine.yml`, which has nothing
 to do with the image: it builds the assistant's runtime (`llama-server`, `whisper-cli`)
@@ -198,6 +199,39 @@ emulated Sandy Bridge with a real model, and publishes everything as the
 `astra-ai-engine-linux-x86_64-avx` artifact. It runs on every push that changes
 `packages/astraos-ai/root/usr`, so the twenty-minute compile never has to happen on the
 user's desktop.
+
+### The boot self-test
+
+The `smoke-boot` job (on by default; `smoke_boot` in the manual trigger) is the only
+part of CI that runs the image. It:
+
+1. reads the live kernel and initrd out of the freshly built ISO (read-only loop mount);
+2. boots them in QEMU with the ISO attached as the live medium, using the same live
+   parameters as the ISO's own boot entry — `config/distribution.env` is their single
+   definition — plus `console=ttyS0,115200n8` and `astraos.ci=1`;
+3. waits for the serial console to report `ASTRAOS-SMOKE: RESULT: PASS`;
+4. takes a screenshot of the booted desktop through the QEMU monitor;
+5. uploads `serial.log` and `screenshot.png` as the `astraos-boot-self-test` artifact
+   and fails when the result is missing or FAIL.
+
+The guest half ships in every ISO at
+`config/live-build/config/includes.chroot/usr/local/sbin/astraos-smoke`, behind
+`astraos-smoke.service`, which `ConditionKernelCommandLine=astraos.ci` keeps inert
+during a normal boot. Any AstraOS medium can describe itself: add `astraos.ci=1` to the
+kernel command line in the boot menu and the machine boots, checks itself, prints one
+line per check, holds the desktop for a moment and powers off. That output — which
+kernel, CPU and memory, and exactly which check failed — is what a hardware bug report
+needs; see `/usr/share/astraos/SELF-TEST.txt` inside the image.
+
+The same script runs locally against any built ISO:
+
+```bash
+./scripts/smoke-boot.sh dist/astraos-*.iso
+```
+
+It needs `qemu-system-x86_64`, `python3`, and root (or `sudo`) for the loop mount. KVM
+is used when the host allows it; otherwise QEMU emulates the CPU — slower, not
+different.
 
 ## 9. After a successful build
 

@@ -70,6 +70,12 @@ enable_unit avahi-daemon.service          "mDNS local service discovery"
 enable_unit lm-sensors.service            "hardware sensor readings for the panel plugin"
 enable_unit ufw.service                   "host firewall policy engine; rules are documented in docs/SECURITY.md"
 
+# The boot self-test ships in every image and runs only when the kernel command line
+# contains astraos.ci (the unit's own ConditionKernelCommandLine), so enabling it changes
+# nothing for a normal boot: it exists so a build, a bug report or a support call can ask
+# the machine to describe itself (docs/BUILDING.md, "The boot self-test").
+enable_unit astraos-smoke.service         "boot self-test; runs only with astraos.ci on the kernel command line"
+
 # --- Deliberately not enabled -------------------------------------------------
 # Each of these is installed or present, but enabling it would widen the attack
 # surface or slow boot without a user-facing benefit (plan §13.2).

@@ -1,0 +1,177 @@
+#!/bin/sh
+# AstraOS boot self-test - the guest half of scripts/smoke-boot.sh.
+#
+# WHAT THIS IS
+#   A machine describing itself. The systemd unit starts it only when the kernel command
+#   line contains "astraos.ci"; every line below goes to the serial console, and the
+#   RESULT line tells scripts/smoke-boot.sh whether the image did what it claims.
+#
+#   In a normal boot the unit's condition keeps this script from running at all. Nothing
+#   here writes outside /tmp and the journal, and the only privileged act is the final
+#   power-off, which is the caller's signal that the guest is finished.
+#
+# OUTPUT CONTRACT (grepped by scripts/smoke-boot.sh; keep the markers stable):
+#   ASTRAOS-SMOKE: ok <name> (<detail>)
+#   ASTRAOS-SMOKE: FAIL <name> (<detail>)
+#   ASTRAOS-SMOKE: note <text>
+#   ASTRAOS-SMOKE: RESULT: PASS|FAIL (<n> checks, <f> failed)
+#   ASTRAOS-SMOKE: end
+
+export LC_ALL=C
+
+FAILED=0
+CHECKS=0
+
+say() { printf 'ASTRAOS-SMOKE: %s\n' "$*"; }
+ok() { CHECKS=$((CHECKS + 1)); say "ok $1 ($2)"; }
+bad() { CHECKS=$((CHECKS + 1)); FAILED=$((FAILED + 1)); say "FAIL $1 ($2)"; }
+
+# has_pkg PKG - the package is installed and configured in this image.
+has_pkg() {
+    status=$(dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null || true)
+    case "$status" in
+        "ii ")
+            ok "pkg-$1" "$(dpkg-query -W -f='${Version}' "$1" 2>/dev/null)"
+            ;;
+        *)
+            bad "pkg-$1" "status: ${status:-not installed}"
+            ;;
+    esac
+}
+
+# run NAME COMMAND... - the command must exit 0; its first output line is quoted.
+run() {
+    name=$1
+    shift
+    out=$("$@" 2>&1)
+    rc=$?
+    first=$(printf '%s\n' "$out" | head -n 1)
+    if [ "$rc" -eq 0 ]; then
+        ok "$name" "$first"
+    else
+        bad "$name" "exit $rc: $first"
+    fi
+}
+
+# The live account name comes from the kernel command line, where live-config put it;
+# the fallback only matters if a kernel command line drops it entirely.
+LIVE_USER=$(sed -n 's/.*username=\([^ ]*\).*/\1/p' /proc/cmdline | head -n 1)
+LIVE_USER=${LIVE_USER:-astra}
+
+if [ -r /etc/os-release ]; then
+    . /etc/os-release
+fi
+
+say "begin"
+say "os: ${PRETTY_NAME:-unknown}"
+say "kernel: $(uname -r), architecture $(uname -m)"
+say "cpu: $(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo | head -n 1)"
+say "memory: $(awk '/MemTotal/ { printf "%.0f MiB", $2 / 1024 }' /proc/meminfo)"
+
+# --- 1. the identity ----------------------------------------------------------------
+case "${PRETTY_NAME:-}" in
+    AstraOS*)
+        ok "identity" "$PRETTY_NAME"
+        ;;
+    *)
+        bad "identity" "/etc/os-release says: ${PRETTY_NAME:-unknown}"
+        ;;
+esac
+
+# --- 2. the display and the session -------------------------------------------------
+# The live medium logs the throwaway account in automatically (live-config arranges it;
+# installed systems get it locked down), so a successful boot ends in a running Xfce
+# session, not at a greeter. The X socket appears first; wait for it so a slow
+# software-rendered boot is not mistaken for a failure.
+waited=0
+while [ ! -S /tmp/.X11-unix/X0 ] && [ "$waited" -lt 90 ]; do
+    sleep 2
+    waited=$((waited + 1))
+done
+
+if [ -S /tmp/.X11-unix/X0 ]; then
+    ok "x-display" "/tmp/.X11-unix/X0 after $((waited * 2))s"
+else
+    bad "x-display" "no X socket after 180s"
+fi
+
+run "lightdm" systemctl is-active lightdm
+
+if pgrep -u "$LIVE_USER" xfwm4 >/dev/null 2>&1; then
+    ok "session" "xfwm4 running as $LIVE_USER"
+else
+    bad "session" "xfwm4 is not running as $LIVE_USER"
+fi
+
+# --- 3. every AstraOS package is installed ------------------------------------------
+for pkg in astraos-base astraos-branding astraos-desktop astraos-hud astraos-ai \
+           astraos-winbridge astraos-system-tools astraos-installer; do
+    has_pkg "$pkg"
+done
+
+# --- 4. the hardware and compatibility stack ----------------------------------------
+for pkg in intel-microcode amd64-microcode fwupd zram-tools vainfo \
+           libavcodec-extra ffmpeg flatpak wine ntfs-3g exfatprogs \
+           cups bluez network-manager pipewire; do
+    has_pkg "$pkg"
+done
+
+# --- 5. commands that must run -------------------------------------------------------
+run "hud-version" astraos-hud --version
+run "assistant-cli" astra-ai --help
+run "all-in-one" astra help
+run "winbridge-ver" /usr/lib/astraos/winbin/ver
+run "wine" wine --version
+run "ffmpeg" ffmpeg -version
+run "flatpak" flatpak --version
+
+# astra-ai status is informational: the shipped image has no model (the user chooses one,
+# docs/AI.md), so a non-zero exit here is not an image defect.
+status_out=$(astra-ai status 2>&1)
+status_rc=$?
+if [ "$status_rc" -eq 0 ]; then
+    ok "assistant-status" "$(printf '%s\n' "$status_out" | head -n 1)"
+else
+    say "note assistant-status exit $status_rc: $(printf '%s\n' "$status_out" | head -n 1)"
+fi
+
+# --- 6. the application store --------------------------------------------------------
+remotes=$(flatpak remotes --system 2>&1 || true)
+case "$remotes" in
+    *flathub*)
+        ok "flathub-remote" "$(printf '%s\n' "$remotes" | head -n 1)"
+        ;;
+    *)
+        bad "flathub-remote" "flatpak remotes --system: ${remotes:-empty}"
+        ;;
+esac
+
+# --- 7. networking --------------------------------------------------------------------
+run "networkmanager" systemctl is-active NetworkManager
+
+ip4=$(ip -4 -o addr show scope global 2>/dev/null | awk '{ print $4 }' | head -n 1)
+if [ -n "$ip4" ]; then
+    ok "ipv4" "$ip4"
+else
+    bad "ipv4" "no global IPv4 address"
+fi
+
+# The defect this guards against (50-networking.list.chroot) is silent: the interface is
+# up and every name lookup fails. Resolving a real name is the only honest check.
+run "dns" getent hosts deb.debian.org
+
+# --- result ---------------------------------------------------------------------------
+say "checks: $CHECKS, failed: $FAILED"
+if [ "$FAILED" -eq 0 ]; then
+    say "RESULT: PASS ($CHECKS checks, 0 failed)"
+else
+    say "RESULT: FAIL ($CHECKS checks, $FAILED failed)"
+fi
+
+# Hold the desktop on screen for the screenshot the caller takes from the host, then
+# power off. The power-off is the caller's "the guest is finished" signal.
+say "holding the session for the screenshot"
+sleep 25
+sync
+say "end"
+systemctl poweroff || poweroff || halt -p

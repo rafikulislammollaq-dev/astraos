@@ -85,6 +85,22 @@ chmod 0755 "${BUILD_DIR}/config/hooks/live/"*.hook.binary 2>/dev/null || true
 mkdir -p "${BUILD_DIR}/config/archives"
 cp -a "${REPO_ROOT}/config/live-build/config/archives/." "${BUILD_DIR}/config/archives/"
 
+# Static image files (config/live-build/config/includes.chroot): files that ship inside
+# the image and belong to no package. The boot self-test lives here: the unit, its
+# script and SELF-TEST.txt. Everything user-visible is still delivered by packages.
+INCLUDES="${REPO_ROOT}/config/live-build/config/includes.chroot"
+if [ -d "$INCLUDES" ]; then
+    mkdir -p "${BUILD_DIR}/config/includes.chroot"
+    cp -a "${INCLUDES}/." "${BUILD_DIR}/config/includes.chroot/"
+    # The executable bit is set here rather than trusted from the working copy: a
+    # checkout on a Windows filesystem cannot carry one, and a non-executable
+    # ExecStart fails the self-test for a reason that has nothing to do with the image.
+    if [ -f "${BUILD_DIR}/config/includes.chroot/usr/local/sbin/astraos-smoke" ]; then
+        chmod 0755 "${BUILD_DIR}/config/includes.chroot/usr/local/sbin/astraos-smoke"
+    fi
+    say "  static image files staged from config/live-build/config/includes.chroot"
+fi
+
 # --- 4. Package lists ---------------------------------------------------------
 say "staging the package lists"
 mkdir -p "${BUILD_DIR}/config/package-lists"

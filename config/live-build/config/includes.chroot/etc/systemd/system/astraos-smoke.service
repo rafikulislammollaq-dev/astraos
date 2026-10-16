@@ -1,0 +1,38 @@
+# AstraOS boot self-test.
+#
+# WHAT THIS IS
+#   The unit that lets a machine describe itself. It runs only when the kernel command
+#   line contains "astraos.ci" (ConditionKernelCommandLine below), so a normal user boot
+#   never sees it. scripts/smoke-boot.sh boots a built ISO in QEMU with that switch and a
+#   serial console, waits for the self-test's output, takes a screenshot of the booted
+#   desktop, and fails the Build ISO workflow if any check failed.
+#
+#   It ships in every image (not just CI) because a hardware bug report is worth far more
+#   with this output attached: boot any AstraOS medium with astraos.ci on the command line
+#   and the machine reports what it has. See /usr/share/astraos/SELF-TEST.txt and
+#   docs/BUILDING.md, "The boot self-test".
+#
+# THE MACHINE POWERS ITSELF OFF
+#   When the checks are done the script holds the desktop for the screenshot and then
+#   powers the machine off; scripts/smoke-boot.sh waits for the QEMU process to exit.
+#   That is only ever reached with astraos.ci present, so it cannot surprise a user.
+
+[Unit]
+Description=AstraOS self-test (runs only with astraos.ci on the kernel command line)
+Documentation=file:/usr/share/astraos/SELF-TEST.txt
+ConditionKernelCommandLine=astraos.ci
+Wants=graphical.target
+After=graphical.target
+After=lightdm.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/astraos-smoke
+# Both streams go to the serial console (the kernel command line's console=...) and to
+# the journal, so the same run can be read live and afterwards.
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

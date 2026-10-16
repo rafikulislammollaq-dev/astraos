@@ -36,6 +36,10 @@ on:
         description: "Upload the ISO as a workflow artifact"
         type: boolean
         default: true
+      smoke_boot:
+        description: "After building, boot the ISO in QEMU and run its self-test"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -186,9 +190,66 @@ jobs:
             echo ""
             echo "### Not tested by this workflow"
             echo ""
-            echo "This workflow builds and structurally validates the image. It does **not**"
-            echo "boot it, run the installer, or boot an installed system. Those require a"
-            echo "virtual machine and are described in docs/INSTALLATION_VIRTUALBOX.md."
+            echo "The build job assembles the image and validates its structure. The"
+            echo "smoke-boot job boots the built ISO in QEMU and runs the image's own"
+            echo "self-test; when that job is skipped, the image was **not** booted."
+            echo ""
+            echo "Neither job runs the installer or boots an installed system. That"
+            echo "requires a virtual machine and is described in"
+            echo "docs/INSTALLATION_VIRTUALBOX.md."
             echo ""
             echo "The manifest records them as UNTESTED until they are actually performed."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  smoke-boot:
+    name: Boot the ISO and self-test it
+    needs: build
+    if: ${{ needs.build.result == 'success' && inputs.smoke_boot }}
+    runs-on: ubuntu-24.04
+    # An emulated boot of a live desktop image plus the self-test. KVM is used when the
+    # runner provides it; QEMU emulation is the fallback - slower, not different.
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Download the ISO
+        uses: actions/download-artifact@v4
+        with:
+          name: astraos-iso
+          path: iso
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 imagemagick
+
+      - name: Boot the ISO and run its self-test
+        run: |
+          ls -la iso/
+          ./scripts/smoke-boot.sh --timeout 30 --out smoke-out iso/*.iso
+
+      - name: Summarise the self-test
+        if: always()
+        run: |
+          {
+            echo "### Boot self-test"
+            echo ""
+            if [ -f smoke-out/serial.log ]; then
+              echo '```'
+              grep 'ASTRAOS-SMOKE:' smoke-out/serial.log || echo "no self-test output on the serial console"
+              echo '```'
+            else
+              echo "The self-test never wrote to the serial console."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the self-test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astraos-boot-self-test
+          retention-days: 14
+          if-no-files-found: warn
+          path: smoke-out/

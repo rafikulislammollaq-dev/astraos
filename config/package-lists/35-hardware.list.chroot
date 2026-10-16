@@ -1,0 +1,84 @@
+# Hardware enablement beyond the kernel and the firmware (plan §5.2, §12).
+#
+# WHAT "THE DRIVERS WORK" ACTUALLY NEEDS
+# --------------------------------------
+# Three separate things decide whether a machine feels supported, and none of them is a
+# driver written by this project:
+#
+#   1. the kernel and CPU microcode (10-kernel.list.chroot);
+#   2. the firmware blobs (20-firmware.list.chroot);
+#   3. the userspace stack listed here, without which a machine can have the driver and
+#      still not be able to use the hardware: no VA-API driver means every video is
+#      decoded by the CPU; no zram means a 4 GB machine starts swapping early.
+#
+# Everything in this list is from the pinned Debian release, and every name is verified
+# against the archive by scripts/verify-package-availability.py before any build.
+#
+# "Is it there, and does this machine actually have it?" is answered by the boot
+# self-test: boot any AstraOS medium with astraos.ci on the kernel command line and the
+# machine reports what it found (docs/BUILDING.md, "The boot self-test").
+
+# --- Hardware video decode (VA-API) -------------------------------------------
+# Without these, Firefox and mpv decode 1080p in software; on a two-core machine the
+# video drops frames at full screen. With them, decode runs on the GPU. All three
+# vendors' current drivers are here because the same image boots everywhere.
+
+# Intel, Gen8 (Broadwell) and newer.
+intel-media-va-driver
+# Intel, Gen7 and older, still in the field on machines exactly like this project's
+# 2011 Sandy Bridge development laptop.
+i965-va-driver
+# AMD (and Intel through the Gallium driver).
+mesa-va-drivers
+# The DRM2 backend all of the above use.
+libva-drm2
+# VA-API sink for the GStreamer players (parole).
+gstreamer1.0-vaapi
+# Prints what this machine actually supports: the first command in every hardware
+# decode problem.
+vainfo
+
+# --- Firmware updates -----------------------------------------------------------
+# Firmware from the Linux Vendor Firmware Service: SSDs, docks, laptops, controllers.
+# The user runs "fwupdmgr get-updates" when they want them; nothing is fetched on its
+# own, and nothing is flashed without a confirmation.
+fwupd
+
+# --- Memory and interrupts on real machines -------------------------------------
+# Compressed swap in RAM. On the 4 GB machines this release targets it is the single
+# biggest responsiveness win (docs/HARDWARE_COMPATIBILITY.md).
+zram-tools
+# Spreads device interrupts over cores on the machines where that helps.
+irqbalance
+
+# --- Bluetooth -------------------------------------------------------------------
+# Firmware for the older Broadcom/CSR USB dongles that keep turning up. The stack
+# itself (bluez, blueman, libspa-0.2-bluetooth) is in 30-desktop.
+bluez-firmware
+
+# --- Phones, cameras and music players over USB -----------------------------------
+# MTP is what Android phones speak when plugged in; PTP is what cameras speak.
+# gvfs-backends (25-graphics) does the file manager integration, libmtp-runtime the
+# device probing, mtp-tools the command-line diagnosis.
+libmtp-runtime
+mtp-tools
+# Android platform tools (adb, fastboot) with the udev rules that let them talk to a
+# phone without root. This is the foundation for the phone-as-microphone work and for
+# sideloading.
+adb
+fastboot
+android-sdk-platform-tools-common
+
+# --- Filesystems people plug in ---------------------------------------------------
+# Windows disks, read-write.
+ntfs-3g
+# The exFAT default on SD cards and cameras.
+exfatprogs
+# Read the images this project builds, and other distributions'.
+squashfs-tools
+
+# --- Printing hardware -------------------------------------------------------------
+# cups, cups-filters, the PDF queue and system-config-printer are in 30-desktop; these
+# two driver families cover the largest share of consumer printers.
+printer-driver-gutenprint
+printer-driver-escpr

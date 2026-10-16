@@ -1,0 +1,55 @@
+# Compatibility with the files and programs people already have (plan §8).
+#
+# WHAT THIS LIST IS FOR
+# ---------------------
+# 40-applications.list.chroot chooses the programs; this list makes their *content*
+# work: the codecs a video needs, the sandbox plumbing an app store needs, and the
+# layer that runs Windows software. Each group below explains itself.
+#
+# Nothing here downloads anything at build time or at boot. The Flatpak remote added by
+# 0900-compat.hook.chroot is a pointer the user chooses to follow.
+
+# --- Media codecs -----------------------------------------------------------------
+# Debian's main archive carries free codecs; libavcodec-extra is the full compilation,
+# including the formats Debian still redistributes. This is what makes MP4/H.265/MP3
+# "just play" in parole, mpv and Firefox.
+libavcodec-extra
+ffmpeg
+gstreamer1.0-libav
+gstreamer1.0-plugins-bad
+gstreamer1.0-plugins-ugly
+# DVD reading and menus for mpv/parole. libdvdnav4 pulls the DVD read library at the
+# soname the release actually ships; the time_t transition renamed the library package
+# (t64), so naming it here would pin a name the next transition changes again.
+libdvdnav4
+# NOTE: CSS (commercial DVD) decryption is libdvdcss, which Debian does not carry.
+# AstraOS does not ship it; a user who needs it installs it themselves, and
+# docs/KNOWN_LIMITATIONS.md records the gap.
+
+# --- Flatpak: applications outside the Debian archive ------------------------------
+# Flatpak itself, plus the portal and keyring pieces a sandboxed application needs to
+# show a file chooser, follow the desktop theme, and keep its secrets.
+flatpak
+xdg-desktop-portal
+xdg-desktop-portal-gtk
+gnome-keyring
+libpam-gnome-keyring
+
+# --- Windows software ---------------------------------------------------------------
+# Wine runs 64-bit Windows applications out of the box. 32-bit applications need the
+# i386 architecture enabled first ("dpkg --add-architecture i386" then install wine32);
+# that is documented rather than preinstalled because it roughly doubles the download
+# for the minority of 32-bit programs. winetricks supplies the runtime pieces many of
+# them expect, on the user's explicit request.
+wine
+winetricks
+
+# --- Everyday compatibility ---------------------------------------------------------
+# Double-click installation of a downloaded .deb.
+gdebi
+# System snapshots: the undo button for everything below is a good idea.
+timeshift
+# The system information tool every bug report asks for.
+inxi
+# Text-to-speech backend for the screen reader (orca, 30-desktop) and spd-say.
+speech-dispatcher

@@ -17,6 +17,54 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ## [Unreleased]
 
+### Added
+
+- **The image can prove that it boots.** The ISO is no longer only built and inspected:
+  `.github/workflows/build-iso.yml` gained a `smoke-boot` job (on by default) that boots
+  the freshly built ISO in QEMU, waits for the image's own self-test, takes a screenshot
+  of the booted desktop through the QEMU monitor and fails the workflow unless the image
+  reported PASS. The QEMU command line is built from `config/distribution.env`, so the
+  boot test cannot drift from the ISO's own boot entry, and it adds `console=ttyS0` plus
+  `astraos.ci=1` (below). KVM is used when the runner provides it, emulation is the
+  fallback; `scripts/smoke-boot.sh` is the driver and runs locally against any built ISO.
+  The evidence — `serial.log`, `screenshot.png`, `qemu.out` — is uploaded as the
+  `astraos-boot-self-test` artifact, and the build job's summary no longer claims booting
+  is untested, because the workflow now boots it. (The README's "What has been tested"
+  list records the proof once a run has gone green.)
+
+- **Every image carries a self-test it runs on request.** `astraos-smoke.service` (gated
+  on `ConditionKernelCommandLine=astraos.ci`) runs `/usr/local/sbin/astraos-smoke` after
+  the desktop is up: release identity, LightDM + Xfce session, every AstraOS package, the
+  hardware and compatibility stack, the commands (HUD, assistant, all-in-one, Windows
+  bridge, wine, ffmpeg, flatpak), the Flathub remote, and that a real name resolves. It
+  prints one line per check to the serial console, holds the desktop for the screenshot
+  and powers off; a normal boot never runs it. Any medium carrying this release can
+  describe the machine it is on — what a hardware bug report needs.
+  `/usr/share/astraos/SELF-TEST.txt` documents it, `docs/BUILDING.md` §8 covers the CI
+  side, and `tests/static/test_smoke_boot.py` pins the output contract, the kernel
+  condition, the explicit executable bit at staging time, and the rule that the QEMU boot
+  mirrors `distribution.env` instead of retyping the live identity.
+
+- **Hardware enablement beyond the kernel and firmware**
+  (`config/package-lists/35-hardware.list.chroot`): VA-API video decode for Intel and AMD
+  (plus `vainfo`), `fwupd` for device firmware updates, `zram-tools` (the biggest
+  responsiveness win on the 4 GB machines this release targets), `irqbalance`,
+  `bluez-firmware`, MTP/Android tools (`libmtp-runtime`, `mtp-tools`, `adb`, `fastboot`,
+  the platform-tools udev rules), filesystem tools (`ntfs-3g`, `exfatprogs`,
+  `squashfs-tools`) and two printer driver families (gutenprint, escpr).
+
+- **Compatibility with the files and programs people already have**
+  (`config/package-lists/45-compatibility.list.chroot`): the full codec set
+  (`libavcodec-extra`, `ffmpeg`, GStreamer libav/bad/ugly, DVD navigation), Flatpak with
+  the desktop portals and keyring integration, Wine (64-bit out of the box) with
+  winetricks, `gdebi`, `timeshift`, `inxi`, `speech-dispatcher`.
+  `0900-compat.hook.chroot` points the system-wide Flatpak remote at Flathub: a pointer
+  only — no application is installed at build time and nothing is downloaded at boot —
+  recorded in `/usr/share/astraos/COMPAT-REPORT.txt`, with the boot self-test checking
+  the remote exists. Every name in both lists was verified against the Debian trixie
+  archive; `libdvdread8` is virtual there (the time_t transition renamed it), so
+  `libdvdnav4` pulls the read library at the soname the release actually ships.
+
 ### Fixed
 
 - The validator then failed that image on eight "live filesystem does NOT contain" checks at

@@ -1,0 +1,54 @@
+AstraOS self-test
+=================
+
+WHAT IT IS
+
+  The machine describing itself. The unit astraos-smoke.service runs
+  /usr/local/sbin/astraos-smoke after the desktop is up, prints one line per check to
+  the serial console and the journal, holds the desktop for a screenshot and powers the
+  machine off. The image's CI boot test (scripts/smoke-boot.sh, run by the smoke-boot
+  job of .github/workflows/build-iso.yml) is the same script under automation.
+
+HOW TO RUN IT
+
+  It runs only when the kernel command line contains "astraos.ci", so it can never
+  surprise a user. To make any AstraOS medium test itself:
+
+    1. at the boot menu, edit the entry (e for GRUB) and add to the kernel line:
+
+           astraos.ci=1 console=ttyS0,115200n8
+
+       the console= part is optional; without it the output is only in the journal.
+
+    2. boot. The machine reaches the desktop, checks itself, prints ASTRAOS-SMOKE lines
+       ending in
+
+           ASTRAOS-SMOKE: RESULT: PASS (n checks, 0 failed)
+
+       holds the desktop for 25 seconds (time to take a photo or a screenshot) and
+       powers off.
+
+  Afterwards the full transcript is in the journal:
+
+      journalctl -u astraos-smoke
+
+WHAT IT CHECKS
+
+  * the release identity in /etc/os-release is AstraOS, not the base distribution;
+  * LightDM and the Xfce session came up (X socket, xfwm4 running for the live user);
+  * every AstraOS package is installed and configured;
+  * the hardware and compatibility stack is present: microcode, fwupd, zram, VA-API,
+    codecs, Flatpak, Wine, NTFS/exFAT tools, CUPS, Bluetooth, PipeWire;
+  * the commands run: the HUD, the assistant, the all-in-one command, the Windows
+    bridge, wine, ffmpeg, flatpak;
+  * Flatpak knows the Flathub remote; NetworkManager is up, the machine has an
+    address, and a real name resolves through DNS.
+
+  A line marked "note" is information, not a verdict: the shipped image has no AI model
+  installed, so "assistant-status" reporting no model is expected.
+
+FOR BUG REPORTS
+
+  Attach the ASTRAOS-SMOKE lines (or journalctl -u astraos-smoke). They say which
+  kernel, CPU and memory the machine has and exactly which check failed, which is the
+  difference between a usable hardware report and a guess.
