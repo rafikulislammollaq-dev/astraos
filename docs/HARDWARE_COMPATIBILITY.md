@@ -9,10 +9,8 @@
 ## 1. What is included
 
 AstraOS installs firmware from Debian's `non-free-firmware` component, so the licensing is
-handled by Debian's own redistribution arrangements (plan §12, §23):
+handled by Debian's own redistribution arrangements (plan §12, §23).
 
-| Category | Packages |
-|---|---|
 The list is explicit — it is `config/package-lists/20-firmware.list.chroot`, and it is the
 only source of firmware in the image. `live-build`'s automatic "install every firmware-*
 package" stage is switched off, so nothing arrives without having been chosen. This is what
@@ -50,6 +48,24 @@ drivers to claim broader compatibility (plan §12). If you want the proprietary 
 driver, install it yourself from Debian's `non-free` after installation, and understand
 that it can break the graphical session if it is done incorrectly.
 
+Firmware is only half of hardware support. The other half — the programs that turn a
+driver into something the desktop can use — is `config/package-lists/35-hardware.list.chroot`:
+
+| Function | Packages |
+|---|---|
+| Hardware video decode (VA-API) | `intel-media-va-driver`, `i965-va-driver`, `mesa-va-drivers`, `libva-drm2`, `gstreamer1.0-vaapi`, `vainfo` |
+| Device firmware updates | `fwupd` |
+| Small-memory machines | `zram-tools` (compressed swap in RAM) |
+| Interrupt distribution | `irqbalance` |
+| Older Bluetooth dongles | `bluez-firmware` |
+| Phones, cameras, players over USB | `libmtp-runtime`, `mtp-tools`, `adb`, `fastboot`, `android-sdk-platform-tools-common` |
+| Plugged-in filesystems | `ntfs-3g`, `exfatprogs`, `squashfs-tools` |
+| Printer drivers | `printer-driver-gutenprint`, `printer-driver-escpr` |
+
+On a machine where video playback stutters, `vainfo` prints which decode entry points
+exist; `fwupdmgr get-updates` is the firmware half; `mtp-detect` explains a phone that
+does not appear.
+
 ## 2. Expected to work
 
 | Component | Expectation | Confidence |
@@ -66,6 +82,7 @@ that it can break the graphical session if it is done incorrectly.
 | Standard displays over HDMI/DisplayPort/VGA | Should work | Medium |
 | Common USB audio devices | Should work with PipeWire | Medium |
 | Laptop battery reporting | Should work with `upower` | Medium |
+| Hardware video decode (Intel/AMD, via VA-API) | Should work on supported generations; `vainfo` reports what a machine has | Medium |
 
 ## 3. Expected to be problematic
 
@@ -77,12 +94,19 @@ that it can break the graphical session if it is done incorrectly.
 | NVIDIA GPUs on newer chips | May fall back to software rendering, or fail to start the session | Boot the failsafe GRUB entry; consider installing the proprietary driver after installation |
 | Very new AMD or Intel GPUs | May need a newer kernel than Debian's stable kernel | Not solvable in AstraOS 0.1.0; the kernel is the base release's kernel |
 | Fingerprint readers | Almost certainly not supported | Out of scope for 0.1.0 |
-| Printers and scanners | CUPS is installed, drivers are not | Test with a specific model; many need `printer-driver-*` packages from Debian |
+| Printers and scanners | CUPS plus the gutenprint and Epson (escpr) driver sets are installed | Test with a specific model; some need another `printer-driver-*` from Debian |
 | Docking stations, Thunderbolt | Untested | Expect partial functionality |
 | Touchscreens and pens | Untested; `xserver-xorg-input-wacom` and `libinput` are present | Report results |
 | Secure Boot enforcing firmware | **Will refuse to boot** | Not supported in 0.1.0 |
 
 ## 4. Report format
+
+Most of this can be produced by the machine itself. Every AstraOS medium carries a
+self-test: add `astraos.ci` to the kernel command line in the boot menu (and
+`console=ttyS0,115200n8` if it has a serial port) and the machine boots, checks its
+identity, desktop session, packages, networking and the stack above, prints one line per
+check and powers off. `/usr/share/astraos/SELF-TEST.txt` inside the image documents it;
+the CI boot test runs the same script on every build.
 
 A useful hardware report includes:
 

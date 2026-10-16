@@ -15,7 +15,7 @@ Debian release, and not a website pretending to be an operating system.
 | Level | Meaning | Reached? |
 |---|---|---|
 | 1 | Source tree and static checks pass | Yes |
-| 2 | ISO builds in CI | Yes (Build ISO run #26, 2026-10-13, about 13 minutes, ISO about 2.15 GB) |
+| 2 | ISO builds in CI | Yes (Build ISO run 38864588609, 2026-10-16: image built in about 18 minutes, 25/25 structural checks, `structural=PASS`, ISO 2,432,696,320 bytes) |
 | 3 | ISO boots in a virtual machine | **Yes** (VirtualBox, live session, 2026-10-15) |
 | 4 | Network and browser work out of the box | **Cause fixed in the source.** The last boot-tested ISO predates the fix; see Known issues |
 | 5 | Installer runs and installed system boots | Not tested yet |
@@ -71,9 +71,9 @@ UEFI boot, audio, printing, Bluetooth, and the assistant's web page.
 
 ## What is included
 
-Built from Debian 13 (trixie). The CI build log shows about 1,569 packages unpacked
-into the image, which come from 283 reviewed core selections plus their dependencies
-and recommended packages.
+Built from Debian 13 (trixie). The image comes from 348 reviewed selections across 10
+package lists plus their dependencies and recommended packages; the built live
+filesystem holds 182,962 files (2,159 MiB extracted).
 
 | Component | Choice |
 |---|---|
@@ -83,6 +83,15 @@ and recommended packages.
 | Desktop | Xfce, configured and branded |
 | Session dashboard | AstraOS HUD (`astraos-hud`): one full-screen window with live CPU, memory, network, disk and temperature panels, an on-screen keyboard and an embedded terminal, started from its menu entry or launcher |
 | Assistant | `astraos-ai`: an opt-in local assistant with a three-tier model ladder and a shipped skills/knowledge library. No model is bundled and nothing runs until one is installed (`docs/AI.md`) |
+| Hardware enablement | VA-API video decode for Intel and AMD (`intel-media-va-driver`, `i965-va-driver`, `mesa-va-drivers`) with `vainfo`; `fwupd` for device firmware updates; `zram-tools` compressed swap; `irqbalance`; `bluez-firmware` |
+| Phones and media over USB | MTP for Android phones and cameras in Thunar (`libmtp-runtime`, `mtp-tools`), `adb` and `fastboot` with udev rules |
+| Disk compatibility | `ntfs-3g` (read-write Windows disks), `exfatprogs` (SD cards and cameras), `squashfs-tools` |
+| Media codecs | `libavcodec-extra`, `ffmpeg`, the GStreamer libav/bad/ugly set, DVD navigation (`libdvdnav4`) |
+| Printing | CUPS with the gutenprint and Epson (`escpr`) driver sets |
+| Application store | Flatpak with the Flathub remote configured system-wide; no applications preinstalled |
+| Windows software | Wine (64-bit applications) and winetricks |
+| System tools | `gdebi`, `timeshift`, `inxi`, `speech-dispatcher` |
+| Self-test | `astraos-smoke` reports the machine, session, packages and networking on request (kernel command line `astraos.ci`); the CI boot test runs it on every build |
 | Display manager | LightDM (GTK greeter) |
 | Display server | X11 |
 | Boot splash | Plymouth, AstraOS theme |
@@ -96,12 +105,12 @@ and recommended packages.
 | Package format | `.deb` with APT and dpkg |
 | Root filesystem | ext4 |
 
-Largest contributors to ISO size (approximate compressed download sizes):
-kernel about 108 MB, firmware packages about 390 MB in total, Firefox ESR about 80 MB,
-LibreOffice about 80 MB, graphics libraries (LLVM, Mesa, WebKitGTK), fonts and speech data.
+Largest contributors to ISO size: kernel about 108 MB, firmware packages about 390 MB in
+total, Wine, Flatpak, the full codec set, Firefox ESR about 80 MB, LibreOffice about
+80 MB, graphics libraries (LLVM, Mesa, WebKitGTK), fonts and speech data.
 
-The ISO is about 2.15 GB. Installed size will be larger, because the ISO stores the
-system as a compressed squashfs.
+The ISO is about 2.4 GB (2,432,696,320 bytes). Installed size will be larger, because
+the ISO stores the system as a compressed squashfs.
 
 ---
 
@@ -134,12 +143,12 @@ system as a compressed squashfs.
    fails if it is ever added back, because this class of bug does not stop the build —
    apt resolves the set happily and the image ships broken.
 
-2. Structural validation of the ISO **passed** for build run #26: that image's
-   `.manifest` records `structural=PASS`, checked for bootloaders, kernel, initramfs,
-   live filesystem and AstraOS contents. What remains untested is everything the
-   validator cannot reach from the outside — booting on real hardware, UEFI, the
-   installer. The boot test script still reports BLOCKED when no ISO is in `dist/`,
-   which is not a pass.
+2. Structural validation of the ISO **passes on every build**: the 2026-10-16 image
+   records `structural=PASS` with 25 passing checks (bootloaders, kernel, initramfs,
+   live filesystem, AstraOS contents). The validator only sees the image from the
+   outside; what is still untested — physical hardware, UEFI and BIOS firmware boot,
+   the installer — is listed in `docs/KNOWN_LIMITATIONS.md` §2. The boot test script
+   still reports BLOCKED when no ISO is in `dist/`, which is not a pass.
 3. Copy and paste between the host and the VM needs VirtualBox Guest Additions, which
    are not part of the image.
 4. The ISO is larger than it needs to be (APT recommends enabled, much firmware,
@@ -172,15 +181,16 @@ See `docs/KNOWN_LIMITATIONS.md` for the full list.
    (GitHub Actions, `astraos-iso`) and unzip.
 2. Verify the download in PowerShell:
    ```powershell
-   Get-FileHash .\astraos-0.1.0-alpha-amd64.iso -Algorithm SHA256
-   Get-Content .\astraos-0.1.0-alpha-amd64.iso.sha256
+   Get-FileHash .\astraos-0.2.0-alpha-amd64.iso -Algorithm SHA256
+   Get-Content .\astraos-0.2.0-alpha-amd64.iso.sha256
    ```
    The two hashes should match.
 3. VirtualBox: New. Set name `AstraOS`, pick the ISO, Type Linux, Version Debian (64-bit),
    tick Skip Unattended Installation.
 4. Hardware: 4096 MB RAM, 2 CPUs, 25 GB disk. Finish.
 5. Start the VM, choose **Live system (amd64)**, wait for the desktop.
-6. In the terminal, run the DNS workaround above, then open Firefox.
+6. Open Firefox. 0.2.0 builds configure DNS themselves; the workaround in Known issues
+   above applies only to the broken 0.1.0 image.
 7. Press Right Ctrl to release the mouse from the VM.
    In the terminal, copy is Ctrl+Shift+C and paste is Ctrl+Shift+V.
 
@@ -189,8 +199,9 @@ See `docs/KNOWN_LIMITATIONS.md` for the full list.
 ## Building the ISO
 
 Without a Linux machine, use CI: run the **Build ISO** workflow manually from the
-Actions tab. It takes about 13 minutes and produces the `astraos-iso` and
-`astraos-build-logs` artifacts.
+Actions tab. It takes about 18 minutes to produce the image and then boots it in QEMU
+for the image's own self-test (the `smoke-boot` job), producing the `astraos-iso`,
+`astraos-build-logs` and `astraos-boot-self-test` artifacts.
 
 On a Debian or Ubuntu host:
 
@@ -211,7 +222,13 @@ make check          # or: python3 tests/run.py
 
 The static suite checks configuration, package lists, assets, desktop entries,
 Calamares safety settings and shell syntax. A green run means the repository is
-consistent, not that AstraOS works. Booting the ISO in a VM is the real test.
+consistent, not that AstraOS works.
+
+CI goes one step further on every image it builds: the `smoke-boot` job boots the ISO
+in QEMU and runs the image's own self-test (`astraos-smoke`, started only when
+`astraos.ci` is on the kernel command line), keeping the serial log and a screenshot of
+the booted desktop as the `astraos-boot-self-test` artifact. The same check runs by
+hand with `./scripts/smoke-boot.sh dist/astraos-*.iso` (see `docs/BUILDING.md`).
 
 ---
 
@@ -260,8 +277,8 @@ of HTML, CSS and Make. The operating system itself comes from Debian packages.
 
 1. ~~Fix DNS so networking works out of the box~~ **Done in 0.2.0**: `resolvconf` was
    removed from the package list and `tests/static/test_packages.py` keeps it out.
-2. ~~Confirm the ISO passes structural validation in CI~~ **Done** (build run #26 records
-   `structural=PASS`).
+2. ~~Confirm the ISO passes structural validation in CI~~ **Done** (every build records
+   `structural=PASS`; latest 2026-10-16, run 38864588609).
 3. Test the Calamares installer: install to a VM disk and boot the installed system.
 4. Reduce ISO size (turn off APT recommends, trim firmware and large optional apps).
 5. Add Guest Additions support for VMs.
@@ -274,6 +291,9 @@ of HTML, CSS and Make. The operating system itself comes from Debian packages.
    (Build AI engine, 2026-10-16, including an emulated Sandy Bridge and the 360M
    model), and the 1.7B executor is downloaded here; what remains is running the
    ladder on this machine's own CPU and reaching its web page from a phone.
+9. Exercise the ISO's own boot menu (syslinux and GRUB-EFI) in CI. The current boot
+   test extracts the kernel and initrd from the ISO, so it verifies the image; the
+   bootloader path itself is still only tested by hand in VirtualBox.
 
 ---
 
