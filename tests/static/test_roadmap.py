@@ -55,9 +55,9 @@ def test_the_readme_links_the_roadmap() -> None:
     )
 
 
-def test_the_roadmap_keeps_all_six_stages() -> None:
+def test_the_roadmap_keeps_all_seven_stages() -> None:
     text = _text(ROADMAP)
-    missing = [n for n in range(1, 7) if not re.search(rf"^## Stage {n}\b", text, re.M)]
+    missing = [n for n in range(1, 8) if not re.search(rf"^## Stage {n}\b", text, re.M)]
     assert not missing, f"the roadmap lost the heading for Stage {missing}"
 
 
@@ -82,6 +82,18 @@ def test_the_roadmap_keeps_model_independence() -> None:
     )
     assert "no telemetry by default" in text, (
         "the roadmap no longer promises no telemetry by default"
+    )
+
+
+def test_the_roadmap_keeps_the_familiarity_promise() -> None:
+    text = _text(ROADMAP)
+    assert "Come as you are" in text, (
+        "the roadmap lost the 'come as you are' principle; the OS is supposed to "
+        "adapt to the person's habits, not demand retraining"
+    )
+    assert re.search(r"no lock-in", text, re.IGNORECASE), (
+        "the roadmap no longer rules out lock-in; people must be able to keep their "
+        "habits and files and leave freely"
     )
 
 

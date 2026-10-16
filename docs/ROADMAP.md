@@ -40,6 +40,10 @@ proving it rather than asserting it.
   the assistant touches system state. The assistant is a guest on the machine.
 - **Action-oriented.** The assistant produces artifacts and reports honestly what
   it did, what it could not do, and what it changed.
+- **Come as you are.** People arrive with habits — from Windows, from Android, from
+  Mint, Ubuntu, Arch or Kali, from Plasma. The OS adapts to them — layout,
+  shortcuts, files, apps — instead of demanding retraining, and nothing locks them
+  in.
 - **Provable.** Every claim in the README is backed by a CI run, a test or an
   artifact. A failure is recorded as a failure.
 - **Extensible.** Components are replaceable without changing the others; Debian
@@ -57,6 +61,7 @@ proving it rather than asserting it.
 | Astra Vault | document index and user-approved memory | does not exist |
 | Astra Missions | the task interface: plans, approvals, results | does not exist |
 | Astra Voice | dictation, wake word, read-aloud | does not exist (`whisper-cli` builds in the engine artifact) |
+| Astra Link | phone pairing: notifications, clipboard, file transfer, camera and microphone, photo backup | does not exist |
 | Astra Skills | manifest-declared, permissioned capabilities | static skills and knowledge files exist; manifests and isolation do not |
 
 The names are provisional; the boundaries are not. Each component must be
@@ -65,6 +70,9 @@ replaceable without changing the others.
 The order follows three choices from the October 2026 review: the runtime is the
 center of the platform; nothing on the runtime gets system access before Guard
 exists; and the first complete workflow is the local research assistant, not chat.
+A fourth direction comes from the project itself (October 2026): the OS people come
+from Windows, Android and other Linux distributions should feel at home in it from
+day one — that is Stage 5.
 
 ## What must not regress
 
@@ -182,7 +190,60 @@ report with citations, save it, and show me what changed."
 - [ ] **Budgets**: time, memory and tool-call limits so a weak model cannot loop
   forever.
 
-## Stage 5 — Voice, memory and daily use
+## Stage 5 — Come as you are: migration, familiarity and retention
+
+People arrive with habits — from Windows, from Android, from Mint or Ubuntu, from
+Arch or Kali, from Plasma. They should not have to relearn computing to use this
+OS, and they should never leave because it broke. This stage records the
+maintainer's direction (October 2026); it comes after Guard and the flagship
+because familiarity on an unproven base would be decoration.
+
+- [ ] **A first-run welcome that can be skipped**: language, layout, file import,
+  phone pairing, AI opt-in, Packs — every choice reachable again later from one
+  settings panel, and none of it requiring an account or a network.
+- [ ] **Layout profiles that are real**: one switch changes panel, menu, launcher
+  and keyboard shortcuts together — Windows-like / macOS-like / Linux-classic /
+  AstraOS — plus a "where is it now?" cheat sheet for whatever you came from.
+- [ ] **A migration assistant**: detect Windows and Android sources; preview and
+  import Documents / Desktop / Pictures / Music / Videos item by item with
+  confirmation; import browser bookmarks from Chrome / Edge / Firefox profiles;
+  print a report of what arrived and what did not. Never move or delete without
+  asking.
+- [ ] **"I use this app on Windows"**: type an app name, get the honest ladder —
+  native alternative, Flatpak, Wine, or web app — each labeled works / works with
+  caveats / not yet, starting with the apps switchers actually use. The labels come
+  from tests, not optimism.
+- [ ] **Reset and fresh-start**: "reset the system, keep my files" and "factory
+  reset", both tested in a VM. People trust what has a visible way back to clean.
+- [ ] **Updates that cannot brick it**: snapshot before a system upgrade and a
+  one-command rollback, with update-success numbers on the proof page (depends on
+  the Stage 3 undo decision).
+- [ ] **"How do I ...?": an OS that explains itself**: an offline help center with
+  migration guides — coming from Windows, from Android, from Mint or Ubuntu, for
+  Arch and Kali users, for Plasma users — reachable through the assistant, whose
+  answers cite the actual documents.
+- [ ] **Astra Link, the Android bridge**: pairing out of the box (notifications,
+  clipboard, file transfer), phone camera and microphone as PC input, and automatic
+  photo and video backup over the LAN into a private library on the PC — a personal
+  cloud in the house, no Google account. The Stage 1 phone page is its foundation.
+- [ ] **No lock-in, by construction**: apt stays apt, upstream packages stay
+  available, dotfiles import from a repository or archive, containers and virtual
+  machines work, and every AstraOS component can be replaced without breaking the
+  rest.
+- [ ] **Desktop editions, honestly labeled**: an official, tested, themed KDE
+  Plasma session for Plasma users — advertised only once it passes the same bar as
+  Xfce — and no requirement to change desktops to use AstraOS.
+- [ ] **Packs for whole lives, installed on demand** (no ISO bloat): Gaming (Steam,
+  Proton helpers, GameMode, MangoHud), Creative (OBS, Krita, GIMP, Inkscape,
+  darktable), Security (a Kali-minded toolkit: nmap, Wireshark, forensics — labeled
+  a toolkit, not a hardened platform), Developer (toolchains, containers), Office,
+  Media. Each pack optional, each tested.
+- [ ] **A reason to stay that is not hype**: measured update reliability, rollback
+  success and speed on the target hardware; zero ads, telemetry or dark patterns.
+  For the person who drifted in for the looks: that is the shop window — the
+  product is that nothing breaks.
+
+## Stage 6 — Voice, memory and daily use
 
 - [ ] **Push-to-talk dictation first**, system-wide, using the shipped
   `whisper-cli`; measure accuracy and latency on the target CPU before promising
@@ -203,7 +264,7 @@ report with citations, save it, and show me what changed."
 - [ ] **Multilingual**: test the languages actually supported before advertising a
   language list.
 
-## Stage 6 — Platform, ecosystem and trust
+## Stage 7 — Platform, ecosystem and trust
 
 - [ ] **A local MCP gateway** exposing the OS (packages, services, logs, network,
   metrics, files through portals) as tools, with Guard policy in front; pin the
@@ -240,7 +301,8 @@ report with citations, save it, and show me what changed."
 
 | Area | Measurement |
 |---|---|
-| Operating system | clean installation, boot reliability, recovery works |
+| Operating system | clean installation, boot reliability, update success, recovery works |
+| Migration | first boot to a comfortable setup; imported items verified |
 | AI tasks | end-to-end completion rate on the fixed benchmark |
 | Tool use | valid calls, correct arguments, unnecessary steps |
 | Efficiency | completion time, retries, peak memory, CPU |
