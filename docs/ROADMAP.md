@@ -7,6 +7,11 @@ until a run, a test or an artifact proves it, and the proof is recorded; the
 `findiso` entry in [`CHANGELOG.md`](../CHANGELOG.md) is the standard for how a
 failure is handled — recorded with its cause, not hidden.
 
+The blueprints for the promised experiences — the first boot, profiles, one
+store, roll-backable updates, the phone link, the system assistant, privacy,
+reach, creator packs and the community rails — are in
+[`docs/blueprints/`](blueprints/README.md). They are plans too.
+
 The founding engineering brief for the distribution itself is
 [`PROJECT_PLAN.md`](PROJECT_PLAN.md); this roadmap extends it for the AI-era
 direction and does not replace it. The direction consolidates two external reviews
@@ -43,7 +48,8 @@ proving it rather than asserting it.
 - **Come as you are.** People arrive with habits — from Windows, from Android, from
   Mint, Ubuntu, Arch or Kali, from Plasma. The OS adapts to them — layout,
   shortcuts, files, apps — instead of demanding retraining, and nothing locks them
-  in.
+  in. Nobody should ever have to leave because something was too hard, and nobody
+  should ever have to stay because they're locked in.
 - **Provable.** Every claim in the README is backed by a CI run, a test or an
   artifact. A failure is recorded as a failure.
 - **Extensible.** Components are replaceable without changing the others; Debian
@@ -200,7 +206,8 @@ because familiarity on an unproven base would be decoration.
 
 - [ ] **A first-run welcome that can be skipped**: language, layout, file import,
   phone pairing, AI opt-in, Packs — every choice reachable again later from one
-  settings panel, and none of it requiring an account or a network.
+  settings panel, and none of it requiring an account or a network. The design is
+  [`FIRST_BOOT.md`](blueprints/FIRST_BOOT.md).
 - [ ] **Layout profiles that are real**: one switch changes panel, menu, launcher
   and keyboard shortcuts together — Windows-like / macOS-like / Linux-classic /
   AstraOS — plus a "where is it now?" cheat sheet for whatever you came from.

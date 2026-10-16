@@ -95,6 +95,29 @@ def test_the_roadmap_keeps_the_familiarity_promise() -> None:
         "the roadmap no longer rules out lock-in; people must be able to keep their "
         "habits and files and leave freely"
     )
+    assert "too hard" in text and "locked in" in text, (
+        "the roadmap lost its design principle: nobody should ever have to leave "
+        "because something was too hard, or stay because they are locked in"
+    )
+
+
+def test_the_first_boot_design_is_committed_and_honest() -> None:
+    design = REPO_ROOT / "docs" / "blueprints" / "FIRST_BOOT.md"
+    assert design.is_file(), "docs/blueprints/FIRST_BOOT.md is missing"
+    text = _text(design)
+    assert "Nothing in this document is implemented" in text, (
+        "the first-boot design no longer says it is unbuilt; it is a plan"
+    )
+    assert "Copy, never move" in text, (
+        "the first-boot design lost the copy-never-move rule; imports must never "
+        "touch the source system"
+    )
+    assert "No password import" in text, (
+        "the first-boot design no longer visibly rules out silent password import"
+    )
+    assert "FIRST_BOOT.md" in _text(ROADMAP), (
+        "docs/ROADMAP.md no longer links the first-boot design"
+    )
 
 
 def test_the_roadmap_does_not_describe_unbuilt_things_as_working() -> None:

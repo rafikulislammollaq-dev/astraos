@@ -237,7 +237,7 @@ astraos/
 ├── installer/        Calamares configuration and branding
 ├── scripts/          validation, packaging, build and release tooling
 ├── tests/            static test suite
-├── docs/             architecture, build, installation, recovery, limitations, roadmap
+├── docs/             architecture, build, installation, recovery, limitations, roadmap, blueprints
 └── build/  dist/     generated output (git-ignored)
 ```
 
