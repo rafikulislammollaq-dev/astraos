@@ -13,7 +13,7 @@ machine this distribution is tested on.
 WHY ONLY ONE MODEL IS IN MEMORY AT A TIME
 
 The reference machine has 4 GB of RAM and no swap to speak of. A 1.5B Q4_K_M
-model is about 1 GB resident, a 4B about 2.5 GB, and the KV cache adds a slice
+model is about 1 GB resident, a 4B about 2.4 GB, and the KV cache adds a slice
 on top of each. Loading both halves of the ladder at once is the difference
 between an assistant and a machine that swaps the desktop out. So the pool below
 owns at most ONE llama-server at a time and swaps the model when the tier
@@ -54,7 +54,7 @@ TIERS: dict[str, dict] = {
         "label": "the executor",
         "job": "does one task at a time: reads the request, makes one chosen "
                "tool call, reports what happened, tries again or escalates",
-        "prefer": ("smollm3-3b-q4_k_m", "qwen2.5-1.5b-instruct-q4_k_m",
+        "prefer": ("spark-x2.5-1.7b-q4_k_m", "smollm3-3b-q4_k_m",
                    "qwen2.5-3b-instruct-q4_k_m"),
         "context": 4096,
         "temperature": 0.1,
@@ -65,8 +65,8 @@ TIERS: dict[str, dict] = {
         "job": "reads the whole request and the retrieved knowledge, writes the "
                "plan as a list of typed tasks, and decides what the worker is "
                "allowed to be asked",
-        "prefer": ("qwen3-4b-instruct-2507-q4_k_m", "qwen2.5-3b-instruct-q4_k_m",
-                   "qwen2.5-1.5b-instruct-q4_k_m"),
+        "prefer": ("spark-x2.5-4b-q4_k_m", "smollm3-3b-q4_k_m",
+                   "qwen2.5-3b-instruct-q4_k_m"),
         "context": 8192,
         "temperature": 0.2,
         "max_tokens": 768,
@@ -75,7 +75,7 @@ TIERS: dict[str, dict] = {
         "label": "the router",
         "job": "sorts a request into worker, brain, or a plain answer, in one "
                "short constrained call",
-        "prefer": ("smollm2-360m-instruct-q8_0", "smollm3-3b-q4_k_m",
+        "prefer": ("smollm2-360m-instruct-q8_0", "spark-x2.5-1.7b-q4_k_m",
                    "qwen2.5-1.5b-instruct-q4_k_m"),
         "context": 2048,
         "temperature": 0.0,
@@ -242,9 +242,14 @@ class TierPool:
     def unavailable_reason(self) -> str:
         if self.ready():
             return ""
+        # The model name comes from the tier's own preference list, the same
+        # rule pick_model applies. Advice that names a model has to be built
+        # from that list rather than typed out: the string this replaced was a
+        # hardcoded model name, and it went stale exactly as fast as a
+        # hardcoded model name does.
         return (
-            "no model is installed for the worker tier - install one with: "
-            "astra-ai setup --model smollm3-3b-q4_k_m"
+            f"no model is installed for the {REQUIRED_TIER} tier - install one "
+            f"with: astra-ai setup --model {TIERS[REQUIRED_TIER]['prefer'][0]}"
         )
 
     # ------------------------------------------------------------------
@@ -373,5 +378,5 @@ def ready_message() -> str:
         )
     return (
         "no model is installed - install one with: "
-        "astra-ai setup --model qwen3-4b-instruct-q4_k_m"
+        f"astra-ai setup --model {TIERS[REQUIRED_TIER]['prefer'][0]}"
     )

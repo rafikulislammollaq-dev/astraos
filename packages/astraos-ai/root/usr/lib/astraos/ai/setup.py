@@ -83,18 +83,25 @@ CPU_FLAGS = [
 #
 # WHY THESE MODELS
 #
-# Tool calling at small sizes is a specific and scored capability. The Berkeley
-# Function-Calling Leaderboard (gorilla.cs.berkeley.edu/leaderboard.html, the
-# de-facto standard) ranks Qwen3-4B-Instruct-2507 (FC) at 35.68 overall and
-# Qwen3-8B at 42.57, against Gemma-3-4b-it at 19.62 and MiniCPM3-4B-FC at 25.55.
-# The Qwen3 family is also the one whose chat templates llama.cpp supports
-# natively, which matters here because this package starts llama-server rather
-# than implementing a tool-calling protocol of its own.
+# Spark-X2.5 is iFLYTEK's SparkLLM series, published in August-September 2026
+# under Apache 2.0. Its own benchmark table (the repository README) puts the 4B
+# at HLE 12.3 against Qwen3.5-4B at 8.6, Qwen3.5-2B at 2.1 and Gemma4-E4B at
+# 3.9, so it is the strongest 4B-class model measured there, and at 2.4 GB the
+# file fits the machine this distribution targets. The GGUF repository carries
+# several hundred thousand downloads, which is adoption rather than a press
+# release.
+#
+# Every URL below was verified against the Hugging Face API on the day this
+# list was last edited: two earlier entries named repositories that do not
+# exist, and a catalogue that answers 401 on the model the docs tell a user to
+# install is worse than a catalogue that is missing an entry, because the user
+# copied the command exactly and it still failed.
 #
 # The 1B-3B tier does not have to be a tool caller: it only has to classify one
-# request and read one instruction, which is why SmolLM3-3B (a strong 3B,
-# Apache 2.0, `think` and `no_think` modes) is the default executor rather than
-# another Qwen.
+# request and read one instruction, and the 1.7B of the same family delivers
+# that at 1.0 GB against the 3B's 1.8 GB. SmolLM3-3B (Apache 2.0, `think` and
+# `no_think` modes) stays as the alternative executor for a machine that would
+# rather carry a different tokenizer.
 #
 # THE NUMBERS ARE FILE SIZES, NOT ESTIMATES. `astra-ai setup --list` shows
 # them, and a user on a metered connection deserves a real number.
@@ -106,15 +113,26 @@ CPU_FLAGS = [
 # executor default is a 3B.
 MODELS: dict[str, dict] = {
     # ---- the executor: one task at a time, cheap, and never the bottleneck
+    "spark-x2.5-1.7b-q4_k_m": {
+        "kind": "llm",
+        "tier": "executor",
+        "file": "Spark-X2.5-1.7B-Q4_K_M.gguf",
+        "url": "https://huggingface.co/XHToken/Spark-X2.5-1.7B-GGUF/resolve/main/"
+               "Spark-X2.5-1.7B-Q4_K_M.gguf",
+        "size_mb": 1056,
+        "note": "THE DEFAULT EXECUTOR: 1.0 GB at Q4_K_M, Apache 2.0, the same model"
+                " family as the brain - one set of chat-template behaviour to"
+                " handle, and the fastest answers per step",
+    },
     "smollm3-3b-q4_k_m": {
         "kind": "llm",
         "tier": "executor",
-        "file": "smollm3-3b-q4_k_m.gguf",
-        "url": "https://huggingface.co/bartowski/SmolLM3-3B-GGUF/resolve/main/"
-               "SmollLM3-3B-Q4_K_M.gguf",
-        "size_mb": 1800,
-        "note": "the default executor: the strongest 3B that is Apache 2.0, with"
-                " a no_think mode that makes answering fast",
+        "file": "SmolLM3-Q4_K_M.gguf",
+        "url": "https://huggingface.co/ggml-org/SmolLM3-3B-GGUF/resolve/main/"
+               "SmolLM3-Q4_K_M.gguf",
+        "size_mb": 1827,
+        "note": "the alternative executor: a different tokenizer with a no_think"
+                " mode, for a user who would rather carry 1.8 GB of 3B",
     },
     "qwen2.5-1.5b-instruct-q4_k_m": {
         "kind": "llm",
@@ -135,15 +153,16 @@ MODELS: dict[str, dict] = {
         "note": "a bigger executor, for a machine that can spare the wait",
     },
     # ---- the middle brain: the tier that decides quality
-    "qwen3-4b-instruct-2507-q4_k_m": {
+    "spark-x2.5-4b-q4_k_m": {
         "kind": "llm",
         "tier": "brain",
-        "file": "qwen3-4b-instruct-2507-q4_k_m.gguf",
-        "url": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507-GGUF/resolve/main/"
-               "qwen3-4b-instruct-2507-q4_k_m.gguf",
-        "size_mb": 2500,
+        "file": "Spark-X2.5-4B-Q4_K_M.gguf",
+        "url": "https://huggingface.co/XHToken/Spark-X2.5-4B-GGUF/resolve/main/"
+               "Spark-X2.5-4B-Q4_K_M.gguf",
+        "size_mb": 2480,
         "note": "THE MIDDLE BRAIN: plans multi-step work, and is the model whose"
-                " quality decides what the assistant can do. Needs 6 GB or more.",
+                " quality decides what the assistant can do. Apache 2.0, 1M"
+                " context, HLE 12.3 against Qwen3.5-4B's 8.6. Needs 6 GB or more.",
     },
     "qwen2.5-3b-instruct-q4_k_m": {
         "kind": "llm",
@@ -206,7 +225,7 @@ MODELS: dict[str, dict] = {
 # installs both gets a machine that swaps, and they should get to make that
 # choice rather than discover it at the third question.
 # `astra-ai setup --tier brain` is the same thing said the other way round.
-DEFAULT_SETUP = "smollm3-3b-q4_k_m"
+DEFAULT_SETUP = "spark-x2.5-1.7b-q4_k_m"
 
 RECOMMENDED = DEFAULT_SETUP
 

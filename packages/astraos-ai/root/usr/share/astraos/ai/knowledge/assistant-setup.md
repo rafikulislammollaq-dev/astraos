@@ -16,10 +16,12 @@ that list, because a name that is not in it fails with `unknown model`.
 
 There are two tiers to install, on purpose, and the order matters:
 
-`smollm3-3b-q4_k_m` is the **executor**, about 1.8 GB. It is the one that is always
+`spark-x2.5-1.7b-q4_k_m` is the **executor**, about 1.0 GB. It is the one that is always
 needed: it reads a request, runs one action, verifies what happened and reports back.
+`smollm3-3b-q4_k_m` (about 1.8 GB) is the alternative executor, a different model family,
+if you would rather carry a 3B.
 
-`qwen3-4b-instruct-2507-q4_k_m` is the **middle brain**, about 2.5 GB, and it needs 6 GB
+`spark-x2.5-4b-q4_k_m` is the **middle brain**, about 2.4 GB, and it needs 6 GB
 of RAM or more. It is the one that plans multi-step work, and installing it is what turns
 the assistant from a one-command tool into something that can do a task. The two are
 separate commands because loading both at once on a machine with 4 GB is the difference

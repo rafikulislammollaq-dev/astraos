@@ -373,9 +373,10 @@ class Engine:
         enabled: the server returns the reasoning text, the constraint is not
         applied to it, and the caller gets a 500 from a token that came out of
         the model's head rather than a malformed answer. Qwen3 and SmolLM3 both
-        enable thinking by default in their own chat templates, so this flag is
-        not optional politeness - without it the constraint that this method
-        exists for is not applied to the models this distribution recommends.
+        enable thinking by default in their own chat templates, and the
+        ladder's Spark-X2.5 family is a reasoning model as well - so the flag
+        is sent for every model rather than for a list, because a catalogue
+        that grows must not grow a quiet way to turn the constraint off.
 
         WHY NOT STREAMING
 

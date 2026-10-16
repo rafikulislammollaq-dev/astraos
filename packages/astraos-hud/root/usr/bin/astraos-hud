@@ -1,0 +1,37 @@
+#!/bin/sh
+# astraos-hud - start the AstraOS full-screen system dashboard.
+#
+# Why a shell shim and not a Python one
+# -------------------------------------
+# Every command in packages/*/root/usr/bin/astraos-* is a POSIX shell script, and
+# tests/static/test_scripts.py holds that invariant: it lints each of them for shell
+# syntax, strict mode and stderr discipline. A Python entry point here would be a file
+# that suite believes is a shell script. The application itself is still Python; this
+# shim only sets the import path and hands over.
+#
+# Where it loads from
+# -------------------
+# The application is a plain importable package under /usr/lib/astraos-hud, installed
+# there by scripts/build-packages.sh from apps/astraos-hud. That directory and the
+# ASTRAOS_HUD_LIB below are one decision written in two places, so
+# tests/static/test_astra_hud.py pins them together - a mismatch would only surface as an
+# ImportError when a user clicks the launcher on a built image.
+#
+# `python3 -m astraos_hud` runs astraos_hud/__main__.py, which is the same entry point
+# the source tree is run with during development, so there is exactly one code path.
+
+set -eu
+
+ASTRAOS_HUD_LIB="/usr/lib/astraos-hud"
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "astraos-hud: python3 is not installed (install it: astra install python3)" >&2
+    exit 1
+fi
+
+# Prepend, so the packaged application wins over anything else named astraos_hud.
+PYTHONPATH="${ASTRAOS_HUD_LIB}${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONPATH
+
+# exec: replace this shell with the application so it receives the signals directly.
+exec python3 -m astraos_hud "$@"

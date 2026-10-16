@@ -220,6 +220,12 @@ class Journal:
             (int(index), _now(), task_id),
         )
         self._connection.commit()
+        # Re-rendered here, and this is the mutator that matters most: the step
+        # index is what moves the [>] marker along the list. Without this, the
+        # file said "0 of 3 steps" with step 1 still next for the whole run -
+        # a done-set that never advances is worse than no file at all, because
+        # it is the thing the reader trusts.
+        self.render()
 
     def set_result(self, task_id: str, result: dict | None = None,
                    error: str = "", needs: str = "") -> None:
@@ -272,8 +278,14 @@ class Journal:
 
     def unfinished(self) -> list[dict]:
         """Tasks that a restart could pick up."""
+        # needs_human is in this list on purpose. A step the user declined is
+        # recorded as needs_human rather than failed - the no is the right
+        # outcome - and a task in that state is exactly what a human opening
+        # plan.md needs to see. Excluding it hid the question that was asked
+        # and the answer that was given.
         rows = self._connect().execute(
-            "SELECT * FROM tasks WHERE status IN ('pending','running')"
+            "SELECT * FROM tasks"
+            " WHERE status IN ('pending','running','needs_human')"
             " ORDER BY created_ts"
         ).fetchall()
         return [dict(row) for row in rows]

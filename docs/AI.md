@@ -70,9 +70,15 @@ reload of ten to thirty seconds and buys a machine that still works.
 
 | Tier | Model | Job |
 |---|---|---|
-| executor | `smollm3-3b-q4_k_m` (~1.8 GB) | reads one request, makes one tool call, reads what came back, retries once with the failure, or escalates |
-| middle brain | `qwen3-4b-instruct-2507-q4_k_m` (~2.5 GB, 6 GB RAM) | reads the whole request plus the retrieved knowledge and writes the plan as a typed list of actions |
+| executor | `spark-x2.5-1.7b-q4_k_m` (~1.0 GB) | reads one request, makes one tool call, reads what came back, retries once with the failure, or escalates |
+| middle brain | `spark-x2.5-4b-q4_k_m` (~2.4 GB, 6 GB RAM) | reads the whole request plus the retrieved knowledge and writes the plan as a typed list of actions |
 | router | `smollm2-360m-instruct-q8_0` (~400 MB) | optional; sorts a request into executor, brain or a plain answer |
+
+Both ladder models are from Spark-X2.5 (iFLYTEK's SparkLLM series, Apache 2.0);
+its published table puts the 4B at HLE 12.3 against Qwen3.5-4B's 8.6.
+`smollm3-3b-q4_k_m` stays in the catalogue as an alternative executor with a
+different tokenizer, and the 4 GB fallbacks remain
+`qwen2.5-1.5b-instruct-q4_k_m` and `qwen2.5-3b-instruct-q4_k_m`.
 
 `astra-ai setup --model <name>` installs a tier; `astra ai status` says which
 ones are installed. Everything works with the executor alone - a task that needs
@@ -325,7 +331,7 @@ Two honest caveats:
 ## 6. What is deliberately not included yet
 
 The ladder changes nothing here except to add a requirement of its own: the
-middle brain is a 2.5 GB download the user chooses to make, and a machine with
+middle brain is a 2.4 GB download the user chooses to make, and a machine with
 4 GB of RAM will not run it well. That is stated in `astra ai status` and in the
 knowledge entry, rather than being smoothed over.
 
