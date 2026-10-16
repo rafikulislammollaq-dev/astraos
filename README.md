@@ -237,7 +237,7 @@ astraos/
 ├── installer/        Calamares configuration and branding
 ├── scripts/          validation, packaging, build and release tooling
 ├── tests/            static test suite
-├── docs/             architecture, build, installation, recovery, limitations
+├── docs/             architecture, build, installation, recovery, limitations, roadmap
 └── build/  dist/     generated output (git-ignored)
 ```
 
@@ -267,6 +267,11 @@ of HTML, CSS and Make. The operating system itself comes from Debian packages.
 9. Exercise the ISO's own boot menu (syslinux and GRUB-EFI) in CI. The current boot
    test extracts the kernel and initrd from the ISO, so it verifies the image; the
    bootloader path itself is still only tested by hand in VirtualBox.
+
+Beyond this list, `docs/ROADMAP.md` holds the staged plan for the assistant as a
+platform — permissions and sandboxing, hardware-adaptive model selection, voice,
+local knowledge, diagnostics. It is a plan, not a description of the current system;
+nothing in it should be read as working until a run, a test or an artifact shows it.
 
 ---
 
