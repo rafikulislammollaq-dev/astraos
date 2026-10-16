@@ -17,7 +17,7 @@ Debian release, and not a website pretending to be an operating system.
 | 1 | Source tree and static checks pass | Yes |
 | 2 | ISO builds in CI | Yes (Build ISO run 38864588609, 2026-10-16: image built in about 18 minutes, 25/25 structural checks, `structural=PASS`, ISO 2,432,696,320 bytes) |
 | 3 | ISO boots in a virtual machine | **Yes** (VirtualBox, live session, 2026-10-15) |
-| 4 | Network and browser work out of the box | **Cause fixed in the source.** The last boot-tested ISO predates the fix; see Known issues |
+| 4 | Network and browser work out of the box | **Cause fixed in the source** (see `CHANGELOG.md`, "The live session had no working DNS"); no booted image has yet been observed with the fix in place |
 | 5 | Installer runs and installed system boots | Not tested yet |
 | 6 | Tested on physical hardware | Not tested yet |
 | 7 | Secure Boot, signed images, stable release | Not supported |
