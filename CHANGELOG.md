@@ -151,6 +151,26 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- **The installer's configuration is made true (source; its first end-to-end run is
+  pending).** Every key in `installer/calamares/settings.conf` and `users.conf` was
+  checked against the exact Calamares Debian 13 ships (the 3.3.14 sources), and three
+  kinds of false statement came out. The sequence listed `finished` inside the exec
+  phase — a done page no user would ever see, because Calamares' own ViewManager calls
+  "no finished step after an exec" a weird state; the done page is now its own `show:`
+  phase, as upstream's configuration has it, and `quit-at-end: false` (now stated
+  explicitly) keeps it on screen until the user asks for the reboot. Two settings keys
+  no Calamares in the pinned suite reads (`requirePassword`, `showPicker`) were
+  removed. And `users.conf` claimed a user policy it did not have: the key that was
+  supposed to keep root disabled was read by nothing (the module's default is
+  `setRootPassword: true`, so the installer had been offering to set a root password,
+  against plan §13.1), the shell sat under a dead top-level key instead of the `user:`
+  submap, and with no `passwordRequirements` configured the module's own
+  `passwordStatus()` reports the empty string as valid: an installation with no
+  password was possible. `setRootPassword: false`, `user:`/`shell:` and
+  `passwordRequirements: minLength: 1` replace them, the dead `username:` block is
+  gone, and the build hook now refuses an image whose users.conf would offer a root
+  password or accept an empty one.
+
 - **`astra doctor` no longer reads "Status: inactive" as active.** Its pattern was the
   unanchored `*"active"*`, which also matches "inactive" — the same defect the security
   tests pin in `astraos-info`. The firewall being on by default makes the misreport rarer

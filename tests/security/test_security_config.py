@@ -326,7 +326,7 @@ def test_installer_never_enables_autologin() -> None:
 
 
 def test_installer_ships_no_fixed_credentials() -> None:
-    """No pre-filled username, name, email or password in the installer config.
+    r"""No pre-filled username, name, email or password in the installer config.
 
     The value is matched with [^\s] after a horizontal-only gap on purpose. Using `\s*`
     would let the pattern step over a newline, so a YAML block header such as
@@ -343,10 +343,18 @@ def test_installer_ships_no_fixed_credentials() -> None:
                 "or pre-filled credentials (plan §10.4)."
             )
 
-    # The block-header forms must still be present, so this test cannot pass merely
-    # because the whole section was deleted.
-    assert re.search(r"^username:[ \t]*$", active, re.M), (
-        "users.conf has no username validation block, so the check above proves nothing"
+    # The anchors must be keys the module actually reads, so this test cannot pass
+    # merely because the credentials section was deleted. The users module (3.3.14,
+    # src/modules/users/Config.cpp) can preset exactly two values — `fullName` and
+    # `loginName` — and never a password; the autologin key is `doAutologin`. An
+    # earlier version of users.conf carried a `username:` validation block that no
+    # Calamares reads; it was removed rather than left posing as configuration.
+    assert not re.search(r"^\s+value:[ \t]*\S", active, re.M), (
+        "users.conf contains a set presets: value; AstraOS must not pre-fill what the "
+        "installer asks for (plan §10.4)"
+    )
+    assert re.search(r"^doAutologin:[ \t]*false\s*$", active, re.M), (
+        "users.conf has no autologin-off line, so the check above proves nothing"
     )
 
 

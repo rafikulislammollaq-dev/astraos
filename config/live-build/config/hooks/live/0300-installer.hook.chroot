@@ -120,16 +120,33 @@ else
     fail "partition.conf does not select ext4 as the default root filesystem (plan §11)"
 fi
 
-# --- No fixed credentials -----------------------------------------------------
-# The Calamares users module must not ship an autologin or a preset password.
+# --- Credentials policy --------------------------------------------------------
+# The Calamares users module must not ship an autologin or a preset password, must not
+# offer to set a root password (plan §13.1), and must not accept an empty password: the
+# module's own passwordStatus() treats "no requirements configured" as "the empty
+# string is valid", so the requirement has to be stated explicitly.
 if grep -rqs 'autologinUser' /etc/calamares/modules/ 2>/dev/null; then
     if grep -rqsE 'autologinUser:[[:space:]]*[^"'"'"'[:space:]]' /etc/calamares/modules/ 2>/dev/null; then
         fail "a Calamares module configures an autologin user; AstraOS must not ship fixed credentials"
     fi
 fi
 
-if grep -rqsE '^\s*password:' /etc/calamares/modules/users.conf 2>/dev/null; then
+USERS_CONF=/etc/calamares/modules/users.conf
+
+if grep -rqsE '^\s*password:' "$USERS_CONF" 2>/dev/null; then
     fail "users.conf appears to contain a fixed password"
+fi
+
+if grep -qsE '^setRootPassword:[[:space:]]*false' "$USERS_CONF"; then
+    printf '%s ok    root stays disabled for login on the target\n' "$PREFIX"
+else
+    fail "users.conf does not set setRootPassword: false; the installer would offer a root password even though the root account must stay disabled (plan §13.1)"
+fi
+
+if grep -A4E '^passwordRequirements:' "$USERS_CONF" 2>/dev/null | grep -qE '^[[:space:]]+minLength:[[:space:]]*[1-9][0-9]*[[:space:]]*$'; then
+    printf '%s ok    an empty password is not accepted (minLength >= 1)\n' "$PREFIX"
+else
+    fail "users.conf does not require a non-empty password (passwordRequirements: minLength >= 1); the users module accepts an empty password when no requirements are configured"
 fi
 
 log "installer configuration validated"

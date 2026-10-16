@@ -148,6 +148,26 @@ def test_calamares_configuration_has_the_safety_properties() -> None:
         "disk before anything is written (plan §10.3)"
     )
 
+    # The sequence must end with the finished page in a show phase of its own. A
+    # sequence that lists `finished` inside the exec phase gives the user no done page;
+    # Calamares' own ViewManager source calls that "reached the end in a weird state".
+    # Upstream's configuration puts it in a trailing show phase, and so does this one.
+    exec_at = settings.find("- exec:")
+    finished_at = settings.find("- finished", exec_at)
+    assert exec_at != -1 and finished_at != -1, "settings.conf has no exec phase or no finished step"
+    assert settings.rfind("- show:", exec_at, finished_at) != -1, (
+        "`finished` is listed inside the exec phase. The done page must be its own "
+        "show: phase after exec, or the installer ends with no finished page."
+    )
+
+    # Keys no Calamares in the pinned suite reads are configuration in appearance
+    # only. The 3.3.14 sources (src/libcalamares/Settings.cpp) read neither of these;
+    # they were removed from settings.conf and must not come back.
+    for dead in ("requirePassword", "showPicker"):
+        assert not re.search(rf"^{dead}:", settings, re.M), (
+            f"settings.conf sets {dead}, which the shipped Calamares (3.3.14) never reads"
+        )
+
 
 def test_no_fixed_credentials_in_the_installer() -> None:
     users_conf = (REPO_ROOT / "installer" / "calamares" / "modules" / "users.conf").read_text(encoding="utf-8")
@@ -163,6 +183,38 @@ def test_no_fixed_credentials_in_the_installer() -> None:
             )
     assert "doAutologin: false" in users_conf, (
         "users.conf must disable autologin explicitly"
+    )
+
+    # ... and the keys it does carry must be keys the module reads. Checked against the
+    # users module's own source in the pinned Calamares 3.3.14: `setRootPassword`
+    # defaults to TRUE when absent (the installer would offer to set a root password),
+    # the shell key is `user.shell`, and with no `passwordRequirements` configured the
+    # module's own passwordStatus() reports the empty string as valid — an installation
+    # whose password is empty is a security defect, not a choice.
+    assert re.search(r"^setRootPassword:\s*false\s*$", users_conf, re.M), (
+        "users.conf does not set setRootPassword: false; the installer would offer a "
+        "root password even though the target's root account must stay disabled (plan §13.1)"
+    )
+    assert re.search(r"^passwordRequirements:\s*$", users_conf, re.M) and re.search(
+        r"^[ \t]+minLength:\s*[1-9]\d*\s*$", users_conf, re.M
+    ), (
+        "users.conf does not require a non-empty password (passwordRequirements with "
+        "minLength >= 1); the users module treats an empty password as valid when no "
+        "requirements are configured"
+    )
+    # The dead keys must not come back as configuration. The check reads active lines
+    # only: the file's own comments name the keys it removed, and a substring check
+    # over the whole file would fire on the explanation.
+    active = "\n".join(
+        line for line in users_conf.splitlines() if not line.lstrip().startswith("#")
+    )
+    assert not re.search(r"^allowReuseOfExistingPassword:", active, re.M), (
+        "users.conf carries allowReuseOfExistingPassword, which no Calamares reads; the "
+        "real key is setRootPassword"
+    )
+    assert not re.search(r"^userShell:", active, re.M), (
+        "users.conf carries a top-level userShell, which no Calamares reads; the shell "
+        "belongs to the user: submap"
     )
 
 
