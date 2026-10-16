@@ -65,7 +65,12 @@ on:
   push:
     branches: ["main", "master", "release/**"]
     paths:
-      - "packages/astraos-ai/**"
+      # What a compile actually depends on: the CLI that drives it and the
+      # package whose setup.py holds the flags. The corpus and the docs cannot
+      # change a build, and a workflow that rebuilt for a typo in a knowledge
+      # file would train people to ignore it.
+      - "packages/astraos-ai/root/usr/bin/**"
+      - "packages/astraos-ai/root/usr/lib/**"
       - ".github/workflows/build-ai-engine.yml"
 
 permissions:
@@ -133,7 +138,7 @@ jobs:
           # The measured failure this guards against: a build with GGML_FMA and
           # GGML_BMI2 at their defaults configured, linked, and then died with
           # exit 132 and nothing printed on the Sandy Bridge reference machine.
-          # -DGGML_AVX2=OFF alone does not turn either off (setup.py, measured
+          # GGML_AVX2=OFF alone does not turn either off (setup.py, measured
           # 2026-10-16).
           echo "--- instruction scan: FMA / BMI2 / F16C must not appear"
           for name in llama-server whisper-cli; do

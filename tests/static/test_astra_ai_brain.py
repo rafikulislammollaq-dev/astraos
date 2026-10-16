@@ -1521,3 +1521,32 @@ def test_the_installed_engine_is_self_contained() -> None:
         "the build does not ask for a static binary, so the installed "
         "llama-server still points at the build tree for its libraries: "
         f"{ai_setup.CPU_FLAGS!r}")
+
+
+def test_the_engine_workflow_never_retypes_the_cpu_flags() -> None:
+    """The CI workflow exists to move the compile, not to copy the flag list.
+
+    `.github/workflows/build-ai-engine.yml` runs on every push under
+    packages/astraos-ai/root/usr so that the twenty-minute compile happens on
+    a hosted runner instead of the user's desktop. It is allowed to build
+    through `astra-ai setup --build all` - the exact command a user runs - and
+    that is the point: a second copy of the instruction-set flags in YAML
+    would drift from setup.py silently, and the drift would ship as SIGILL on
+    this hardware.
+
+    The emulated-Sandy-Bridge run is pinned the same way: it is the dynamic
+    half of the SIGILL proof (the disassembly scan is the static half), and a
+    workflow without it still says "proven" in the summary.
+    """
+    text = read(".github/workflows/build-ai-engine.yml")
+    assert "setup --build all" in text, (
+        "the engine workflow no longer runs the command it exists to prove; "
+        "a build that is not the user's command is not a proof about the "
+        "user's command")
+    assert "-DGGML" not in text, (
+        "the workflow spells out an instruction-set flag; the flags live in "
+        "setup.py, and this copy drifts from them the next time one changes")
+    assert "qemu-x86_64 -cpu SandyBridge" in text, (
+        "the emulated Sandy Bridge run is the half of the SIGILL proof that "
+        "executes; removing it leaves a static scan claiming more than it can "
+        "show")
