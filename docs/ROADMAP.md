@@ -109,26 +109,30 @@ updated. Every step proven in CI or recorded as untested.
   the hardware and codec stack, the Flathub remote, NetworkManager and — as one of its
   checks — a real hostname lookup, so the 0.1.0 DNS defect cannot return silently. Two
   harness defects were fixed to get here (`findiso`; a systemd ordering cycle, see
-  `CHANGELOG.md`). The test boots the ISO's kernel with the ISO as its live medium;
-  exercising the syslinux and GRUB boot menus is the `boot-menus` exercise below
-  (added 2026-10-16, pending its first run).
+  `CHANGELOG.md`). Run 38913161772 (commit 0e47f4d, 2026-10-16) reported `PASS (51 checks,
+  0 failed)` — the same shape plus the firewall, phone-arc and real-screenshot checks
+  recorded in the items below. The test boots the ISO's kernel with the ISO as its live
+  medium; the syslinux and GRUB boot menus are exercised by the `boot-menus` exercise
+  below (green in that run).
 - [ ] **Calamares installer end to end in a VM**, and the installed system boots.
   The exercise exists in the source (2026-10-16): `scripts/install-boot-test.sh`
   installs the ISO onto a blank disk by driving the ISO's own Calamares UI over the
   QEMU monitor, then boots that disk alone and requires the image's self-test in its
   installed mode; pending its first run. The manual procedure in
   `docs/INSTALLATION_VIRTUALBOX.md` stays either way.
-- [ ] **Boot menu paths exercised in CI**: syslinux (BIOS) and GRUB-EFI, not only
+- [x] **Boot menu paths exercised in CI**: syslinux (BIOS) and GRUB-EFI, not only
   the kernel extracted from the ISO. The exercise exists in the source (2026-10-16):
   `scripts/boot-menu-test.sh` boots the ISO with QEMU's own firmware — the host
   supplies no kernel and no command line — accepts the menu's default entry through the
   QEMU monitor, and waits for the login prompt that the ISO's own menu entries put on
   the serial console; the `boot-menus` job runs it for both firmwares and uploads both
-  logs. The checkbox flips on the first run green in CI.
+  logs. Green 2026-10-16, run 38913161772 (commit 0e47f4d): the `boot-menus` job (6m41s)
+  ran both firmwares — syslinux on BIOS, GRUB on UEFI — and both serial logs end at
+  the live system's `astra-live login:` prompt (`astraos-boot-menus` carries both logs).
 - [ ] **An APT repository for the `astraos-*` packages**, so installed systems
   receive updates. None exists today; an installed system currently gets Debian
   packages and nothing else.
-- [ ] **Firewall decision: default-on.** Decided and implemented on 2026-10-16: ufw
+- [x] **Firewall decision: default-on.** Decided and implemented on 2026-10-16: ufw
   starts on boot (`ENABLED=yes` in `/etc/ufw/ufw.conf`, installed by the identity
   hook), inbound is denied, and exactly two things are reachable from the local
   network — the assistant's page (`8765/tcp`, pairing-gated) and mDNS (`5353/udp`,
@@ -136,28 +140,41 @@ updated. Every step proven in CI or recorded as untested.
   old "it could break the installer's network" reason is answered, not ignored. The
   self-test carries the proof: it checks the active state, the deny default and the
   page rule, and the phone exercise runs with the firewall up while the caller's
-  probe of a watched, not-allowed port must leave no arrival in the guest. The
-  checkbox flips on the first self-test run green in CI.
-- [ ] **The assistant's web page on a phone**: localhost until paired, then the LAN
+  probe of a watched, not-allowed port must leave no arrival in the guest. Green
+  2026-10-16, run 38913161772 (commit 0e47f4d): `RESULT: PASS (51 checks, 0 failed)`
+  with `firewall-active`, `firewall-default-deny`, `firewall-page-allowed`,
+  `firewall-probe-listening` and `firewall-blocks-other-ports` all green, while the
+  host's probe of port 18766 (the guest's watched 8766) timed out and the guest
+  recorded no arrival (`phone-host.log`: `firewall probe -> 18766 TimeoutError('timed out')`).
+  The one check that failed the earlier behavioural run (38903678646) demanded a
+  `ufw status` spelling ufw never prints; it now reads the verbose listing, and this
+  run proves the fix.
+- [x] **The assistant's web page on a phone**: localhost until paired, then the LAN
   with pairing and the firewall on. The pairing half exists in the source
   (2026-10-16) as its first slice: `astra-ai pair` shows a six-digit code, a phone on
   the LAN pairs with it, `astra-ai unpair` revokes every phone, and the boot
   self-test's `astraos.phone=1` section — with the host-side `phone-host.log` as
-  evidence — is built to prove the whole arc end to end. The checkbox flips on the
-  first boot-self-test run that carries it green; the firewall half stays with the
-  firewall item above.
+  evidence — is built to prove the whole arc end to end. Green
+  2026-10-16, run 38913161772 (commit 0e47f4d): all six phone checks green
+  (`phone-armed`, `phone-localhost`, `phone-paired`, `phone-served`, `phone-revoked`,
+  `phone-refused-after-revoke`) with `phone-host.log` carrying the host's arc —
+  pairing code read from the serial console, page GET 200, unpaired health 401, pair
+  POST 200, paired health 200, revoked health 401, and the blocked-port probe timed
+  out. The firewall half is recorded in the firewall item above.
 - [ ] **Try Secure Boot**: live-build's `--uefi-secure-boot` path with Debian's
   signed shim and GRUB (check the installed live-build version supports it).
   Document the firmware configurations that are actually known to boot. Until a
   machine reports otherwise, the README keeps "Secure Boot is not supported".
 - [ ] **The HUD on a booted image's screen.** The boot self-test's screenshot is
   meant to be the first version of this evidence; the first green run's screenshot
-  came back black — a QEMU stdvga blanking defect (see `CHANGELOG.md`). The fix exists
-  in the source (2026-10-16, pending its first run): the guest turns blanking off,
-  forces the display on and repaints the session before reporting its result, and the
-  host verifies the capture has content, retrying a flat image while the guest still
-  holds the session. The item stays open until a captured image actually shows the
-  desktop.
+  came back black — a QEMU stdvga blanking defect (see `CHANGELOG.md`). The source
+  fix — the guest turns blanking off, forces the display on and repaints the session
+  before reporting its result; the host verifies the capture has content and retries
+  a flat image while the guest still holds the session — is green since 2026-10-16,
+  run 38913161772: the capture carries the real desktop. The item stays open because
+  the capture does not yet show the HUD itself — the dashboard is a full-screen
+  application started from its launcher, not an autostart — so the next slice starts
+  it in the session and captures that.
 - [ ] **A recovery procedure that has been performed**: snapshot, break, restore,
   in a VM, with Timeshift.
 

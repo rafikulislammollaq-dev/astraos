@@ -46,7 +46,7 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   `astraos-install-test`). The first run is the proof, and it will be recorded here
   when it happens.
 
-- **The firewall is on by default (source; its first CI run is pending).** The decision
+- **The firewall is on by default (first CI run green, 2026-10-16).** The decision
   recorded in the roadmap — ufw shipped disabled by design — is reversed: a firewall
   that waits to be enabled protects exactly the users who never enable it. `ENABLED=yes`
   now ships in `/etc/ufw/ufw.conf`, and the exceptions live in `/etc/ufw/user.rules`
@@ -59,9 +59,14 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   allows while the guest watches it — with the firewall up, nothing may arrive, and the
   guest fails its own check if anything does. `/etc/ufw/astraos-policy.conf` explains
   every rule where it lives; `docs/SECURITY.md` §3 and `docs/KNOWN_LIMITATIONS.md` §3.5
-  record the scope (private ranges only) and how to widen it.
+  record the scope (private ranges only) and how to widen it. **First CI run green
+  (2026-10-16, run 38913161772, commit 0e47f4d):** `RESULT: PASS (51 checks, 0 failed)`
+  — `firewall-active`, `firewall-default-deny`, `firewall-page-allowed`,
+  `firewall-probe-listening` and `firewall-blocks-other-ports` all green — while the
+  host's probe of port 18766 (the guest's watched 8766) timed out and no connection
+  reached the guest (`phone-host.log`: `firewall probe -> 18766 TimeoutError('timed out')`).
 
-- **The screenshot capture is made real (source; its first run is pending).** The
+- **The screenshot capture is made real (first run green, 2026-10-16).** The
   first green boot self-test's captured image was a flat black with only the cursor
   although the session was healthy — QEMU's stdvga emulation (fixed upstream in 9.0.2,
   not in the 8.2 the CI runner ships) clears the shared framebuffer when the guest
@@ -71,11 +76,13 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   before it reports its result; the host measures every capture's standard deviation,
   retries while the guest still holds the session, keeps the shot with the most
   content, and says so in the transcript when even that is flat. The image utilities
-  the guest uses (`x11-xserver-utils`, `x11-utils`) already ship. The first run that
-  captures the desktop for real is the proof, and it will be recorded here when it
-  happens.
+  the guest uses (`x11-xserver-utils`, `x11-utils`) already ship. That run is
+  38913161772 (commit 0e47f4d, 2026-10-16): the capture (`screenshot.png`, 1280×800)
+  carries the real desktop — sampled across 16,000 points it holds a standard
+  deviation of 14.3 on a mean luminance of 2, a dark-themed desktop rather than a flat
+  frame.
 
-- **The ISO's own boot menus are exercised (source; its first CI run is pending).** It
+- **The ISO's own boot menus are exercised (first CI run green, 2026-10-16).** It
   is the menu, not the host, that boots the guest now: `scripts/boot-menu-test.sh`
   boots the built ISO with QEMU's own firmware starting the machine — no kernel, no
   initrd, no command line supplied — accepts the bootloader menu's default entry with
@@ -87,12 +94,15 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   the shipped menu entries carry the serial console, so `console=ttyS0,115200n8` is now
   part of `LIVE_APPEND` in `config/live-build/auto/config` — deliberate for real
   hardware as well: a machine with a serial port gets boot messages and a login prompt
-  there. `astraos.ci` stays out of `LIVE_APPEND` (it would power real desktops off) and
+  there. `astraos.ci=1` stays out of `LIVE_APPEND` (it would power real desktops off) and
   out of the menu script; the existing mirror test and the new
   `tests/static/test_boot_menu.py` hold both ends. The workflow gained a `boot-menus`
   job (both media per dispatch, the UEFI run still performed when the BIOS run failed,
-  evidence uploaded as `astraos-boot-menus`). The first CI run is the proof, and it
-  will be recorded here when it happens.
+  evidence uploaded as `astraos-boot-menus`). That run is
+  38913161772 (commit 0e47f4d, 2026-10-16): the `boot-menus` job (6m41s) ran both
+  firmwares — syslinux on BIOS, GRUB on UEFI, QEMU's own firmware with no kernel and
+  no command line supplied — and both serial logs end at the live system's
+  `astra-live login:` (`astraos-boot-menus` carries both).
 
 - **The assistant's page can now be reached from a phone — by pairing.** The roadmap's
   Stage 1 phone-page item got its first slice: `astra-ai serve --lan` opens the page to
@@ -110,8 +120,12 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   `serial.log`. Honest first-slice scope: plain HTTP on the local network (no TLS yet),
   bearer tokens, and the firewall default stays undecided (see the roadmap's firewall
   item). Unit and static tests pin the gate, the code policy, the page and the evidence
-  markers; the first boot-self-test run carrying the phone section is the CI proof, and
-  it will be recorded here when it happens.
+  markers; run
+  38913161772 (commit 0e47f4d, 2026-10-16) carried it green: all six phone checks
+  passed, and `phone-host.log` holds the host's arc — the pairing code read from the
+  serial console, the page GET answering 200, the unpaired health GET 401, the pair
+  POST 200, the paired health GET 200, the revoked phone refused again, and the
+  blocked-port probe timed out.
 
 - **The first green boot self-test.** 2026-10-16, run 38881934636 (commit 8f81e3d): the
   built ISO booted under QEMU on a runner with no KVM — pure CPU emulation — and the
@@ -122,11 +136,11 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   with an IPv4 address, and a real name resolved by DNS — the check that pins the DNS
   defect entry below. Job times: build 18m43s, boot 6m28s; the guest ran 4 vCPU / 4 GiB.
   The evidence artifact is `astraos-boot-self-test` (`serial.log` is the record; the
-  screenshot captured through the QEMU monitor came back black — a capture defect, so it
-  is not usable as visual evidence yet, and making the capture real is tracked on the
-  roadmap). The test starts the kernel and initrd taken from the ISO with the ISO
-  attached as the live medium; the ISO's own boot menus (syslinux BIOS, GRUB EFI) are
-  still exercised only by hand. The README's maturity table and "What has been tested",
+  screenshot captured through the QEMU monitor came back black — a capture defect,
+  fixed on 2026-10-16 and proven green in run 38913161772, the screenshot entry
+  above). The test starts the kernel and initrd taken from the ISO with the ISO
+  attached as the live medium; the ISO's own boot menus (syslinux BIOS, GRUB EFI) went
+  green in CI on 2026-10-16 (the menus entry above, run 38913161772). The README's maturity table and "What has been tested",
   `docs/KNOWN_LIMITATIONS.md` §1.1/§2 and the roadmap's Stage 1 entry record it in the
   same commit.
 
@@ -144,7 +158,7 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   list records the proof: the first green run is the entry above.)
 
 - **Every image carries a self-test it runs on request.** `astraos-smoke.service` (gated
-  on `ConditionKernelCommandLine=astraos.ci`) runs `/usr/local/sbin/astraos-smoke` after
+  on `ConditionKernelCommandLine=astraos.ci=1`) runs `/usr/local/sbin/astraos-smoke` after
   the desktop is up: release identity, LightDM + Xfce session, every AstraOS package, the
   hardware and compatibility stack, the commands (HUD, assistant, all-in-one, Windows
   bridge, wine, ffmpeg, flatpak), the Flathub remote, and that a real name resolves. It
@@ -187,7 +201,8 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   the host's probe of an unallowed port died at the firewall, the guest recorded no
   arrival, and the assistant's page answered a private-range connection. The check now
   reads `ufw status verbose` (one call, shared with the default-policy check) and
-  prints the rows it saw when it fails.
+  prints the rows it saw when it fails. Run 38913161772 (commit 0e47f4d) proves it:
+  `RESULT: PASS (51 checks, 0 failed)` with `firewall-page-allowed` green.
 
 - **The installer's configuration is made true (source; its first end-to-end run is
   pending).** Every key in `installer/calamares/settings.conf` and `users.conf` was
@@ -214,7 +229,8 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
    in place was refused. The assertion is two plain greps now, verified against the
    shipped file before it was committed, and `tests/static/test_hook_assertions.py`
    both pins the patterns and refuses that flag shape; the installer's first end-to-end
-   run is still pending.
+   run is still pending, while run 38913161772 (commit 0e47f4d) built the image green
+   with the fixed assertion in the chroot stage.
 
 - **`astra doctor` no longer reads "Status: inactive" as active.** Its pattern was the
   unanchored `*"active"*`, which also matches "inactive" — the same defect the security
@@ -222,7 +238,7 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   but not less false; both tools now anchor on `"Status: active"*`, and the test suite
   pins both.
 
-- **The phone exercise's host driver (source; its first green run is pending).** The
+- **The phone exercise's host driver (first green run, 2026-10-16).** The
   first run that carried it (run 38894494223) booted, reached the desktop, and the guest
   passed `phone-armed` and `phone-localhost` — then the host half died silently at its
   first request: it loaded the pairing page through the QEMU port forward and parsed the
@@ -230,7 +246,9 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   transcript line, and the four pairing checks that depend on the host failed. The driver
   now tolerates a non-JSON body (only the page is one), logs any unexpected failure
   instead of dying invisibly, and its stderr is kept with the evidence; the pairing arc
-  itself was never in question and needs a clean re-run to prove.
+  itself was never in question and needed a clean re-run to prove — 38913161772
+  (commit 0e47f4d) is that run: all six phone checks green with the full host
+  transcript.
 
 - **The boot self-test's kernel command line carried `findiso=/live/filesystem.squashfs`,
   and the first CI boot of a built image died because of it** (run 38864588609,

@@ -16,6 +16,16 @@ and it should not be installed on a machine holding data you cannot lose.**
 **No image has ever been installed to a disk, and no image has ever booted on physical
 hardware.** What has happened, with the record:
 
+- **2026-10-16, full CI boot self-test with the firewall, the phone arc and a real
+  screenshot (run 38913161772, commit 0e47f4d): PASS (51 checks, 0 failed).** The
+  same emulated boot now carries the firewall checks (ufw active, the deny default,
+  the assistant's page reachable on the private range, a watched port left unreached
+  under the host's probe), the phone-pairing arc with the host transcript in
+  `phone-host.log`, and a screenshot of the real desktop; the boot self-test job took
+  9m47s, and the `boot-menus` job (6m41s) booted the ISO through QEMU's own firmware —
+  syslinux on BIOS, GRUB on UEFI — with both serial logs reaching the live system's
+  `astra-live login:` prompt. Evidence artifacts: `astraos-boot-self-test`,
+  `astraos-boot-menus`.
 - **2026-10-16, CI boot self-test (run 38881934636, commit 8f81e3d): PASS.** The built ISO
   booted under `qemu-system-x86_64` on a GitHub runner that provides no KVM — the CPU was
   emulated — and the image's own self-test reported `RESULT: PASS (39 checks, 0 failed)`:
@@ -24,11 +34,10 @@ hardware.** What has happened, with the record:
   hardware, codec and compatibility tools, the Flathub remote, NetworkManager active with
   an IPv4 address, and a real name resolved by DNS. The evidence artifact is
   `astraos-boot-self-test` (`serial.log` is the record; the screenshot captured through
-  the QEMU monitor came back black — a capture defect, tracked in `CHANGELOG.md`). The
-  test starts the kernel and initrd taken from the ISO and attaches the ISO as the live
-  medium; the ISO's own boot menus are not exercised by CI yet (the exercise exists in
-  the source as of 2026-10-16 — `scripts/boot-menu-test.sh`, the `boot-menus` job — and
-  is pending its first run).
+  the QEMU monitor came back black — a capture defect, fixed and proven green in the
+  run above). The test starts the kernel and initrd taken from the ISO and attaches
+  the ISO as the live medium; the ISO's own boot menus went green in CI on 2026-10-16
+  (the `boot-menus` job, `scripts/boot-menu-test.sh` — the run above).
 - **2026-10-16, CI build (run 38864588609): structural validation PASS** — 25/25 checks,
   `structural=PASS` in the build manifest, image 2,432,696,320 bytes.
 - **2026-10-15, VirtualBox by hand:** the image booted from the live menu to the Xfce
@@ -93,14 +102,14 @@ one maintainer.
 ## 2. Untested areas
 
 Rows marked **UNTESTED** have never been exercised. Rows marked **CI** were exercised
-only inside CI, under QEMU emulation (run 38881934636, 2026-10-16) — never on physical
-hardware.
+only inside CI, under QEMU emulation (runs 38881934636 and 38913161772, 2026-10-16) —
+never on physical hardware.
 
 | Area | Status | What testing it requires |
 |---|---|---|
-| Booting the live ISO | **CI PASS** (the ISO's kernel and initrd, the ISO as the live medium) | Physical hardware; the ISO's own boot menus (exercise added 2026-10-16, first run pending) |
-| Legacy BIOS boot | UNTESTED | A VM configured for BIOS (exercise added 2026-10-16, first run pending) |
-| UEFI boot | UNTESTED | A VM configured for UEFI (exercise added 2026-10-16, first run pending) |
+| Booting the live ISO | **CI PASS** (the ISO's kernel and initrd, the ISO as the live medium) | Physical hardware |
+| Legacy BIOS boot | **CI PASS** (the syslinux menu, run 38913161772) | Physical hardware |
+| UEFI boot | **CI PASS** (the GRUB menu, run 38913161772) | Physical hardware |
 | Live desktop startup | **CI PASS** (LightDM active, Xfce session as `astra`) | Booting the image by hand and interacting |
 | Mouse, keyboard and display resolution in the live session | UNTESTED | Booting the image |
 | Live session applications (browser, file manager, terminal) | UNTESTED | Booting the image |
@@ -161,8 +170,9 @@ proves it are recorded in `docs/ROADMAP.md`; the exercise was added 2026-10-16. 
 first run (38903678646) proved the behavioural half — under the host's probe a port
 no rule allows stayed unreached while the assistant's page answered a private-range
 connection — and failed one static check that demanded a `ufw status` spelling ufw
-never prints; the check now reads the verbose listing, and the next run carries the
-fix.
+never prints; the check now reads the verbose listing, and run 38913161772 (commit
+0e47f4d) carries the fix and the proof: `RESULT: PASS (51 checks, 0 failed)` with the
+firewall checks green and the host's probe unreached.
 
 ### 3.6 The installer module set is minimal
 

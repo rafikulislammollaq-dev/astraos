@@ -38,20 +38,23 @@ Tested by hand on 2026-10-15 in Oracle VirtualBox on a Windows 11 host
 - Network link works: `ping 8.8.8.8` replies with 0% loss.
 - Firefox loads websites once DNS is configured (YouTube loaded in the test).
 
-Proven by CI on 2026-10-16 (boot self-test, run 38881934636, commit 8f81e3d):
+Proven by CI on 2026-10-16 (boot self-test, run 38913161772, commit 0e47f4d):
 
 - The built ISO boots in CI's QEMU — the runner provides no KVM, so the CPU is
-  emulated — and the image's own self-test reports `PASS: 39 checks, 0 failed`:
-  the console login prompt appears 143.7 s into the guest boot, LightDM is
+  emulated — and the image's own self-test reports `RESULT: PASS (51 checks,
+  0 failed)`: the console login prompt appears by the 141 s mark, LightDM is
   active, an Xfce session (xfwm4) runs as the live user, every `astraos-*`
   package is present at its expected version, the hardware, codec and
   compatibility tools and the Flathub remote check out, NetworkManager is
-  active with an IPv4 address, and a real name resolves over DNS.
+  active with an IPv4 address, a real name resolves over DNS, the firewall is
+  up with only the assistant's page reachable from the private network (a
+  watched port stayed unreached under the host's probe), and a phone completed
+  the pairing arc against the assistant's page.
 - This boots the kernel and initrd taken from the ISO with the ISO attached as
-  the live medium; the ISO's own boot menus (syslinux BIOS, GRUB EFI) are still
-  exercised only by hand. The screenshot this run captured through the QEMU
-  monitor came back black — a tracked capture defect — so the serial log, not
-  the picture, is the evidence today.
+  the live medium; the ISO's own boot menus (syslinux BIOS, GRUB EFI) boot the
+  image through QEMU's own firmware in the same dispatch, both reaching the live
+  login prompt. The screenshot captured through the QEMU monitor shows the real
+  desktop.
 
 Tested from the source tree on 2026-10-16 in WSL on the same hardware:
 
@@ -80,7 +83,8 @@ Built and proven on GitHub Actions on 2026-10-16 (Build AI engine run #1, about
   ladder's answer quality.)
 
 Not tested: the installer, installing to disk, Wi-Fi, GPUs, physical machines,
-UEFI boot, audio, printing, Bluetooth, and the assistant's web page.
+UEFI Secure Boot, audio, printing, Bluetooth, and the assistant's web page beyond
+the pairing arc.
 
 ---
 
