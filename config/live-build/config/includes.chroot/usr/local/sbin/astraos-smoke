@@ -458,6 +458,25 @@ if [ "$MODE" = live ]; then
         bad "hud-on-screen" "astraos-hud did not start: $(tail -n 2 /tmp/astraos-hud.log 2>/dev/null | tr '\n' ' ')"
     fi
 fi
+
+# --- the machine's capability profile, measured as the user (live medium only) --------
+# Stage 2's first item: the assistant measures the machine (CPU flags and instruction
+# sets, memory, graphics, an accelerator, audio, free space) and writes it in plain
+# words beside its settings. Running it as the live user is the point: the profile is
+# an unprivileged reading of /proc and /sys, never a privileged probe. The command
+# prints the file it wrote; that file must exist and have content.
+if [ "$MODE" = live ]; then
+    if runuser -u "$LIVE_USER" -- astra-ai profile >/tmp/astra-ai-profile.log 2>&1; then
+        profile_file="$(sed -n 's/^written to //p' /tmp/astra-ai-profile.log | head -n 1)"
+        if [ -n "$profile_file" ] && [ -s "$profile_file" ]; then
+            ok "ai-profile" "measured as $LIVE_USER and written to $profile_file"
+        else
+            bad "ai-profile" "no written profile: $(tail -n 2 /tmp/astra-ai-profile.log | tr '\n' ' ')"
+        fi
+    else
+        bad "ai-profile" "astra-ai profile failed: $(tail -n 2 /tmp/astra-ai-profile.log | tr '\n' ' ')"
+    fi
+fi
 if as_user xset s off >/dev/null 2>&1 \
     && as_user xset s noblank >/dev/null 2>&1 \
     && as_user xset dpms force on >/dev/null 2>&1 \

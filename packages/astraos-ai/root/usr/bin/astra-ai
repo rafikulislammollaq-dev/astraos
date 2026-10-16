@@ -55,6 +55,7 @@ if str(_LIB) not in sys.path:
     sys.path.append(str(_LIB))
 
 from astraos.ai import actions, config, llm  # noqa: E402
+from astraos.ai import machine  # noqa: E402
 from astraos.ai import prompt as ai_prompt  # noqa: E402
 from astraos.ai import setup as ai_setup  # noqa: E402
 from astraos.ai import tiers  # noqa: E402
@@ -507,9 +508,36 @@ def cmd_unpair(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_profile(args: argparse.Namespace) -> int:
+    """`astra-ai profile`: measure this machine and write it down.
+
+    The profile is written beside the settings, under the same account that ran the
+    command: an unprivileged reading of /proc and /sys, printed in plain words and
+    kept as JSON so later features (engine-build selection, the readiness tier)
+    read the same numbers instead of measuring the machine a second time.
+    """
+    profile = machine.collect()
+    for line in machine.plain_words(profile):
+        print(line)
+    path = machine.write(profile, config.PATHS.profile_file)
+    print()
+    print(f"written to {path}")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     info = ai_setup.describe()
     health = llm.Engine(config.load_settings()).health()
+
+    # The capability profile is written at first run; `status` is the command a new
+    # user runs first, so it makes sure the profile exists (a read-only measurement,
+    # never privileged) and names where it lives.
+    profile_path = config.PATHS.profile_file
+    if machine.load(profile_path) is None:
+        try:
+            machine.write(machine.collect(), profile_path)
+        except OSError:
+            pass
 
     print("AstraOS assistant")
     print(f"  model          {info['model'] or 'none installed'}")
@@ -518,6 +546,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"  transcription  {'ready' if info['stt'] else 'not installed'}")
     print(f"  models kept in {info['models_dir']}")
     print(f"  settings       {info['config_file']}")
+    print(f"  profile        {profile_path if profile_path.exists() else 'not written'}")
     if health["ok"]:
         print(f"  model server   answering on {health['host']}:{health['port']} "
               f"(pid {health['pid']})")
@@ -780,6 +809,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("status", help="what is installed and whether the model is running")
     p.set_defaults(handler=cmd_status)
+
+    p = sub.add_parser("profile",
+                       help="measure this machine and write the capability profile")
+    p.set_defaults(handler=cmd_profile)
 
     p = sub.add_parser("actions", help="list everything the assistant can do")
     p.add_argument("--json", action="store_true", help="as JSON, for scripts")

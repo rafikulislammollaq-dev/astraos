@@ -197,7 +197,13 @@ rung itself. The SIGILL lesson becomes a feature.
 
 - [ ] **A capability profile**: CPU flags and instruction sets, RAM, GPU, NPU where
   one exists, storage, audio devices — written at first run and shown in plain
-  words.
+  words. The source exists (2026-10-16): `astra-ai profile` measures the machine by
+  reading `/proc` and `/sys` as the running user — an unprivileged reading, never a
+  privileged probe — prints it in plain words, writes it as JSON beside the
+  assistant's settings, and `astra-ai status` makes sure it exists at first run. The
+  derived AI-readiness rung below reads the same numbers. First run pending: the
+  boot self-test's new `ai-profile` check runs the command as the live user and
+  requires the written file.
 - [ ] **Engine builds selected from the profile.** CI already builds an AVX
   variant; add AVX2 and a Vulkan build, record which machines need which, and never
   install an engine the CPU cannot run.

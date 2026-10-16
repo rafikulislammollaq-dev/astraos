@@ -55,6 +55,12 @@ WHAT IT CHECKS
     the screen is held for the capture ("hud-on-screen"), so the caller's picture
     carries the HUD itself, not only the desktop;
 
+  * on the live medium, the assistant measures the machine ("ai-profile"): the command
+    reads /proc and /sys as the live user - never as root - and writes the capability
+    profile (CPU flags and instruction sets, memory, graphics, audio, free space, and
+    the derived AI-readiness rung) beside the assistant's settings. The check requires
+    the file the command says it wrote;
+
   A line marked "note" is information, not a verdict: the shipped image has no AI model
   installed, so "assistant-status" reporting no model is expected.
 

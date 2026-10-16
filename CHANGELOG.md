@@ -19,6 +19,20 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The machine's capability profile, measured (source; its first run is
+  pending).** `astra-ai profile` reads `/proc/cpuinfo`, `/proc/meminfo`,
+  `/proc/asound/cards`, `/sys/class/drm`, `/sys/class/accel` and free space as the
+  running user — an unprivileged reading, never a privileged probe — prints the
+  machine in plain words (CPU and instruction sets, RAM and swap, graphics,
+  accelerator, audio, free on `/`) and writes the same numbers as JSON beside the
+  assistant's settings (`~/.config/astraos/machine.json`). The AI-readiness rung
+  ("ready" / "tight" / "unsupported") is derived from those measurements against
+  the model ladder's documented sizes and the engine builds' actual requirements
+  (AVX on; AVX2, F16C, FMA and BMI2 off), not from branding. `astra-ai status`
+  makes sure the profile exists at first run and names its path. The boot
+  self-test's new `ai-profile` check runs the command as the live user and
+  requires the written file; that check's first run is pending.
+
 - **The ISO carries Debian's signed Secure Boot chain (source; its first run is
   pending).** `config/live-build/auto/config` now asks live-build for
   `--uefi-secure-boot enable`: the EFI system partition gets the Microsoft-signed shim

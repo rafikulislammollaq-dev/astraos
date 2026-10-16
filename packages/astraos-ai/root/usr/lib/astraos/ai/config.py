@@ -85,8 +85,9 @@ class PATHS:
         models_dir   downloaded model files, one .gguf or .bin per model
         bin_dir      locally built binaries (llama-server, whisper-cli)
         config_file  the settings file written by save_settings()
+        profile_file the machine capability profile written by `astra-ai profile`
 
-    Every one is an absolute pathlib.Path. The three environment overrides
+    Every one is an absolute pathlib.Path. The environment overrides
     exist for testing and for a user who keeps large files on another disk;
     they are not part of the interface anything else should depend on.
     """
@@ -100,6 +101,9 @@ class PATHS:
     )
     config_file = Path(
         os.environ.get("ASTRAOS_AI_CONFIG") or (_config_home() / "astraos" / "ai.json")
+    )
+    profile_file = Path(
+        os.environ.get("ASTRAOS_AI_PROFILE") or (_config_home() / "astraos" / "machine.json")
     )
 
 
