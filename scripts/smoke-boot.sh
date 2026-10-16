@@ -3,11 +3,13 @@
 #
 # WHAT THIS DOES
 #   1. reads the live kernel and initrd out of the ISO (read-only loop mount);
-#   2. boots them in QEMU with the ISO attached as the live medium, using the same live
-#      parameters as the ISO's own boot entry - config/distribution.env is their single
-#      definition, exactly like config/live-build/auto/config - plus a serial console
-#      and astraos.ci=1 (the switch the image's self-test unit conditions on);
-#   3. waits for "ASTRAOS-SMOKE: RESULT:" on the serial console;
+#   2. boots them in QEMU with the ISO attached as a CD-ROM. The live parameters mirror
+#      LIVE_APPEND in config/live-build/auto/config (whose values come from
+#      config/distribution.env), with a serial console and astraos.ci=1 added (the
+#      switch the image's self-test unit conditions on). The medium is found by
+#      live-boot's own device scan - nothing tells the guest where the squashfs is;
+#   3. waits for "ASTRAOS-SMOKE: RESULT:" on the serial console - or gives up as soon as
+#      the console shows the boot itself failed;
 #   4. takes a screenshot of the booted desktop through the QEMU monitor, so a build
 #      leaves behind a picture of what a person would have seen;
 #   5. exits 0 only when the image reported PASS.
@@ -134,9 +136,20 @@ cp "$INITRD" "$WORK/initrd.img"
 say "live kernel: $(basename "$KERNEL")"
 
 # --- 2. the kernel command line ------------------------------------------------------
-# Mirrors LIVE_APPEND in config/live-build/auto/config (same source: distribution.env),
-# with the serial console and the self-test switch appended. If the two ever diverge,
-# this test boots a different system than the ISO's own boot entry would have.
+# Mirrors LIVE_APPEND in config/live-build/auto/config (same values, from
+# config/distribution.env), with the serial console and the self-test switch appended. If
+# the two diverge, this test boots a different system than the ISO's own boot entry
+# would have - and the difference is invisible.
+#
+# DO NOT ADD findiso HERE. An earlier version passed findiso=/live/filesystem.squashfs,
+# believing it named the squashfs inside the medium. It does not: live-boot's findiso
+# names an ISO *file* on a filesystem, and the guest loop-mounts exactly that file and
+# reads it as ISO9660. Given the squashfs path, the guest loop-mounted the squashfs,
+# isofs rejected it ("Unable to identify CD-ROM format") and live-boot reported "Unable
+# to find a medium containing a live file system" - the first CI boot attempt, run
+# 38864588609 on 2026-10-16, died in the initramfs for exactly this reason. A CD-ROM
+# medium needs no hint: live-boot's own scan finds it, which is also how the ISO's own
+# boot entry finds it. tests/static/test_smoke_boot.py keeps findiso out of this file.
 APPEND="boot=live components"
 APPEND="$APPEND username=${ASTRAOS_LIVE_USER}"
 APPEND="$APPEND user-fullname=${ASTRAOS_LIVE_FULLNAME}"
@@ -146,7 +159,6 @@ APPEND="$APPEND keyboard-layouts=us keyboard-variant= timezone=UTC"
 APPEND="$APPEND live-config.hostname=${ASTRAOS_LIVE_HOSTNAME}"
 APPEND="$APPEND quiet splash"
 APPEND="$APPEND console=ttyS0,115200n8 astraos.ci=1"
-APPEND="$APPEND findiso=/live/filesystem.squashfs"
 
 # --- 3. QEMU --------------------------------------------------------------------------
 # -cpu host is only meaningful under KVM; `max` gives the guest the widest CPU that
@@ -177,6 +189,12 @@ result=""
 while : ; do
     if grep -q 'ASTRAOS-SMOKE: RESULT:' "$WORK/serial.log" 2>/dev/null; then
         result="$(grep 'ASTRAOS-SMOKE: RESULT:' "$WORK/serial.log" | tail -n 1)"
+        break
+    fi
+    if grep -qE 'BOOT FAILED!|Kernel panic' "$WORK/serial.log" 2>/dev/null; then
+        # live-boot or the kernel has already given up; waiting out the rest of the
+        # timeout would only delay the failure report.
+        say "the boot itself failed before the self-test could run"
         break
     fi
     if ! kill -0 "$QEMU_PID" 2>/dev/null; then

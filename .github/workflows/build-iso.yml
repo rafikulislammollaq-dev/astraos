@@ -207,8 +207,10 @@ jobs:
     if: ${{ needs.build.result == 'success' && inputs.smoke_boot }}
     runs-on: ubuntu-24.04
     # An emulated boot of a live desktop image plus the self-test. KVM is used when the
-    # runner provides it; QEMU emulation is the fallback - slower, not different.
-    timeout-minutes: 60
+    # runner provides it; QEMU emulation is the fallback - slower, not different. Nothing
+    # has yet clocked a full TCG boot of this image, so both timeouts carry margin: the
+    # driver's self-test window (45 min) and this ceiling.
+    timeout-minutes: 75
 
     steps:
       - name: Check out the repository
@@ -228,7 +230,7 @@ jobs:
       - name: Boot the ISO and run its self-test
         run: |
           ls -la iso/
-          ./scripts/smoke-boot.sh --timeout 30 --out smoke-out iso/*.iso
+          ./scripts/smoke-boot.sh --timeout 45 --out smoke-out iso/*.iso
 
       - name: Summarise the self-test
         if: always()

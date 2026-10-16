@@ -67,6 +67,21 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- **The boot self-test's kernel command line carried `findiso=/live/filesystem.squashfs`,
+  and the first CI boot of a built image died because of it** (run 38864588609,
+  2026-10-16). `findiso` is live-boot's parameter for an ISO *file* sitting on a
+  filesystem: the guest loop-mounts exactly the named file and reads it as ISO9660.
+  Pointed at the squashfs inside the medium, the guest loop-mounted the squashfs, isofs
+  rejected it (`ISOFS: Unable to identify CD-ROM format`) and live-boot reported "Unable
+  to find a medium containing a live file system" before the self-test could run. The
+  parameter is removed; the ISO is attached as a CD-ROM and found by live-boot's own
+  device scan, which is also how the ISO's own boot entry finds it - the by-hand
+  VirtualBox boot of the previous image had already proven that path. The driver now also
+  stops waiting as soon as the serial console shows `BOOT FAILED!` or a kernel panic
+  instead of burning its whole timeout, its window carries margin for a TCG boot nothing
+  has yet clocked (45 minutes), and `tests/static/test_smoke_boot.py` fails if `findiso`
+  is ever added back or if the driver stops mirroring `LIVE_APPEND`.
+
 - **The live session had no working DNS: `/etc/resolv.conf` was a 0-byte file.** Pinging
   an IP worked; pinging a name did not. Two authorities were both enabled —
   `NetworkManager.service` and `resolvconf.service` — and each deferred to the other:

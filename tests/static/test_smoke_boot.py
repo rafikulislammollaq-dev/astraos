@@ -19,6 +19,7 @@ rather than being discovered an ISO build later:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -42,6 +43,7 @@ COMPAT_HOOK = (
     / "0900-compat.hook.chroot"
 )
 CONFIGURE = REPO_ROOT / "scripts" / "configure-live-build.sh"
+AUTO_CONFIG = REPO_ROOT / "config" / "live-build" / "auto" / "config"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build-iso.yml"
 HARDWARE_LIST = REPO_ROOT / "config" / "package-lists" / "35-hardware.list.chroot"
 COMPAT_LIST = REPO_ROOT / "config" / "package-lists" / "45-compatibility.list.chroot"
@@ -55,8 +57,33 @@ def test_the_host_script_boots_with_the_self_test_switch() -> None:
     text = _text(HOST_SCRIPT)
     assert "astraos.ci=1" in text, "the self-test switch is what makes the image check itself"
     assert "console=ttyS0" in text, "without a serial console the result cannot be read"
-    assert "findiso=/live/filesystem.squashfs" in text, (
-        "the live medium must be found explicitly: no bootloader config ran"
+    assert not re.search(r"^APPEND=.*findiso", text, re.M), (
+        "the kernel command line must not carry findiso: it names an ISO file for "
+        "live-boot to loop-mount as the medium, not a path inside it. Passing the "
+        "squashfs path made run 38864588609's guest loop-mount the squashfs, fail to "
+        "read it as ISO9660 and never find the live medium (the comment above the "
+        "parameter list records the details). The attached CD-ROM is found by live-boot's "
+        "own scan, exactly like the ISO's own boot entry finds it."
+    )
+
+
+def test_the_host_script_mirrors_the_live_append_parameters() -> None:
+    """Every live parameter of the ISO's own boot entry must be offered to the guest.
+
+    The one divergence so far was findiso, and it cost a 33-minute CI run: live-boot's
+    findiso names an ISO file to loop-mount, not the squashfs path inside the medium, so
+    the guest never found its medium. A parameter that exists here but not in
+    LIVE_APPEND boots a different system than the ISO's own boot entry would.
+    """
+    live_append = re.search(r'LIVE_APPEND="([^"]*)"', _text(AUTO_CONFIG))
+    assert live_append, "LIVE_APPEND is no longer defined in config/live-build/auto/config"
+    parameters = set(re.findall(r"(?:^| )([a-z][a-z0-9-]*)=", live_append.group(1)))
+    assert parameters, "no live parameters were found in LIVE_APPEND"
+    host = _text(HOST_SCRIPT)
+    missing = sorted(p for p in parameters if f"{p}=" not in host)
+    assert not missing, (
+        "scripts/smoke-boot.sh does not pass live parameters that LIVE_APPEND defines, "
+        "so the QEMU boot would not mirror the ISO's own boot entry: " + ", ".join(missing)
     )
 
 
@@ -83,6 +110,15 @@ def test_the_host_script_only_passes_on_a_pass_result() -> None:
     assert "ASTRAOS-SMOKE: RESULT:" in text
     assert "RESULT: PASS" in text
     assert "exit 1" in text, "a missing or failed result must fail the script"
+
+
+def test_the_host_script_gives_up_when_the_boot_itself_fails() -> None:
+    text = _text(HOST_SCRIPT)
+    assert "BOOT FAILED!" in text and "Kernel panic" in text, (
+        "a boot that died in the initramfs would otherwise burn the whole timeout "
+        "before being reported; the serial console says so immediately, and run "
+        "38864588609 spent its full window waiting on a shell that could never pass"
+    )
 
 
 def test_the_host_script_screenshots_through_the_qemu_monitor() -> None:
