@@ -118,8 +118,13 @@ updated. Every step proven in CI or recorded as untested.
   The exercise exists in the source (2026-10-16): `scripts/install-boot-test.sh`
   installs the ISO onto a blank disk by driving the ISO's own Calamares UI over the
   QEMU monitor, then boots that disk alone and requires the image's self-test in its
-  installed mode; pending its first run. The manual procedure in
-  `docs/INSTALLATION_VIRTUALBOX.md` stays either way.
+  installed mode. Its first CI run (2026-10-16, run 38919644411) failed before the
+  guest ever booted: the driver's `usb-tablet` had no USB controller to attach to
+  and QEMU exited at startup (`No 'usb-bus' bus found for device 'usb-tablet'` in
+  `qemu1.out`). Fixed the same day (`qemu-xhci` on the command line, pinned by
+  `tests/static/test_install_boot.py`); the retry is the proof, and its outcome will
+  be recorded here. The manual procedure in `docs/INSTALLATION_VIRTUALBOX.md` stays
+  either way.
 - [x] **Boot menu paths exercised in CI**: syslinux (BIOS) and GRUB-EFI, not only
   the kernel extracted from the ISO. The exercise exists in the source (2026-10-16):
   `scripts/boot-menu-test.sh` boots the ISO with QEMU's own firmware — the host
@@ -170,17 +175,18 @@ updated. Every step proven in CI or recorded as untested.
   by firmware. The `boot-menus` job runs it beside the BIOS and plain-UEFI paths;
   the checkbox flips — and the firmware configurations that boot get documented —
   when a run is green. Until then the README keeps "Secure Boot is not supported".
-- [ ] **The HUD on a booted image's screen.** The boot self-test's screenshot is
+- [x] **The HUD on a booted image's screen.** The boot self-test's screenshot is
   meant to be the first version of this evidence; the first green run's screenshot
   came back black — a QEMU stdvga blanking defect (see `CHANGELOG.md`). The source
   fix — the guest turns blanking off, forces the display on and repaints the session
   before reporting its result; the host verifies the capture has content and retries
   a flat image while the guest still holds the session — is green since 2026-10-16,
-  run 38913161772: the capture carries the real desktop. The item stays open because
-  the capture does not yet show the HUD itself: the dashboard is a full-screen
-  application started from its launcher, not an autostart. The self-test starts it
-  as the live user before it prepares the screen (the `hud-on-screen` check, source
-  2026-10-16, first run pending); the item flips when a capture carries it.
+  run 38913161772: the capture carries the real desktop. Green 2026-10-16, run
+  38919644411 (commit 8e40d99): the self-test started the dashboard as the live user
+  before it prepared the screen (`hud-on-screen` green), the run reported
+  `RESULT: PASS (52 checks, 0 failed)`, and the capture — a 1280×800 PNG, 104,723
+  bytes — shows the dashboard itself: the clock, the system and terminal panels,
+  the memory and filesystem bars, and the endpoint card reading "NO ENDPOINT".
 - [ ] **A recovery procedure that has been performed**: snapshot, break, restore,
   in a VM, with Timeshift.
 

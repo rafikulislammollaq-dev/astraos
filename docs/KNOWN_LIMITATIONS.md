@@ -16,6 +16,17 @@ and it should not be installed on a machine holding data you cannot lose.**
 **No image has ever been installed to a disk, and no image has ever booted on physical
 hardware.** What has happened, with the record:
 
+- **2026-10-16, the HUD on screen (run 38919644411, commit 8e40d99): PASS.** The
+  image's self-test reported `RESULT: PASS (52 checks, 0 failed)` — the same firewall,
+  phone and capture checks as the run below, plus the new `hud-on-screen` — and the
+  capture carries the dashboard itself: a 1280×800 PNG (104,723 bytes) holding the
+  HUD's clock, system and terminal panels, memory and filesystem bars, and the
+  endpoint card reading "NO ENDPOINT". The install exercise in the same dispatch
+  failed before the guest booted — QEMU refused the driver's `usb-tablet` for want of
+  a USB controller — and the fix is recorded in `CHANGELOG.md` (2026-10-16); the
+  retry is pending. Evidence artifacts: `astraos-boot-self-test` (the capture is
+  `screenshot.png`), `astraos-boot-menus`, `astraos-install-test` (`qemu1.out` holds
+  the refusal).
 - **2026-10-16, full CI boot self-test with the firewall, the phone arc and a real
   screenshot (run 38913161772, commit 0e47f4d): PASS (51 checks, 0 failed).** The
   same emulated boot now carries the firewall checks (ufw active, the deny default,

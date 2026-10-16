@@ -16,8 +16,8 @@ Debian release, and not a website pretending to be an operating system.
 |---|---|---|
 | 1 | Source tree and static checks pass | Yes |
 | 2 | ISO builds in CI | Yes (Build ISO run 38864588609, 2026-10-16: image built in about 18 minutes, 25/25 structural checks, `structural=PASS`, ISO 2,432,696,320 bytes) |
-| 3 | ISO boots in a virtual machine | **Yes** (VirtualBox by hand, live session, 2026-10-15; QEMU in CI through the ISO's own boot menus on BIOS and UEFI, run 38913161772, 2026-10-16 — the image's own self-test reported PASS, 51 checks) |
-| 4 | Network and browser work out of the box | **Network proven in CI** (run 38913161772: NetworkManager active, an IPv4 address, a real name resolved by DNS); **no browser has been launched in a booted image yet** |
+| 3 | ISO boots in a virtual machine | **Yes** (VirtualBox by hand, live session, 2026-10-15; QEMU in CI through the ISO's own boot menus on BIOS and UEFI, run 38919644411, 2026-10-16 — the image's own self-test reported PASS, 52 checks, and the captured screenshot carries the HUD) |
+| 4 | Network and browser work out of the box | **Network proven in CI** (run 38919644411: NetworkManager active, an IPv4 address, a real name resolved by DNS); **no browser has been launched in a booted image yet** |
 | 5 | Installer runs and installed system boots | Not tested yet |
 | 6 | Tested on physical hardware | Not tested yet |
 | 7 | Secure Boot, signed images, stable release | Not supported |
@@ -38,10 +38,10 @@ Tested by hand on 2026-10-15 in Oracle VirtualBox on a Windows 11 host
 - Network link works: `ping 8.8.8.8` replies with 0% loss.
 - Firefox loads websites once DNS is configured (YouTube loaded in the test).
 
-Proven by CI on 2026-10-16 (boot self-test, run 38913161772, commit 0e47f4d):
+Proven by CI on 2026-10-16 (boot self-test, run 38919644411, commit 8e40d99):
 
 - The built ISO boots in CI's QEMU — the runner provides no KVM, so the CPU is
-  emulated — and the image's own self-test reports `RESULT: PASS (51 checks,
+  emulated — and the image's own self-test reports `RESULT: PASS (52 checks,
   0 failed)`: the console login prompt appears by the 141 s mark, LightDM is
   active, an Xfce session (xfwm4) runs as the live user, every `astraos-*`
   package is present at its expected version, the hardware, codec and
@@ -49,12 +49,14 @@ Proven by CI on 2026-10-16 (boot self-test, run 38913161772, commit 0e47f4d):
   active with an IPv4 address, a real name resolves over DNS, the firewall is
   up with only the assistant's page reachable from the private network (a
   watched port stayed unreached under the host's probe), and a phone completed
-  the pairing arc against the assistant's page.
+  the pairing arc against the assistant's page. The self-test starts the
+  dashboard before the capture, so the screenshot shows the HUD itself.
 - This boots the kernel and initrd taken from the ISO with the ISO attached as
   the live medium; the ISO's own boot menus (syslinux BIOS, GRUB EFI) boot the
   image through QEMU's own firmware in the same dispatch, both reaching the live
-  login prompt. The screenshot captured through the QEMU monitor shows the real
-  desktop.
+  login prompt. The screenshot captured through the QEMU monitor shows the HUD
+  dashboard itself: the clock, the system and terminal panels, the memory and
+  filesystem bars and the endpoint card standing at "NO ENDPOINT".
 
 Tested from the source tree on 2026-10-16 in WSL on the same hardware:
 
@@ -84,7 +86,9 @@ Built and proven on GitHub Actions on 2026-10-16 (Build AI engine run #1, about
 
 Not tested: the installer, installing to disk, Wi-Fi, GPUs, physical machines,
 UEFI Secure Boot, audio, printing, Bluetooth, and the assistant's web page beyond
-the pairing arc.
+the pairing arc. The installer's first CI attempt did not reach the guest — QEMU
+refused the driver's tablet for want of a USB controller (run 38919644411); the
+fix is in the tree and the retry is pending.
 
 ---
 

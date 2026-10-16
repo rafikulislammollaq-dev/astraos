@@ -37,21 +37,24 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   the login prompt with firmware verifying signatures; that run will be recorded here
   when it happens.
 
-- **The self-test starts the HUD for the screenshot (source; its first run is
-  pending).** The roadmap's HUD item wants a capture that carries the dashboard
-  itself, and the dashboard is a full-screen application started from its launcher —
-  not an autostart — so the live-medium self-test now starts `astraos-hud` as the live
-  user from the shipped entry point, waits for its process under both its spellings
-  (the `astraos-hud` shim and the `astraos_hud` module it execs), gives GTK its first
-  frames, records the new `hud-on-screen` check and only then prepares the screen for
-  the caller's capture; a dashboard that refuses to start fails that check and puts
-  the tail of its log on the serial console instead of leaving a quiet, empty desktop
-  in the picture. The installed-mode boot does not start it (an installed system shows
-  a greeter, not a session). The first run that captures the HUD is the proof, and it
-  will be recorded here when it happens.
+- **The self-test starts the HUD for the screenshot.** The roadmap's HUD item wants
+  a capture that carries the dashboard itself, and the dashboard is a full-screen
+  application started from its launcher — not an autostart — so the live-medium
+  self-test now starts `astraos-hud` as the live user from the shipped entry point,
+  waits for its process under both its spellings (the `astraos-hud` shim and the
+  `astraos_hud` module it execs), gives GTK its first frames, records the new
+  `hud-on-screen` check and only then prepares the screen for the caller's capture; a
+  dashboard that refuses to start fails that check and puts the tail of its log on
+  the serial console instead of leaving a quiet, empty desktop in the picture. The
+  installed-mode boot does not start it (an installed system shows a greeter, not a
+  session). Green 2026-10-16, run 38919644411 (commit 8e40d99): `hud-on-screen` green
+  in `RESULT: PASS (52 checks, 0 failed)`, and the capture — a 1280×800 PNG — shows
+  the dashboard: the clock, the system and terminal panels, the memory and filesystem
+  bars, and the endpoint card.
 
 - **The installer is exercised end to end in CI, against the real Calamares UI
-  (source; its first run is pending).** `scripts/install-boot-test.sh` boots the built
+  (first CI run 2026-10-16 failed at QEMU startup; fix under Fixed).**
+  `scripts/install-boot-test.sh` boots the built
   ISO in QEMU with `astraos.ci.install=1` on its command line, installs it onto a blank
   20 GiB disk through the ISO's own installer, and then boots that disk alone — no
   medium attached — and requires the image's own self-test in its installed mode. The
@@ -74,8 +77,9 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   (`astraos-install` and its unit) ships in every ISO and starts only when its exact
   word is on the command line. The workflow gained the `install-boot` job
   (`install_boot` in the manual trigger; evidence uploaded as
-  `astraos-install-test`). The first run is the proof, and it will be recorded here
-  when it happens.
+  `astraos-install-test`). The first run failed at QEMU startup before the guest
+  booted (see Fixed); the fix is in the tree, and the retry's outcome will be
+  recorded here when it happens.
 
 - **The firewall is on by default (first CI run green, 2026-10-16).** The decision
   recorded in the roadmap — ufw shipped disabled by design — is reversed: a firewall
@@ -222,6 +226,17 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   `libdvdnav4` pulls the read library at the soname the release actually ships.
 
 ### Fixed
+
+- **The install driver's tablet gets a USB controller (its absence killed the
+  exercise's first run at QEMU startup).** `scripts/install-boot-test.sh` clicks with
+  absolute coordinates, which is what `-device usb-tablet` provides — but a tablet
+  needs a USB bus, and the phase-1 command line had none: `qemu-system-x86_64` exited
+  immediately with `No 'usb-bus' bus found for device 'usb-tablet'` (run 38919644411,
+  kept in the `astraos-install-test` artifact's `qemu1.out`), the serial console
+  stayed empty, and the job failed 1m37s in without the guest ever booting. The
+  command now defines `qemu-xhci` before the tablet, and
+  `tests/static/test_install_boot.py` pins both the presence and the order. The retry
+  is pending.
 
 - **The firewall's port check reads the `ufw status` listing ufw actually prints (its
   first run proved the firewall and failed on its own spelling).** Run 38903678646
