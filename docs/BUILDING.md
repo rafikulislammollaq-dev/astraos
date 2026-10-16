@@ -68,7 +68,8 @@ exists; the scripts check exit statuses and inspect the artifacts (plan §16.2).
 dist/
 ├── astraos-0.1.0-alpha-amd64.iso             the bootable image
 ├── astraos-0.1.0-alpha-amd64.iso.sha256      its SHA-256, already verified
-└── astraos-0.1.0-alpha-amd64.iso.manifest    what was built, and what was NOT tested
+├── astraos-0.1.0-alpha-amd64.iso.manifest    what was built, and what was NOT tested
+└── apt-repo/                                 the APT archive the packages were assembled into
 
 logs/
 └── build-20261012T213000Z.log                the full build log
@@ -328,7 +329,10 @@ with a 25-minute wait; the EFI run needs the OVMF firmware (`ovmf` package). Sin
 2026-10-16 there is a third: `--medium secure` boots the UEFI path under OVMF's Secure
 Boot firmware with the Microsoft keys enrolled, so only the ISO's signed chain —
 Microsoft-signed shim, Debian-signed GRUB, Debian-signed kernel — reaches the login
-prompt (source state; its first run is pending). The ISO's menu entries do not carry
+prompt (source state; its first run failed — run 38924527286 produced no serial output
+at all, so nothing past the firmware can be asserted about it yet; the script now keeps
+a capture of the guest's screen, `screen.ppm`, so a failure like that carries what the
+firmware drew). The ISO's menu entries do not carry
 `astraos.ci=1`, so the guest runs no self-test and does not power off: it stops at the
 login prompt and the script stops the machine. Evidence (`serial.log`, `qemu.out`, and
 on the secure run `firmware.txt` with the firmware hashes) is uploaded as the
@@ -342,6 +346,29 @@ mounted:
 ./scripts/boot-menu-test.sh --medium efi    --out out-efi    dist/astraos-*.iso
 ./scripts/boot-menu-test.sh --medium secure --out out-secure dist/astraos-*.iso
 ```
+
+### The package archive (APT repository)
+
+The same job, after the image is built and the build container has stopped, turns the
+`.deb` files it produced into an APT archive:
+
+```bash
+./scripts/build-apt-repo.sh --debs build/live-build/packages --out dist/apt-repo
+```
+
+The tree is the layout apt reads directly: `pool/main/<package>/<file>.deb` for the
+files, `dists/stable/main/binary-amd64/Packages` (and `Packages.gz`) as the index, and
+`dists/stable/Release` carrying both indices' sizes and SHA-256 hashes. With
+`--key FINGERPRINT` the Release is signed as `InRelease`/`Release.gpg` and the public
+half is exported as `astraos-archive-keyring.gpg`; the script never generates or stores
+a signing key. Without `--key` the output is unsigned, and the script says so in plain
+words: that form carries integrity hashes but no authenticity, and belongs only where
+the transport is controlled (CI artifacts, a `file://` medium). Before reporting
+success the script reads its own index back — every file the index names is opened
+again and re-hashed — because an index that does not describe its pool is worse than
+no archive. The build job uploads the result as the `astraos-apt-repo` artifact; it is
+unsigned because no signing key lives in CI, and no installed system has ever fetched
+updates from one yet.
 
 ## 9. After a successful build
 

@@ -87,6 +87,20 @@ HOOK_ASSERTIONS: list[tuple[str, str, str, str, bool]] = [
         "/etc/calamares/modules/users.conf",
         True,
     ),
+    (
+        "0300-installer.hook.chroot",
+        r"^componentName:[[:space:]]*astraos[[:space:]]*$",
+        "installer/branding/astraos/branding.desc",
+        "/usr/share/calamares/branding/astraos/branding.desc",
+        True,
+    ),
+    (
+        "0300-installer.hook.chroot",
+        r"^slideshow:",
+        "installer/branding/astraos/branding.desc",
+        "/usr/share/calamares/branding/astraos/branding.desc",
+        True,
+    ),
 ]
 
 # grep(1) and Python agree on the syntax these patterns use, except for POSIX character

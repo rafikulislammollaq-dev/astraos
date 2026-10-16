@@ -135,8 +135,19 @@ updated. Every step proven in CI or recorded as untested.
   ran both firmwares — syslinux on BIOS, GRUB on UEFI — and both serial logs end at
   the live system's `astra-live login:` prompt (`astraos-boot-menus` carries both logs).
 - [ ] **An APT repository for the `astraos-*` packages**, so installed systems
-  receive updates. None exists today; an installed system currently gets Debian
-  packages and nothing else.
+  receive updates. The assembly exists (2026-10-16): `scripts/build-apt-repo.sh`
+  turns the build's .debs into the tree apt reads — `pool/main/...` files,
+  `Packages` and its gzip, and a `Release` carrying both indices' hashes — signs it
+  with `--key` (`InRelease`, `Release.gpg`, an exported public keyring) or says
+  loudly that the output is unsigned and fit only for controlled use, and re-hashes
+  every file the index names before it reports success. Proved locally the same day
+  (WSL): a host's own apt fetched the index from the assembled archive
+  (`Get: ... stable/main amd64 Packages`, no errors) and the signed variant verifies
+  (`gpg --verify InRelease` → Good signature). The build job now assembles it from
+  the packages it built and uploads `astraos-apt-repo` (unsigned). Still open: no
+  installed system has ever fetched updates from it, and where the archive will be
+  served from is an undecided hosting question (a GitHub Pages branch, a static
+  host, or a file:// medium for airgapped fleets are the candidates).
 - [x] **Firewall decision: default-on.** Decided and implemented on 2026-10-16: ufw
   starts on boot (`ENABLED=yes` in `/etc/ufw/ufw.conf`, installed by the identity
   hook), inbound is denied, and exactly two things are reachable from the local

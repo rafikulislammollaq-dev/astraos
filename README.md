@@ -88,7 +88,10 @@ Not tested: the installer, installing to disk, Wi-Fi, GPUs, physical machines,
 UEFI Secure Boot, audio, printing, Bluetooth, and the assistant's web page beyond
 the pairing arc. The installer's first CI attempt did not reach the guest — QEMU
 refused the driver's tablet for want of a USB controller (run 38919644411); the
-fix is in the tree and the retry is pending.
+retry started the guest and reached a running Calamares, which then exited at
+startup on a branding key its configuration never had (`slideshow`; run
+38924527286). The key, a build-time check for it, and the USB-controller fix are in
+the tree, and the next attempt is pending.
 
 ---
 

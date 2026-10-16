@@ -19,6 +19,24 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The APT archive the packages were missing (source; its first CI assembly is
+  pending).** An installed AstraOS got Debian packages and nothing else: no archive
+  carried `astraos-*` updates.
+  `scripts/build-apt-repo.sh` assembles the tree an installed system's apt can read:
+  `pool/main/<package>/<file>.deb`, `dists/stable/main/binary-amd64/Packages` (and
+  its gzip), and `dists/stable/Release` carrying both indices' sizes and hashes.
+  With `--key` the Release is signed (`InRelease`, `Release.gpg`) and the public half
+  is exported beside the index as `astraos-archive-keyring.gpg`; without a key the
+  script says loudly that the output is unsigned — integrity without authenticity —
+  and fit only for controlled use. It never generates or stores a key. Before
+  reporting success it reads its own index back: every file named is opened again
+  and re-hashed, and a mismatch fails the script — an index that does not describe
+  its pool is worse than no archive. The build job assembles the repository from the
+  packages it built and uploads it as `astraos-apt-repo`. Proved locally 2026-10-16
+  (WSL): a host's own apt fetched the index from the assembled archive
+  (`Get: ... stable/main amd64 Packages`, no errors) and the signed variant verifies
+  (`gpg --verify InRelease` → Good signature). No CI run has assembled it yet.
+
 - **The machine's capability profile, measured (source; its first run is
   pending).** `astra-ai profile` reads `/proc/cpuinfo`, `/proc/meminfo`,
   `/proc/asound/cards`, `/sys/class/drm`, `/sys/class/accel` and free space as the
@@ -240,6 +258,21 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   `libdvdnav4` pulls the read library at the soname the release actually ships.
 
 ### Fixed
+
+- **The installer's first real start found the key it was missing (branding
+  `slideshow`).** The retry that got past QEMU startup (run 38924527286) reached a
+  running Calamares — and Calamares exited immediately: 3.3's branding constructor
+  parses `slideshow` unconditionally, even with no `show` module in the sequence, and
+  a missing key is a FATAL before the first page is drawn (`calamares-console.log`:
+  `key not found: slideshow`). Earlier builds had shipped the same descriptor and
+  nothing had ever started the installer, so nothing had ever read it. The descriptor
+  now carries `slideshow` naming the images the package installs beside it (this is a
+  QML-enabled Calamares, where a scalar value would have to name an existing `.qml`
+  file); `0300-installer`'s hook refuses a descriptor without the component name,
+  without the slideshow key, or naming a slideshow file that will not exist at run
+  time; and two new pins keep the hook and the descriptor in agreement
+  (`tests/static/test_installer_branding.py`, `tests/static/test_hook_assertions.py`).
+  The next attempt is pending.
 
 - **The install driver's tablet gets a USB controller (its absence killed the
   exercise's first run at QEMU startup).** `scripts/install-boot-test.sh` clicks with

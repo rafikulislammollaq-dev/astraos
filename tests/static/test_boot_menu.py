@@ -106,6 +106,20 @@ def test_the_default_entry_is_accepted_through_the_monitor() -> None:
     assert "monitor.sock" in code, "the monitor socket is how the keypress is delivered"
 
 
+def test_a_failed_boot_keeps_a_capture_of_the_guest_screen() -> None:
+    code = _code(MENU_SCRIPT)
+    assert "screendump" in code, (
+        "a boot that fails before the kernel starts (a firmware refusing the medium, a "
+        "bootloader that never appears) draws its reason on the graphical console only; "
+        "without a capture the failure is an empty serial log and a guess"
+    )
+    assert "monitor.sock" in code, "the capture goes through QEMU's monitor socket"
+    assert "screen.ppm" in code, (
+        "the capture must be kept with the rest of the evidence, not thrown away with "
+        "the work directory"
+    )
+
+
 def test_the_script_waits_for_the_live_systems_login_prompt() -> None:
     code = _code(MENU_SCRIPT)
     assert "config/distribution.env" in code and "ASTRAOS_LIVE_HOSTNAME" in code, (

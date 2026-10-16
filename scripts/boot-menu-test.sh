@@ -140,6 +140,7 @@ cleanup() {
         cp -f "$WORK/serial.log" "$OUT_DIR/serial.log" 2>/dev/null || true
         cp -f "$WORK/qemu.out" "$OUT_DIR/qemu.out" 2>/dev/null || true
         cp -f "$WORK/firmware.txt" "$OUT_DIR/firmware.txt" 2>/dev/null || true
+        cp -f "$WORK/screen.ppm" "$OUT_DIR/screen.ppm" 2>/dev/null || true
     fi
     rm -rf "$WORK"
 }
@@ -292,6 +293,36 @@ finally:
 PY
 }
 
+# --- capture the guest's screen when the serial console stays silent ------------------
+# A boot that fails before the kernel starts — a firmware refusing the medium under
+# Secure Boot, a bootloader that never finds its configuration — draws its reason on the
+# graphical console and nowhere else. Without a capture, such a failure is an empty
+# serial log and a guess: exactly the shape of the first Secure Boot attempt (run
+# 38924527286). QEMU's monitor can dump the guest's framebuffer; the PPM file is kept
+# beside the serial log, and the cleanup below copies it out when it exists.
+screendump() {
+    python3 - "$WORK/monitor.sock" "$WORK/screen.ppm" <<'PY' >/dev/null 2>&1
+import socket
+import sys
+import time
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.settimeout(10)
+try:
+    sock.connect(sys.argv[1])
+    time.sleep(0.2)
+    try:
+        sock.recv(65536)  # the monitor's greeting
+    except OSError:
+        pass
+    sock.sendall(("screendump %s\n" % sys.argv[2]).encode())
+    # QEMU writes the dump from its main loop; give it a moment before closing.
+    time.sleep(1.0)
+finally:
+    sock.close()
+PY
+}
+
 # --- wait for the login prompt --------------------------------------------------------
 deadline=$(( $(date +%s) + TIMEOUT_MINUTES * 60 ))
 booted=no
@@ -304,14 +335,17 @@ while : ; do
         # live-boot or the kernel has already given up; waiting out the rest of the
         # timeout would only delay the failure report.
         say "the boot itself failed before the login prompt"
+        screendump || true
         break
     fi
     if ! kill -0 "$QEMU_PID" 2>/dev/null; then
+        # QEMU is gone; there is no framebuffer left to dump.
         say "QEMU exited before the login prompt appeared"
         break
     fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
         say "the login prompt did not appear within ${TIMEOUT_MINUTES} minutes"
+        screendump || true
         break
     fi
     press_enter || true
@@ -330,6 +364,9 @@ fi
 
 say "FAILED: no login prompt on the serial console. Last serial lines:"
 tail -n 60 "$WORK/serial.log" 2>/dev/null | sed 's/^/  /' || true
+if [ -f "$WORK/screen.ppm" ]; then
+    say "the guest's screen was captured; it is kept as screen.ppm beside the serial log"
+fi
 if [ -s "$WORK/qemu.out" ]; then
     say "QEMU output:"
     tail -n 20 "$WORK/qemu.out" | sed 's/^/  /'

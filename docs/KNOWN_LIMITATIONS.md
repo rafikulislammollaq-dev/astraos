@@ -23,10 +23,12 @@ hardware.** What has happened, with the record:
   HUD's clock, system and terminal panels, memory and filesystem bars, and the
   endpoint card reading "NO ENDPOINT". The install exercise in the same dispatch
   failed before the guest booted — QEMU refused the driver's `usb-tablet` for want of
-  a USB controller — and the fix is recorded in `CHANGELOG.md` (2026-10-16); the
-  retry is pending. Evidence artifacts: `astraos-boot-self-test` (the capture is
-  `screenshot.png`), `astraos-boot-menus`, `astraos-install-test` (`qemu1.out` holds
-  the refusal).
+  a USB controller — and the fix is recorded in `CHANGELOG.md` (2026-10-16). The
+  retry (run 38924527286) reached a running Calamares, which then exited at startup
+  on a missing branding key (`slideshow`); the key and a build-time check for it are
+  in the tree, and the next attempt is pending. Evidence artifacts:
+  `astraos-boot-self-test` (the capture is `screenshot.png`), `astraos-boot-menus`,
+  `astraos-install-test` (`calamares-console.log` holds the branding fatal).
 - **2026-10-16, full CI boot self-test with the firewall, the phone arc and a real
   screenshot (run 38913161772, commit 0e47f4d): PASS (51 checks, 0 failed).** The
   same emulated boot now carries the firewall checks (ufw active, the deny default,

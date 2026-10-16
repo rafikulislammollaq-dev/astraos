@@ -160,6 +160,14 @@ jobs:
             done' || true
           docker rm --force "$BUILD_CONTAINER" || true
 
+      - name: Assemble the APT repository
+        run: |
+          # The .debs the build produced, laid out as the archive an installed system
+          # can point apt at (pool/ files, Packages, Release). Unsigned here: no
+          # signing key lives in CI; scripts/build-apt-repo.sh says so loudly, and its
+          # read-back re-hashes every file the index names before it reports success.
+          ./scripts/build-apt-repo.sh --debs build/live-build/packages --out dist/apt-repo
+
       - name: Upload the ISO
         if: ${{ inputs.upload_artifact }}
         uses: actions/upload-artifact@v4
@@ -187,6 +195,14 @@ jobs:
             build/live-build/*.log
             build/live-build/.astraos-config-options
 
+      - name: Upload the APT repository
+        uses: actions/upload-artifact@v4
+        with:
+          name: astraos-apt-repo
+          retention-days: 14
+          if-no-files-found: error
+          path: dist/apt-repo/
+
       - name: Record what was NOT tested
         if: always()
         run: |
@@ -204,10 +220,17 @@ jobs:
             echo "no medium attached. When those jobs are skipped, the image was **not**"
             echo "booted."
             echo ""
-            echo "install-boot's first run is pending; until a green one is recorded,"
-            echo "CI has never produced an installed system. The manual path - real"
-            echo "hardware, or a virtual machine someone drives by hand - remains"
-            echo "docs/INSTALLATION_VIRTUALBOX.md."
+            echo "install-boot has not yet produced an installed system: its first"
+            echo "run never reached the guest (QEMU refused the driver's tablet, run"
+            echo "38919644411) and its second reached a running installer that exited"
+            echo "at startup on a missing branding key (run 38924527286; fixed, retry"
+            echo "pending). Until a green run is recorded, CI has never installed"
+            echo "AstraOS. The manual path - real hardware, or a virtual machine"
+            echo "someone drives by hand - remains docs/INSTALLATION_VIRTUALBOX.md."
+            echo ""
+            echo "The APT archive this build assembled (dist/apt-repo, uploaded as"
+            echo "astraos-apt-repo) is unsigned, and no installed system has ever"
+            echo "fetched updates from one."
             echo ""
             echo "The manifest records them as UNTESTED until they are actually performed."
           } >> "$GITHUB_STEP_SUMMARY"

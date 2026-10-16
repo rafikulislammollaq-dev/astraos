@@ -38,6 +38,16 @@ images:
     productIcon:   "logo.png"
     productWelcome: "welcome.png"
 
+# Required by the branding loader even though no `show` step is in the sequence:
+# Calamares 3.3 parses `slideshow` unconditionally, and a missing key is fatal — the
+# installer exits before drawing its first page (first CI install attempt, run
+# 38924527286: "FATAL ... key not found: slideshow"). This is a QML-enabled Calamares,
+# where a scalar value would have to name an existing .qml file; a sequence of images
+# is the simple form, and the images ship beside this file (scripts/build-packages.sh
+# renders logo.png and welcome.png into this directory).
+slideshow:
+    - "welcome.png"
+
 # AstraOS brand palette. Matches config/branding.env.
 style:
     sidebarBackground:      "#05030A"

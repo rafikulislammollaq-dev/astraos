@@ -85,11 +85,35 @@ fi
 log "all ${COUNT} configured Calamares modules are installed"
 
 # --- Branding sanity ----------------------------------------------------------
-for asset in branding.desc logo.png; do
+# The files the branding descriptor references must exist next to it: Calamares 3.3
+# exits at the branding constructor when an image or the slideshow file is missing, so
+# a package that ships a descriptor without its assets is not shippable.
+for asset in branding.desc logo.png welcome.png; do
     [ -f "/usr/share/calamares/branding/astraos/${asset}" ] \
         || fail "installer branding asset is missing: ${asset}"
 done
 log "installer branding assets present"
+
+# Calamares 3.3's branding constructor parses `slideshow` unconditionally — even with
+# no `show` module in the sequence — and a missing key is fatal before the installer
+# draws its first page. The first CI install attempt died exactly there (run
+# 38924527286: "key not found: slideshow"), after earlier builds had shipped the same
+# descriptor without anything ever starting the installer. The component name is
+# checked for the same reason: Calamares refuses a branding directory whose
+# componentName does not match the directory name.
+BRANDING_DESC=/usr/share/calamares/branding/astraos/branding.desc
+grep -qsE '^componentName:[[:space:]]*astraos[[:space:]]*$' "$BRANDING_DESC" \
+    || fail "branding.desc does not declare componentName: astraos (Calamares refuses a component whose name does not match its directory)"
+
+SLIDESHOW_FILES="$(sed -n '/^slideshow:/,/^[^[:space:]]/p' "$BRANDING_DESC" \
+    | grep -oE '[A-Za-z0-9._-]+\.(png|jpg|jpeg|qml)' | sort -u || true)"
+[ -n "${SLIDESHOW_FILES}" ] \
+    || fail "branding.desc has no usable 'slideshow' value; Calamares 3.3 refuses to start the installer without one"
+for file in ${SLIDESHOW_FILES}; do
+    [ -f "/usr/share/calamares/branding/astraos/${file}" ] \
+        || fail "branding.desc names a slideshow file that does not exist: ${file}"
+done
+log "slideshow files present: $(printf '%s' "${SLIDESHOW_FILES}" | tr '\n' ' ')"
 
 # --- Disk-safety policy -------------------------------------------------------
 # Calamares does the partitioning. These assertions encode plan §10.3 and Rule 9:
