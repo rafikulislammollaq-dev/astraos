@@ -19,6 +19,19 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The self-test starts the HUD for the screenshot (source; its first run is
+  pending).** The roadmap's HUD item wants a capture that carries the dashboard
+  itself, and the dashboard is a full-screen application started from its launcher —
+  not an autostart — so the live-medium self-test now starts `astraos-hud` as the live
+  user from the shipped entry point, waits for its process under both its spellings
+  (the `astraos-hud` shim and the `astraos_hud` module it execs), gives GTK its first
+  frames, records the new `hud-on-screen` check and only then prepares the screen for
+  the caller's capture; a dashboard that refuses to start fails that check and puts
+  the tail of its log on the serial console instead of leaving a quiet, empty desktop
+  in the picture. The installed-mode boot does not start it (an installed system shows
+  a greeter, not a session). The first run that captures the HUD is the proof, and it
+  will be recorded here when it happens.
+
 - **The installer is exercised end to end in CI, against the real Calamares UI
   (source; its first run is pending).** `scripts/install-boot-test.sh` boots the built
   ISO in QEMU with `astraos.ci.install=1` on its command line, installs it onto a blank

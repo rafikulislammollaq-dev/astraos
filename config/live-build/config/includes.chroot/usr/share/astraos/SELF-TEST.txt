@@ -51,6 +51,10 @@ WHAT IT CHECKS
     code the machine prints is served, and the revoked phone is refused again. The
     caller prints the code as "phone-code:" and must answer it.
 
+  * on the live medium, the dashboard (astraos-hud) is started as the live user before
+    the screen is held for the capture ("hud-on-screen"), so the caller's picture
+    carries the HUD itself, not only the desktop;
+
   A line marked "note" is information, not a verdict: the shipped image has no AI model
   installed, so "assistant-status" reporting no model is expected.
 

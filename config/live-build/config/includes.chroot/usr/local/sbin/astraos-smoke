@@ -436,6 +436,28 @@ if [ "$MODE" = installed ]; then
         env DISPLAY=:0 XAUTHORITY="$XAUTHORITY" "$@"
     }
 fi
+
+# --- the dashboard, on screen (live medium only) --------------------------------------
+# The roadmap's HUD item wants a capture that carries the HUD itself, and the HUD is a
+# full-screen application started from its launcher - not an autostart - so this starts
+# it the way a person would: as the live user, from the shipped entry point. A failure
+# is a check, not a silent absence; the log tail goes to the serial console.
+if [ "$MODE" = live ]; then
+    as_user astraos-hud >/tmp/astraos-hud.log 2>&1 &
+    waited=0
+    while [ "$waited" -lt 20 ]; do
+        pgrep -u "$LIVE_USER" -f 'astraos[-_]hud' >/dev/null 2>&1 && break
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if pgrep -u "$LIVE_USER" -f 'astraos[-_]hud' >/dev/null 2>&1; then
+        # give GTK its first frames; the capture follows within seconds
+        sleep 5
+        ok "hud-on-screen" "the dashboard is up as $LIVE_USER"
+    else
+        bad "hud-on-screen" "astraos-hud did not start: $(tail -n 2 /tmp/astraos-hud.log 2>/dev/null | tr '\n' ' ')"
+    fi
+fi
 if as_user xset s off >/dev/null 2>&1 \
     && as_user xset s noblank >/dev/null 2>&1 \
     && as_user xset dpms force on >/dev/null 2>&1 \

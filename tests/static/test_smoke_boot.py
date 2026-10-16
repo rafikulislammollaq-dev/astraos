@@ -318,6 +318,32 @@ def test_the_guest_prepares_the_screen_for_the_capture() -> None:
     )
 
 
+def test_the_guest_puts_the_hud_on_screen_for_the_capture() -> None:
+    """The roadmap's HUD item rests on a capture that carries the dashboard itself."""
+    text = _text(GUEST_SCRIPT)
+    assert "hud-on-screen" in text, (
+        "the self-test must check that the dashboard is up, not hope it is"
+    )
+    assert "as_user astraos-hud" in text, (
+        "the dashboard must be started as the live user, from the shipped entry point - "
+        "the way its own launcher starts it"
+    )
+    assert "astraos[-_]hud" in text, (
+        "the check must find both spellings: the astraos-hud shim and the astraos_hud "
+        "module it execs"
+    )
+    dashboard = text.index("# --- the dashboard, on screen")
+    capture = text.index("screenshot-ready")
+    assert dashboard < capture, (
+        "the dashboard must be up before the screen is prepared and held for the "
+        "capture, or the picture is of a desktop without it"
+    )
+    assert '"$MODE" = live' in text[dashboard:capture], (
+        "the HUD launch must be live-medium only: the installed boot shows a greeter, "
+        "not a session"
+    )
+
+
 def test_the_host_verifies_the_screenshot_has_content() -> None:
     text = _text(HOST_SCRIPT)
     assert "standard_deviation" in text, (

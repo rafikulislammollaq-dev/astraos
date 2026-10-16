@@ -172,9 +172,10 @@ updated. Every step proven in CI or recorded as untested.
   before reporting its result; the host verifies the capture has content and retries
   a flat image while the guest still holds the session — is green since 2026-10-16,
   run 38913161772: the capture carries the real desktop. The item stays open because
-  the capture does not yet show the HUD itself — the dashboard is a full-screen
-  application started from its launcher, not an autostart — so the next slice starts
-  it in the session and captures that.
+  the capture does not yet show the HUD itself: the dashboard is a full-screen
+  application started from its launcher, not an autostart. The self-test starts it
+  as the live user before it prepares the screen (the `hud-on-screen` check, source
+  2026-10-16, first run pending); the item flips when a capture carries it.
 - [ ] **A recovery procedure that has been performed**: snapshot, break, restore,
   in a VM, with Timeshift.
 
