@@ -132,8 +132,17 @@ else
     die "cannot determine the bootloader option supported by this live-build"
 fi
 if supports --uefi-secure-boot; then
-    # Secure Boot support is not claimed for this release.
-    set -- "$@" --uefi-secure-boot disable
+    # Secure Boot: the ISO carries Debian's own signed chain - the Microsoft-signed
+    # shim with Debian's keys embedded, a Debian-signed GRUB, a Debian-signed kernel -
+    # so a machine with Secure Boot enabled has a complete chain to verify instead of
+    # an unsigned medium it refuses. "enable" makes live-build install that chain; the
+    # shim-signed and grub-efi-amd64-signed packages it copies from are in
+    # scripts/bootstrap-build-environment.sh (the image's own package list carries
+    # them too). With "disable" the ISO would be unsigned and Secure Boot machines
+    # would refuse it before any menu appeared. The boot path under enforcing firmware
+    # is exercised by scripts/boot-menu-test.sh --medium secure; support is claimed
+    # only once that run is green (docs/ROADMAP.md carries the record).
+    set -- "$@" --uefi-secure-boot enable
 fi
 if supports --debian-installer; then set -- "$@" --debian-installer false; fi
 if supports --memtest; then set -- "$@" --memtest none; fi

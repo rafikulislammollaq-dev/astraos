@@ -74,6 +74,11 @@ if command -v apt-get >/dev/null 2>&1; then
         grub-efi-amd64-bin
         grub-pc-bin
         grub2-common
+        # The signed Secure Boot chain live-build installs with --uefi-secure-boot
+        # enable: the Microsoft-signed shim and Debian-signed GRUB it copies from.
+        # Build-host files; the image also carries the same packages for installs.
+        shim-signed
+        grub-efi-amd64-signed
         mtools
         ovmf
         qemu-system-x86

@@ -98,7 +98,7 @@ does not appear.
 | Printers and scanners | CUPS plus the gutenprint and Epson (escpr) driver sets are installed | Test with a specific model; some need another `printer-driver-*` from Debian |
 | Docking stations, Thunderbolt | Untested | Expect partial functionality |
 | Touchscreens and pens | Untested; `xserver-xorg-input-wacom` and `libinput` are present | Report results |
-| Secure Boot enforcing firmware | **Will refuse to boot** | Not supported in 0.1.0 |
+| Secure Boot enforcing firmware | Unverified; the signed chain is carried and its first CI boot is pending | Until that run is green, treat it as refusing the medium and turn Secure Boot off |
 
 ## 4. Report format
 

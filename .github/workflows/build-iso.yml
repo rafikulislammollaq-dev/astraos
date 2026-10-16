@@ -197,8 +197,9 @@ jobs:
             echo "The build job assembles the image and validates its structure. Three"
             echo "jobs then boot it: smoke-boot starts the kernel taken out of the ISO"
             echo "and runs the image's own self-test; boot-menus boots the ISO through"
-            echo "its own boot menus (syslinux on BIOS, GRUB on UEFI) and waits for the"
-            echo "live system's login prompt; install-boot installs the ISO onto a blank"
+            echo "its own boot menus (syslinux on BIOS, GRUB on UEFI, and GRUB under"
+            echo "Secure Boot-enforcing firmware) and waits for the live system's login"
+            echo "prompt; install-boot installs the ISO onto a blank"
             echo "disk through the ISO's own installer and boots that disk alone, with"
             echo "no medium attached. When those jobs are skipped, the image was **not**"
             echo "booted."
@@ -274,10 +275,11 @@ jobs:
     needs: build
     if: ${{ needs.build.result == 'success' && inputs.smoke_boot }}
     runs-on: ubuntu-24.04
-    # Two emulated boots, firmware and bootloader included. The measured direct-kernel
+    # Three emulated boots, firmware and bootloader included. The measured direct-kernel
     # emulated boot (run 38881934636) reached its login prompt in about 144 s; the menu
-    # path adds firmware and the bootloader in front of that, and each run keeps the
-    # wait scripts/boot-menu-test.sh was given (25 min). This ceiling covers both runs
+    # path adds firmware and the bootloader in front of that (both original menu paths
+    # together took 6m41s in run 38913161772), and each run keeps the wait
+    # scripts/boot-menu-test.sh was given (25 min). This ceiling covers all three runs
     # plus the ISO download and the QEMU/OVMF install with margin.
     timeout-minutes: 90
 
@@ -305,6 +307,15 @@ jobs:
         if: always()
         run: ./scripts/boot-menu-test.sh --medium efi --out menus-efi iso/*.iso
 
+      - name: Boot through the GRUB menu under Secure Boot (UEFI)
+        # What a Windows laptop with Secure Boot on does. This run boots the same ISO
+        # under OVMF's Secure Boot firmware with the Microsoft keys enrolled, so
+        # reaching the login prompt means the firmware verified the ISO's own chain -
+        # Microsoft-signed shim, Debian-signed GRUB, Debian-signed kernel - instead of
+        # refusing an unsigned medium.
+        if: always()
+        run: ./scripts/boot-menu-test.sh --medium secure --out menus-secure iso/*.iso
+
       - name: Summarise the boot-menu runs
         if: always()
         run: |
@@ -316,7 +327,7 @@ jobs:
             echo "succeeds when the live system's login prompt appears on the serial"
             echo "console."
             echo ""
-            for medium in bios efi; do
+            for medium in bios efi secure; do
               log="menus-${medium}/serial.log"
               if [ ! -f "$log" ]; then
                 echo "- **${medium}**: no serial log was produced"
@@ -328,7 +339,7 @@ jobs:
             done
             echo ""
             echo '```'
-            for medium in bios efi; do
+            for medium in bios efi secure; do
               log="menus-${medium}/serial.log"
               if [ -f "$log" ]; then
                 echo "--- ${medium}: last serial lines"
@@ -348,6 +359,7 @@ jobs:
           path: |
             menus-bios/
             menus-efi/
+            menus-secure/
 
   install-boot:
     name: Install the ISO onto a disk and boot it

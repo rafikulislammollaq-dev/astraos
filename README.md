@@ -115,7 +115,7 @@ filesystem holds 182,962 files (2,159 MiB extracted).
 | Display server | X11 |
 | Boot splash | Plymouth, AstraOS theme |
 | Installer | Calamares, configured and branded; the CI install exercise is pending its first run |
-| Bootloader | GRUB (UEFI) and syslinux (BIOS), hybrid ISO. Secure Boot disabled |
+| Bootloader | GRUB (UEFI) and syslinux (BIOS), hybrid ISO; Debian's signed Secure Boot chain carried (boot run pending) |
 | Networking | NetworkManager with applet, wpa_supplicant |
 | Browser | Firefox ESR |
 | Office | LibreOffice |
@@ -135,8 +135,11 @@ the ISO stores the system as a compressed squashfs.
 
 ## Known issues
 
-1. **Secure Boot is not supported.** A machine enforcing it will refuse to boot the
-   medium; turn Secure Boot off to try AstraOS.
+1. **Secure Boot is not supported yet.** The image carries Debian's signed
+   shim/GRUB/kernel chain (2026-10-16) and CI boots it under Secure Boot-enforcing
+   firmware, but that run is pending; until it is green, treat a machine enforcing
+   Secure Boot as one that refuses the medium, and turn Secure Boot off to try
+   AstraOS.
 2. **Copy and paste between the host and a virtual machine needs Guest Additions**,
    which the image does not ship. Right Ctrl releases the mouse; inside the terminal
    copy is Ctrl+Shift+C and paste is Ctrl+Shift+V.

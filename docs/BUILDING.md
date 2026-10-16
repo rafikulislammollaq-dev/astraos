@@ -309,10 +309,9 @@ it; emulation is the fallback — slower, not different.
 ### The boot menus
 
 The self-test above boots a kernel the host script supplied. The `boot-menus` job
-(added 2026-10-16; its first CI run was pending at the time of writing) exercises the
-other half: the path a real machine takes. It boots the ISO in QEMU with QEMU's own
-firmware starting the machine, so nothing is supplied by the host — the menu is what
-boots the guest —
+(added 2026-10-16; green the same day, run 38913161772) exercises the other half: the
+path a real machine takes. It boots the ISO in QEMU with QEMU's own firmware starting
+the machine, so nothing is supplied by the host — the menu is what boots the guest —
 
 1. firmware starts the ISO's El Torito boot record (BIOS) or its EFI system partition
    (UEFI);
@@ -325,17 +324,23 @@ boots the guest —
    `LIVE_APPEND` — the entry, not the test host, produced it.
 
 Two runs per dispatch, one per firmware path (`--medium bios`, `--medium efi`), each
-with a 25-minute wait; the EFI run needs the OVMF firmware (`ovmf` package). The ISO's
-menu entries do not carry `astraos.ci=1`, so the guest runs no self-test and does not
-power off: it stops at the login prompt and the script stops the machine. Evidence
-(`serial.log`, `qemu.out`) is uploaded as the `astraos-boot-menus` artifact.
+with a 25-minute wait; the EFI run needs the OVMF firmware (`ovmf` package). Since
+2026-10-16 there is a third: `--medium secure` boots the UEFI path under OVMF's Secure
+Boot firmware with the Microsoft keys enrolled, so only the ISO's signed chain —
+Microsoft-signed shim, Debian-signed GRUB, Debian-signed kernel — reaches the login
+prompt (source state; its first run is pending). The ISO's menu entries do not carry
+`astraos.ci=1`, so the guest runs no self-test and does not power off: it stops at the
+login prompt and the script stops the machine. Evidence (`serial.log`, `qemu.out`, and
+on the secure run `firmware.txt` with the firmware hashes) is uploaded as the
+`astraos-boot-menus` artifact.
 
 The same script runs locally against any built ISO and needs no root — nothing is
 mounted:
 
 ```bash
-./scripts/boot-menu-test.sh --medium bios --out out-bios dist/astraos-*.iso
-./scripts/boot-menu-test.sh --medium efi  --out out-efi  dist/astraos-*.iso
+./scripts/boot-menu-test.sh --medium bios   --out out-bios   dist/astraos-*.iso
+./scripts/boot-menu-test.sh --medium efi    --out out-efi    dist/astraos-*.iso
+./scripts/boot-menu-test.sh --medium secure --out out-secure dist/astraos-*.iso
 ```
 
 ## 9. After a successful build

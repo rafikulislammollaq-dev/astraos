@@ -19,6 +19,24 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The ISO carries Debian's signed Secure Boot chain (source; its first run is
+  pending).** `config/live-build/auto/config` now asks live-build for
+  `--uefi-secure-boot enable`: the EFI system partition gets the Microsoft-signed shim
+  with Debian's keys embedded, a Debian-signed GRUB, and the kernel the chroot
+  installs is Debian's signed one — a complete chain for a machine with Secure Boot
+  enabled to verify, instead of an unsigned medium it refuses. The build host needs
+  `shim-signed` and `grub-efi-amd64-signed` for live-build to copy from, and both are
+  now in `scripts/bootstrap-build-environment.sh` (the image's own package list
+  already carries them for installs). The new `boot-menu-test.sh --medium secure`
+  boots the ISO under OVMF's Secure Boot firmware with the Microsoft keys enrolled:
+  the key store is *required*, so a machine missing it fails the run with its own
+  message rather than falling back to a blank store that would leave Secure Boot
+  unenforced and the evidence worthless, and the exact firmware pair with its SHA-256
+  sums is kept beside the serial log. The README, the build manifest and the
+  limitations document keep saying Secure Boot is not supported until a run reaches
+  the login prompt with firmware verifying signatures; that run will be recorded here
+  when it happens.
+
 - **The self-test starts the HUD for the screenshot (source; its first run is
   pending).** The roadmap's HUD item wants a capture that carries the dashboard
   itself, and the dashboard is a full-screen application started from its launcher —

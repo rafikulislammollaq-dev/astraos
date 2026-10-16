@@ -18,7 +18,10 @@ The pins here are the ones that make the exercise mean something:
   * astraos.ci must never reach LIVE_APPEND or the menu script's executable text: it
     makes the guest run the self-test and power itself off, which is a CI behavior, not
     a desktop one;
-  * the workflow runs both firmware paths and keeps both logs.
+  * the workflow runs every firmware path and keeps every log, and the Secure Boot run
+    must actually enforce signatures - OVMF's secboot firmware plus the Microsoft-key
+    variable store - or fail loudly: a blank key store would leave the run proving
+    nothing while looking green.
 
 Comment lines are stripped before the script's executable text is checked, following
 the repository's rule that a script's comments may explain a trap in prose while its
@@ -130,13 +133,51 @@ def test_the_efi_run_uses_the_matched_ovmf_pair() -> None:
     assert "ovmf package" in code, "the failure message must name the package to install"
 
 
-def test_the_workflow_runs_both_menu_paths_and_keeps_their_logs() -> None:
+def test_the_secure_run_enforces_signatures_or_fails() -> None:
+    """Secure Boot enforcement is the whole point: a soft run would prove nothing."""
+    code = _code(MENU_SCRIPT)
+    assert "bios|efi|secure" in code, "the secure medium is gone from the script"
+    assert "secboot" in code, (
+        "the secure run must use OVMF's Secure Boot firmware (secboot); the plain "
+        "build verifies nothing"
+    )
+    assert "OVMF_VARS_4M.ms.fd" in code or "OVMF_VARS.ms.fd" in code, (
+        "Secure Boot is enforced only with the Microsoft keys enrolled in the variable "
+        "store; the run must use that store"
+    )
+    assert "the run would prove nothing" in code, (
+        "a missing Microsoft-key store must fail the run loudly - falling back to a "
+        "blank store would leave Secure Boot unenforced and the evidence worthless"
+    )
+    assert "firmware.txt" in code and "sha256sum" in code, (
+        "the exact firmware pair and its hashes must be kept with the evidence, so the "
+        "run can be audited"
+    )
+
+
+def test_the_image_carries_the_signed_secure_boot_chain() -> None:
+    text = _text(AUTO_CONFIG)
+    assert "--uefi-secure-boot enable" in text, (
+        "the image must ask live-build for the signed chain; without it the ISO is "
+        "unsigned and a Secure Boot machine refuses it before any menu appears"
+    )
+    assert "--uefi-secure-boot disable" not in text
+    bootstrap = _text(REPO_ROOT / "scripts" / "bootstrap-build-environment.sh")
+    for package in ("shim-signed", "grub-efi-amd64-signed"):
+        assert package in bootstrap, (
+            f"{package} provides the signed binaries live-build copies into the EFI "
+            "system partition; without it the Secure Boot build fails"
+        )
+
+
+def test_the_workflow_runs_every_menu_path_and_keeps_their_logs() -> None:
     text = _text(WORKFLOW)
     assert "boot-menus:" in text
     assert "scripts/boot-menu-test.sh" in text
-    assert "--medium bios" in text and "--medium efi" in text, (
-        "one dispatch must exercise both firmware paths"
-    )
+    for medium in ("--medium bios", "--medium efi", "--medium secure"):
+        assert medium in text, (
+            f"one dispatch must exercise every firmware path; {medium} is gone"
+        )
     assert "ovmf" in text, "the job installs the UEFI firmware it needs"
     assert "astraos-boot-menus" in text, "the evidence artifact must be uploaded"
     assert text.count("inputs.smoke_boot") >= 2, (

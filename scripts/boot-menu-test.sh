@@ -27,16 +27,20 @@
 #   4. keeps serial.log and qemu.out as evidence and exits 0 only when the prompt
 #      appeared.
 #
-# Usage: scripts/boot-menu-test.sh --medium bios|efi --out DIR [--timeout MINUTES] ISO
+# Usage: scripts/boot-menu-test.sh --medium bios|efi|secure --out DIR [--timeout MINUTES] ISO
 #
 # The workflow .github/workflows/build-iso.yml runs this against the ISO it has just
 # built, once per medium. On a local machine:
 #
-#   ./scripts/boot-menu-test.sh --medium bios --out out dist/astraos-*.iso
+#   ./scripts/boot-menu-test.sh --medium bios   --out out-bios   dist/astraos-*.iso
+#   ./scripts/boot-menu-test.sh --medium secure --out out-secure dist/astraos-*.iso
 #
 # efi needs the OVMF firmware (the "ovmf" package on Debian and Ubuntu). bios needs
-# nothing beyond QEMU itself. No root is needed: nothing is mounted. KVM is used when
-# the host allows it; QEMU emulation is the fallback - slower, not different.
+# nothing beyond QEMU itself. secure runs the UEFI path under OVMF's Secure Boot
+# firmware with the Microsoft keys enrolled, so only a signed chain - Microsoft-signed
+# shim, Debian-signed GRUB, Debian-signed kernel - reaches the login prompt. No root
+# is needed: nothing is mounted. KVM is used when the host allows it; QEMU emulation
+# is the fallback - slower, not different.
 # Documented in docs/BUILDING.md, "The boot menus".
 
 set -euo pipefail
@@ -53,17 +57,19 @@ ISO=""
 
 usage() {
     cat <<'USAGE'
-Usage: scripts/boot-menu-test.sh --medium bios|efi --out DIR [--timeout MINUTES] ISO
+Usage: scripts/boot-menu-test.sh --medium bios|efi|secure --out DIR [--timeout MINUTES] ISO
 
 Boots a built AstraOS ISO in QEMU through its own boot menus - firmware, bootloader
 menu, default entry - with nothing supplied by this host, waits for the live system's
 login prompt on the serial console, and exits 0 only when it appears. serial.log and
 qemu.out are copied to --out; on failure the last serial lines are printed.
 
-  --medium bios|efi   which firmware path to exercise (required)
-  --out DIR           copy serial.log and qemu.out there (required)
-  --timeout MINUTES   how long to wait for the login prompt (default 25)
-  -h, --help          this text
+  --medium bios|efi|secure   which firmware path to exercise (required; "secure"
+                             enforces Secure Boot, so only a signed chain boots)
+  --out DIR                  copy serial.log, qemu.out and (on secure) firmware.txt
+                             there (required)
+  --timeout MINUTES          how long to wait for the login prompt (default 25)
+  -h, --help                 this text
 USAGE
 }
 
@@ -104,9 +110,9 @@ die() {
 say() { printf 'boot-menu-test: %s\n' "$*"; }
 
 case "$MEDIUM" in
-    bios|efi) ;;
+    bios|efi|secure) ;;
     "") die "no --medium given (try --help)" ;;
-    *) die "--medium must be bios or efi, not '${MEDIUM}'" ;;
+    *) die "--medium must be bios, efi or secure, not '${MEDIUM}'" ;;
 esac
 [ -n "$ISO" ] || die "no ISO given (try --help)"
 ISO="$(readlink -f "$ISO")"
@@ -133,6 +139,7 @@ cleanup() {
         mkdir -p "$OUT_DIR"
         cp -f "$WORK/serial.log" "$OUT_DIR/serial.log" 2>/dev/null || true
         cp -f "$WORK/qemu.out" "$OUT_DIR/qemu.out" 2>/dev/null || true
+        cp -f "$WORK/firmware.txt" "$OUT_DIR/firmware.txt" 2>/dev/null || true
     fi
     rm -rf "$WORK"
 }
@@ -209,6 +216,52 @@ if [ "$MEDIUM" = efi ]; then
     )
 fi
 
+if [ "$MEDIUM" = secure ]; then
+    # Secure Boot enforcement: OVMF's secboot firmware plus the variable store with
+    # the Microsoft keys pre-enrolled (the matched pair Debian and Ubuntu ship for
+    # exactly this purpose). The key store is what makes this run mean something: with
+    # those keys enrolled, the firmware verifies signatures for real and only the
+    # ISO's signed chain - Microsoft-signed shim, Debian-signed GRUB, Debian-signed
+    # kernel - can reach the login prompt. An unsigned image would be refused before
+    # GRUB ran. A blank store would leave Secure Boot unenforced, so its absence is a
+    # failure with its own message, not a fallback.
+    CODE=""
+    for candidate in \
+        /usr/share/OVMF/OVMF_CODE_4M.secboot.fd \
+        /usr/share/OVMF/OVMF_CODE.secboot.fd \
+        /usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd \
+        /usr/share/edk2/x64/OVMF_CODE.secboot.fd
+    do
+        if [ -f "$candidate" ]; then
+            CODE="$candidate"
+            break
+        fi
+    done
+    [ -n "$CODE" ] || die "no Secure Boot OVMF firmware found; install the ovmf package"
+
+    VARS=""
+    for candidate in \
+        /usr/share/OVMF/OVMF_VARS_4M.ms.fd \
+        /usr/share/OVMF/OVMF_VARS.ms.fd \
+        /usr/share/edk2/x64/OVMF_VARS.ms.4m.fd \
+        /usr/share/edk2/x64/OVMF_VARS.ms.fd
+    do
+        if [ -f "$candidate" ]; then
+            VARS="$candidate"
+            break
+        fi
+    done
+    [ -n "$VARS" ] || die "no Microsoft-enrolled OVMF variable store found (OVMF_VARS_4M.ms.fd or OVMF_VARS.ms.fd); a blank store leaves Secure Boot unenforced and the run would prove nothing"
+
+    cp "$VARS" "$WORK/OVMF_VARS.fd"
+    say "Secure Boot firmware: $CODE (variables with Microsoft keys: $VARS)"
+    sha256sum "$CODE" "$VARS" > "$WORK/firmware.txt"
+    QEMU_ARGS+=(
+        -drive "if=pflash,format=raw,readonly=on,file=$CODE"
+        -drive "if=pflash,format=raw,file=$WORK/OVMF_VARS.fd"
+    )
+fi
+
 say "booting $ISO through the ${MEDIUM} boot menu (waiting up to ${TIMEOUT_MINUTES} min)"
 qemu-system-x86_64 "${ACCEL[@]}" "${QEMU_ARGS[@]}" >"$WORK/qemu.out" 2>&1 &
 QEMU_PID=$!
@@ -270,7 +323,7 @@ if [ "$booted" = yes ]; then
     prompt="$(grep -F "$EXPECT" "$WORK/serial.log" | tail -n 1 || true)"
     say "the ${MEDIUM} boot reached the live system: ${prompt}"
     if [ -n "$OUT_DIR" ]; then
-        say "evidence kept in $OUT_DIR (serial.log, qemu.out)"
+        say "evidence kept in $OUT_DIR (serial.log, qemu.out; firmware.txt on the secure medium)"
     fi
     exit 0
 fi

@@ -162,9 +162,14 @@ updated. Every step proven in CI or recorded as untested.
   POST 200, paired health 200, revoked health 401, and the blocked-port probe timed
   out. The firewall half is recorded in the firewall item above.
 - [ ] **Try Secure Boot**: live-build's `--uefi-secure-boot` path with Debian's
-  signed shim and GRUB (check the installed live-build version supports it).
-  Document the firmware configurations that are actually known to boot. Until a
-  machine reports otherwise, the README keeps "Secure Boot is not supported".
+  signed shim and GRUB (the installed live-build documents the option). The source
+  now uses it (2026-10-16) and the exercise exists: `scripts/boot-menu-test.sh
+  --medium secure` boots the ISO under OVMF's Secure Boot firmware with the
+  Microsoft keys enrolled, so a run that reaches the login prompt means the
+  Microsoft-signed shim, Debian-signed GRUB and Debian-signed kernel were verified
+  by firmware. The `boot-menus` job runs it beside the BIOS and plain-UEFI paths;
+  the checkbox flips — and the firmware configurations that boot get documented —
+  when a run is green. Until then the README keeps "Secure Boot is not supported".
 - [ ] **The HUD on a booted image's screen.** The boot self-test's screenshot is
   meant to be the first version of this evidence; the first green run's screenshot
   came back black — a QEMU stdvga blanking defect (see `CHANGELOG.md`). The source

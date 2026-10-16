@@ -58,11 +58,16 @@ configuration*, not a report of a test. The build manifest records those items a
 
 ### 1.2 Secure Boot is not supported
 
-Secure Boot is **disabled** in the live image's own boot configuration and the boot path
-has never been verified under Secure Boot on any machine.
+Since 2026-10-16 the source carries the signed chain — `--uefi-secure-boot enable` in
+`config/live-build/auto/config`, Debian's signed shim and GRUB — and
+`scripts/boot-menu-test.sh --medium secure` boots the ISO under OVMF's Secure Boot
+firmware with the Microsoft keys enrolled, but **its first run is pending**: the boot
+path has not been verified under Secure Boot on any machine yet, and a machine enforcing
+Secure Boot must still be treated as one that refuses the medium.
 
-A `shim` and signed GRUB are installed for UEFI installations, because they are harmless,
-but this does **not** mean Secure Boot works. Do not tell anyone it does.
+The claim flips — here, in `README.md`, in `docs/SECURITY.md` and in the build manifest —
+only when that run is green and the firmware configurations that boot are documented. Do
+not tell anyone Secure Boot works before then.
 
 ### 1.3 `/etc/os-release` can be overwritten by an upgrade
 
