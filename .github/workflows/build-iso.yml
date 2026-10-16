@@ -208,11 +208,11 @@ jobs:
     runs-on: ubuntu-24.04
     # An emulated boot of a live desktop image plus the self-test. KVM is used when the
     # runner provides it; QEMU emulation is the fallback - slower, not different.
-    # Run 38871459329 (2026-10-16) clocked what no earlier run had: 45 minutes of
-    # emulation ended with LightDM still starting (the self-test unit itself had been
-    # skipped by an ordering cycle, fixed in the unit file). Both windows carry margin
-    # over that measurement now: the driver's self-test window (120 min) and this
-    # ceiling.
+    # The first TCG attempt (run 38871459329, 2026-10-16) never reported a result (its
+    # self-test unit had been skipped by an ordering cycle, fixed in the unit file); the
+    # first green run (38881934636) clocked the emulated boot: login prompt at 143.7 s,
+    # RESULT PASS (39 checks), the whole boot job 6m28s. Both windows keep margin over
+    # that: the driver's self-test window (120 min) and this ceiling.
     timeout-minutes: 150
 
     steps:

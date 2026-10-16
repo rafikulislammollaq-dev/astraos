@@ -19,6 +19,23 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The first green boot self-test.** 2026-10-16, run 38881934636 (commit 8f81e3d): the
+  built ISO booted under QEMU on a runner with no KVM — pure CPU emulation — and the
+  image's own self-test reported `RESULT: PASS (39 checks, 0 failed)`. The guest reached
+  the console login prompt 143.7 s in; the checks confirm LightDM active, an Xfce session
+  (xfwm4) running as the live user, every `astraos-*` package at its expected version,
+  the hardware, codec and compatibility tools, the Flathub remote, NetworkManager active
+  with an IPv4 address, and a real name resolved by DNS — the check that pins the DNS
+  defect entry below. Job times: build 18m43s, boot 6m28s; the guest ran 4 vCPU / 4 GiB.
+  The evidence artifact is `astraos-boot-self-test` (`serial.log` is the record; the
+  screenshot captured through the QEMU monitor came back black — a capture defect, so it
+  is not usable as visual evidence yet, and making the capture real is tracked on the
+  roadmap). The test starts the kernel and initrd taken from the ISO with the ISO
+  attached as the live medium; the ISO's own boot menus (syslinux BIOS, GRUB EFI) are
+  still exercised only by hand. The README's maturity table and "What has been tested",
+  `docs/KNOWN_LIMITATIONS.md` §1.1/§2 and the roadmap's Stage 1 entry record it in the
+  same commit.
+
 - **The image can prove that it boots.** The ISO is no longer only built and inspected:
   `.github/workflows/build-iso.yml` gained a `smoke-boot` job (on by default) that boots
   the freshly built ISO in QEMU, waits for the image's own self-test, takes a screenshot
@@ -30,7 +47,7 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   The evidence — `serial.log`, `screenshot.png`, `qemu.out` — is uploaded as the
   `astraos-boot-self-test` artifact, and the build job's summary no longer claims booting
   is untested, because the workflow now boots it. (The README's "What has been tested"
-  list records the proof once a run has gone green.)
+  list records the proof: the first green run is the entry above.)
 
 - **Every image carries a self-test it runs on request.** `astraos-smoke.service` (gated
   on `ConditionKernelCommandLine=astraos.ci`) runs `/usr/local/sbin/astraos-smoke` after
@@ -78,8 +95,8 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   device scan, which is also how the ISO's own boot entry finds it - the by-hand
   VirtualBox boot of the previous image had already proven that path. The driver now also
   stops waiting as soon as the serial console shows `BOOT FAILED!` or a kernel panic
-  instead of burning its whole timeout, its window carries margin over the first clocked
-  TCG boot (the entry below records the measurement), and
+  instead of burning its whole timeout, its window carries margin over the measured
+  emulated boot (the first green run clocks it — entry above), and
   `tests/static/test_smoke_boot.py` fails if `findiso` is ever added back or if the
   driver stops mirroring `LIVE_APPEND`.
 
@@ -94,11 +111,14 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   and systemd breaks circles by silently deleting jobs. `[Install]` now says
   `WantedBy=graphical.target`, the target the unit already orders after; the unit's
   header comment and `tests/static/test_smoke_boot.py` record the cycle so it cannot
-  return silently. The same run was the first to clock a TCG boot: 45 minutes of
-  emulation ended with LightDM still starting. The workflow's self-test window is now
+  return silently. The same run was the first TCG boot attempted in CI, and it never
+  reported a result: the unit had been skipped by the cycle, and the serial log simply
+  ends at the login prompt. That run did not establish the emulated boot's duration;
+  the next run did — login prompt at 143.7 s. The workflow's self-test window is now
   120 minutes (job ceiling 150), the guest gets 4 cores and 4 GiB, the guest script
   waits for the session itself, and the unit's start timeout covers that wait. The
-  README's tested-claims list stays held until a run reports PASS.
+  README's tested-claims list was held until a run reported PASS — the next one did
+  (entry above), and the README and limitations documents now record it.
 
 - **The live session had no working DNS: `/etc/resolv.conf` was a 0-byte file.** Pinging
   an IP worked; pinging a name did not. Two authorities were both enabled —

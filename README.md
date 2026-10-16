@@ -10,14 +10,14 @@ Debian release, and not a website pretending to be an operating system.
 
 ---
 
-## Maturity level: early alpha (live image boots in a VM)
+## Maturity level: early alpha (live image boots in a VM; CI boots and self-tests it)
 
 | Level | Meaning | Reached? |
 |---|---|---|
 | 1 | Source tree and static checks pass | Yes |
 | 2 | ISO builds in CI | Yes (Build ISO run 38864588609, 2026-10-16: image built in about 18 minutes, 25/25 structural checks, `structural=PASS`, ISO 2,432,696,320 bytes) |
-| 3 | ISO boots in a virtual machine | **Yes** (VirtualBox, live session, 2026-10-15) |
-| 4 | Network and browser work out of the box | **Cause fixed in the source** (see `CHANGELOG.md`, "The live session had no working DNS"); no booted image has yet been observed with the fix in place |
+| 3 | ISO boots in a virtual machine | **Yes** (VirtualBox by hand, live session, 2026-10-15; QEMU in CI, run 38881934636, 2026-10-16 — the image's own self-test reported PASS, 39 checks) |
+| 4 | Network and browser work out of the box | **Network proven in CI** (run 38881934636: NetworkManager active, an IPv4 address, a real name resolved by DNS); **no browser has been launched in a booted image yet** |
 | 5 | Installer runs and installed system boots | Not tested yet |
 | 6 | Tested on physical hardware | Not tested yet |
 | 7 | Secure Boot, signed images, stable release | Not supported |
@@ -37,6 +37,21 @@ Tested by hand on 2026-10-15 in Oracle VirtualBox on a Windows 11 host
 - Live user is `astra`, hostname is `astra-live`.
 - Network link works: `ping 8.8.8.8` replies with 0% loss.
 - Firefox loads websites once DNS is configured (YouTube loaded in the test).
+
+Proven by CI on 2026-10-16 (boot self-test, run 38881934636, commit 8f81e3d):
+
+- The built ISO boots in CI's QEMU — the runner provides no KVM, so the CPU is
+  emulated — and the image's own self-test reports `PASS: 39 checks, 0 failed`:
+  the console login prompt appears 143.7 s into the guest boot, LightDM is
+  active, an Xfce session (xfwm4) runs as the live user, every `astraos-*`
+  package is present at its expected version, the hardware, codec and
+  compatibility tools and the Flathub remote check out, NetworkManager is
+  active with an IPv4 address, and a real name resolves over DNS.
+- This boots the kernel and initrd taken from the ISO with the ISO attached as
+  the live medium; the ISO's own boot menus (syslinux BIOS, GRUB EFI) are still
+  exercised only by hand. The screenshot this run captured through the QEMU
+  monitor came back black — a tracked capture defect — so the serial log, not
+  the picture, is the evidence today.
 
 Tested from the source tree on 2026-10-16 in WSL on the same hardware:
 
@@ -121,9 +136,10 @@ the ISO stores the system as a compressed squashfs.
 2. **Copy and paste between the host and a virtual machine needs Guest Additions**,
    which the image does not ship. Right Ctrl releases the mouse; inside the terminal
    copy is Ctrl+Shift+C and paste is Ctrl+Shift+V.
-3. **Physical hardware, UEFI and BIOS firmware boot, and the installer are untested.**
-   The image has been booted by hand in VirtualBox (live session, 2026-10-15), but
-   nothing has run on physical hardware and Calamares has not been run at all.
+3. **Physical hardware, UEFI boot, and the installer are untested.** The image boots
+   in virtual machines — by hand in VirtualBox through the live menu (2026-10-15) and
+   in CI under QEMU (run 38881934636) — but nothing has run on physical hardware, no
+   boot has gone through UEFI, and Calamares has not been run at all.
 4. **The ISO is larger than it needs to be** (about 2.4 GB: APT recommends are on, and
    the codec, Wine and Flatpak sets are included).
 5. **`/etc/os-release` may be overwritten by a future upgrade of Debian's `base-files`.**

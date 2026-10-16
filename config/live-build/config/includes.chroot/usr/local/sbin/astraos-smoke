@@ -83,9 +83,9 @@ esac
 # installed systems get it locked down), so a successful boot ends in a running Xfce
 # session, not at a greeter. The unit starts once the graphical boot has been reached,
 # but on an emulated CPU (CI's QEMU without KVM) the session itself can keep loading
-# for minutes after that, so wait for the session - the socket appearing is not the
-# finish line. Run 38871459329 showed how wide that window is: 45 minutes of emulation
-# ended with LightDM still starting.
+# after that, so wait for the session - the socket appearing is not the finish line.
+# The first green CI run (38881934636) saw the session come up 22 s in; the wait budget
+# stays generous because emulated boots vary.
 waited=0
 while [ "$waited" -lt 300 ]; do
     if [ -S /tmp/.X11-unix/X0 ] && pgrep -u "$LIVE_USER" xfwm4 >/dev/null 2>&1; then

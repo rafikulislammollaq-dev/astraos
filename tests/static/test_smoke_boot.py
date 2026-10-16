@@ -185,7 +185,8 @@ def test_the_unit_start_timeout_covers_the_emulated_wait() -> None:
     assert match and int(match.group(1)) >= 1200, (
         "the guest waits up to ten minutes for the session under emulation, then "
         "checks, holds the desktop and powers off; a shorter start timeout would "
-        "kill the self-test halfway (run 38871459329 showed the wait's real size)"
+        "kill the self-test halfway (run 38881934636: the session appeared 22 s after "
+        "the self-test began; emulated boots vary)"
     )
 
 
@@ -194,7 +195,8 @@ def test_the_guest_self_test_waits_for_the_session_not_just_the_socket() -> None
     assert 'pgrep -u "$LIVE_USER" xfwm4' in text
     assert "-lt 300" in text, (
         "the session wait budget shrank; under QEMU emulation LightDM and the Xfce "
-        "session can take minutes to come up (run 38871459329)"
+        "session can take minutes to come up (run 38881934636: 22 s, but with wide "
+        "variance)"
     )
 
 
@@ -203,12 +205,13 @@ def test_the_boot_windows_carry_margin_over_the_measured_boot() -> None:
     match = re.search(r"smoke-boot\.sh --timeout (\d+)", text)
     assert match, "the boot step no longer passes a self-test window"
     assert int(match.group(1)) >= 90, (
-        "run 38871459329 measured 45 minutes of emulation ending with LightDM still "
-        "starting; a shorter window can never pass"
+        "the first green run (38881934636) reached the login prompt in about 144 s "
+        "under emulation and its self-test finished about 65 s later; the window must "
+        "stay far larger than a measured boot because runner speeds vary"
     )
     assert "timeout-minutes: 150" in text, (
         "the smoke-boot job ceiling must carry margin over the driver's 120-minute "
-        "self-test window (run 38871459329)"
+        "self-test window (run 38881934636: the boot job took 6m28s)"
     )
 
 

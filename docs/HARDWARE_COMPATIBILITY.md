@@ -1,8 +1,9 @@
 # Hardware compatibility
 
-> **No hardware has been tested.** Every table below describes what AstraOS 0.1.0 is
-> *configured* to support, not what has been shown to work. The project has never booted
-> the image on any machine (`KNOWN_LIMITATIONS.md` §2).
+> **No physical hardware has been tested.** Every table below describes what AstraOS is
+> *configured* to support, not what has been shown to work. The image has booted only in
+> virtual machines — under QEMU in CI (run 38881934636, 2026-10-16) and by hand in
+> VirtualBox (2026-10-15) — never on physical hardware (`KNOWN_LIMITATIONS.md` §2).
 >
 > Treat this document as a list of expectations to test, not as a compatibility guarantee.
 

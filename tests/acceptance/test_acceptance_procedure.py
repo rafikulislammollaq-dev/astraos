@@ -197,8 +197,12 @@ def test_limitations_document_lists_the_untested_areas() -> None:
     doc = read(LIMITATIONS)
 
     assert "UNTESTED" in doc, "the limitations document does not use the UNTESTED marker"
-    assert re.search(r"no image has been (built or booted|built)", doc, re.I), (
-        "the limitations document does not state that no image has been built or booted"
+    assert re.search(r"no image has ever been installed", doc, re.I), (
+        "the limitations document does not state that no image has ever been installed"
+    )
+    assert re.search(r"no image has ever booted on physical\s+hardware", doc, re.I), (
+        "the limitations document does not state that no image has booted on physical "
+        "hardware"
     )
     assert "Secure Boot is not supported" in doc, (
         "the limitations document does not state that Secure Boot is unsupported"

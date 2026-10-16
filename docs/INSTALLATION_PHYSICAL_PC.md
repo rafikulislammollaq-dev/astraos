@@ -2,7 +2,7 @@
 
 > ## Do not do this yet
 >
-> AstraOS 0.1.0 Alpha has **never been booted**, the installer has **never been run**, and
+> AstraOS 0.1.0 Alpha has **never been booted on physical hardware**, the installer has **never been run**, and
 > **no hardware has been tested** (`KNOWN_LIMITATIONS.md` §2). Physical installation is a
 > later milestone and is gated on the VirtualBox acceptance procedure in
 > [`INSTALLATION_VIRTUALBOX.md`](INSTALLATION_VIRTUALBOX.md) passing first (plan §20).

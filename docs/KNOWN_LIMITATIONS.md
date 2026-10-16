@@ -11,41 +11,33 @@ and it should not be installed on a machine holding data you cannot lose.**
 
 ## 1. Release-level limitations
 
-### 1.1 No image has been built that passed validation, and none has been booted
+### 1.1 The image boots in CI; it has never been installed, and never booted on physical hardware
 
-The development machine is a Windows host whose WSL2 Linux environment cannot start, so
-image building happens in CI (`.github/workflows/build-iso.yml`). The state of the first
-deliverable, stated exactly:
+**No image has ever been installed to a disk, and no image has ever booted on physical
+hardware.** What has happened, with the record:
 
-- **No image has been built that passed structural validation.**
-- **2026-10-13, CI build (run 38411369641):** live-build completed successfully and
-  produced a 2.0 GB `astraos-0.1.0-alpha-amd64.iso` with the UEFI loader, the legacy BIOS
-  loader, GRUB configuration, kernel, initramfs and live filesystem all present. The build
-  was then failed by the repository's own structural validator, which could not read the
-  squashfs it had extracted (a defect in the validator's extraction, fixed the same day —
-  see the changelog). The image contents were therefore never inspected and the artifact
-  was rejected. The same build also spent ~24 minutes with apt's http method retrying one
-  stalled download in a 12.7-million-line loop; the transport settings that prevent that
-  are now set in the build configuration.
-- **2026-10-13, CI build (run 38449590880):** the earlier fixes held. The chroot hooks
-  passed, the image was packed (2.05 GB, `file(1)` reporting a bootable ISO 9660 image), and
-  this time the validator read the live filesystem: it extracted 1894 MiB, matching
-  `mksquashfs`'s own report of the filesystem it had built. It failed on nine checks, and all
-  nine were defects in the checks or in the medium's identity rather than in the image: eight
-  were a pipeline race in the validator's own component checks, and one was the medium naming
-  Debian. All of them are repaired (see the changelog), and the medium's description is now put
-  through the validator's own check by `tests/integration/test_iso_validator.py`, so the
-  branding half is verified without spending a build on it. The build log for this run is 715 KB rather than 1.9 GB, which is the apt
-  transport fix working.
-- **No image has passed structural validation yet.** The next CI build tests the pipeline
-  race repair, the medium identity hook and the corrected package check together.
-- **No ISO has ever been booted in a virtual machine;** the installer has never been run;
-  no installed system has ever booted. See `docs/INSTALLATION_VIRTUALBOX.md` for the
-  procedure that changes this.
+- **2026-10-16, CI boot self-test (run 38881934636, commit 8f81e3d): PASS.** The built ISO
+  booted under `qemu-system-x86_64` on a GitHub runner that provides no KVM — the CPU was
+  emulated — and the image's own self-test reported `RESULT: PASS (39 checks, 0 failed)`:
+  the console login prompt 143.7 s into the guest boot, LightDM active, an Xfce session
+  (xfwm4) running as the live user, every `astraos-*` package at its expected version, the
+  hardware, codec and compatibility tools, the Flathub remote, NetworkManager active with
+  an IPv4 address, and a real name resolved by DNS. The evidence artifact is
+  `astraos-boot-self-test` (`serial.log` is the record; the screenshot captured through
+  the QEMU monitor came back black — a capture defect, tracked in `CHANGELOG.md`). The
+  test starts the kernel and initrd taken from the ISO and attaches the ISO as the live
+  medium; the ISO's own boot menus are not exercised by CI yet.
+- **2026-10-16, CI build (run 38864588609): structural validation PASS** — 25/25 checks,
+  `structural=PASS` in the build manifest, image 2,432,696,320 bytes.
+- **2026-10-15, VirtualBox by hand:** the image booted from the live menu to the Xfce
+  desktop; the README's "What has been tested" records the details.
 
-**Consequence:** every statement in this repository about booting or installing is a
-statement of *intent backed by configuration*, not a report of a test. The build manifest
-records these items as `UNTESTED`.
+**Consequence:** statements about the live system booting in a virtual machine, and about
+the live session's networking, are now backed by recorded runs. Everything about
+*installing* — the installer, the installed system, disk encryption — and everything about
+*physical hardware* and *UEFI booting* is still a statement of *intent backed by
+configuration*, not a report of a test. The build manifest records those items as
+`UNTESTED`.
 
 ### 1.2 Secure Boot is not supported
 
@@ -92,19 +84,21 @@ one maintainer.
 
 ## 2. Untested areas
 
-Everything in this list is **UNTESTED**. None of it is known to work.
+Rows marked **UNTESTED** have never been exercised. Rows marked **CI** were exercised
+only inside CI, under QEMU emulation (run 38881934636, 2026-10-16) — never on physical
+hardware.
 
 | Area | Status | What testing it requires |
 |---|---|---|
-| Booting the live ISO | UNTESTED | A virtual machine or spare hardware |
+| Booting the live ISO | **CI PASS** (the ISO's kernel and initrd, the ISO as the live medium) | Physical hardware; the ISO's own boot menus |
 | Legacy BIOS boot | UNTESTED | A VM configured for BIOS |
 | UEFI boot | UNTESTED | A VM configured for UEFI |
-| Live desktop startup | UNTESTED | Booting the image |
+| Live desktop startup | **CI PASS** (LightDM active, Xfce session as `astra`) | Booting the image by hand and interacting |
 | Mouse, keyboard and display resolution in the live session | UNTESTED | Booting the image |
 | Live session applications (browser, file manager, terminal) | UNTESTED | Booting the image |
-| Network recognition in the live session | UNTESTED | Booting the image |
+| Network recognition in the live session | **CI PASS** (NetworkManager active, IPv4 address, DNS resolution) | Physical hardware |
 | Suspending and resuming | UNTESTED | Bare metal, ideally a laptop |
-| Rebooting and shutting down | UNTESTED | Booting the image |
+| Rebooting and shutting down | **CI, partly** (the self-test powers the machine off cleanly; reboot untested) | Booting the image |
 | Installer launch | UNTESTED | Booting the image |
 | Installer completing on a virtual disk | UNTESTED | A disposable virtual disk |
 | Installed system booting without the ISO | UNTESTED | Completing an installation |

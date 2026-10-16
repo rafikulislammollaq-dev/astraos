@@ -233,10 +233,13 @@ It needs `qemu-system-x86_64`, `python3`, and root (or `sudo`) for the loop moun
 is used when the host allows it; otherwise QEMU emulates the CPU — slower, not
 different.
 
-The emulated path is the slow one, and CI runs it: run 38871459329 (2026-10-16)
-measured 45 minutes of emulation that ended with LightDM still starting. The CI window
-(`--timeout 120`) and the guest's own wait for the session both carry margin over that
-measurement. A host with KVM does not pay the emulation cost.
+The emulated path is the slow one, and CI runs it. The first TCG attempt (run
+38871459329, 2026-10-16) never reported a result — a systemd ordering cycle had the
+self-test unit skipped (see `CHANGELOG.md`) — so that run did not measure the boot. The
+first green run (38881934636, 2026-10-16) did: login prompt at 143.7 s of guest time,
+`RESULT: PASS (39 checks, 0 failed)`, the whole boot job 6m28s on 4 vCPU / 4 GiB. The CI
+window (`--timeout 120`) and the guest's own wait for the session both carry generous
+margin over that. A host with KVM does not pay the emulation cost.
 
 ## 9. After a successful build
 

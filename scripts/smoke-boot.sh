@@ -172,10 +172,12 @@ else
 fi
 
 say "booting $ISO (self-test timeout ${TIMEOUT_MINUTES} min)"
-# Run 38871459329 put a number on the emulation: 45 minutes of boot with LightDM still
-# starting. Emulated boot is the CI path, so give the guest what the runner can spare -
-# four cores and 4 GiB let the parallel boot actually run in parallel, and zram is not
-# asked to make up for a memory shortage a test can simply avoid.
+# The first TCG attempt (run 38871459329) never reported a result - its self-test unit
+# was skipped by an ordering cycle - and the first green run (38881934636) clocked the
+# emulated boot: login prompt at ~144 s. Emulated boot is the CI path, so give the guest
+# what the runner can spare - four cores and 4 GiB let the parallel boot actually run in
+# parallel, and zram is not asked to make up for a memory shortage a test can simply
+# avoid.
 qemu-system-x86_64 "${ACCEL[@]}" \
     -m 4096 -smp 4 -vga std \
     -cdrom "$ISO" \

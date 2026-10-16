@@ -102,14 +102,15 @@ updated. Every step proven in CI or recorded as untested.
 - [x] **ISO builds in CI with structural validation.** 2026-10-16, run 38864588609:
   25/25 checks, `structural=PASS`, 2,432,696,320 bytes. Live boot by hand in
   VirtualBox, 2026-10-15.
-- [ ] **CI boot self-test green.** The first attempt (run 38864588609) failed on a
-  bug in the test harness, not the image: `findiso` was passed to the guest,
-  live-boot loop-mounted the squashfs as if it were an ISO and never found the
-  medium (see `CHANGELOG.md`). Fixed; the next green run is the proof. When green,
-  every build proves: boot to the desktop, the Xfce session, the `astraos-*`
-  package set, the hardware and codec stack, the Flathub remote, NetworkManager
-  and — as one of its checks — a real hostname lookup, so the 0.1.0 DNS defect
-  cannot return silently.
+- [x] **CI boot self-test green.** 2026-10-16, run 38881934636 (commit 8f81e3d): the
+  built ISO booted under QEMU **emulation** — the runner has no KVM — and the image's
+  self-test reported `PASS (39 checks, 0 failed)`: console login prompt at 143.7 s,
+  LightDM active, the Xfce session as user `astra`, the full `astraos-*` package set,
+  the hardware and codec stack, the Flathub remote, NetworkManager and — as one of its
+  checks — a real hostname lookup, so the 0.1.0 DNS defect cannot return silently. Two
+  harness defects were fixed to get here (`findiso`; a systemd ordering cycle, see
+  `CHANGELOG.md`). The test boots the ISO's kernel with the ISO as its live medium;
+  exercising the syslinux and GRUB boot menus remains open (below).
 - [ ] **Calamares installer end to end in a VM**, and the installed system boots.
   openQA is the established tool for driving an installer in CI; the manual
   procedure in `docs/INSTALLATION_VIRTUALBOX.md` stays until then.
@@ -129,7 +130,9 @@ updated. Every step proven in CI or recorded as untested.
   Document the firmware configurations that are actually known to boot. Until a
   machine reports otherwise, the README keeps "Secure Boot is not supported".
 - [ ] **The HUD on a booted image's screen.** The boot self-test's screenshot is
-  the first version of this evidence.
+  meant to be the first version of this evidence; the first green run's screenshot
+  came back black (a capture defect — see `CHANGELOG.md`), so making the capture show
+  the desktop comes first.
 - [ ] **A recovery procedure that has been performed**: snapshot, break, restore,
   in a VM, with Timeshift.
 
