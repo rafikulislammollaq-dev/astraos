@@ -211,6 +211,13 @@ def test_the_guest_driver_keeps_the_output_contract() -> None:
     assert "systemctl poweroff" in driver, (
         "the power-off is the caller's signal that the guest is finished"
     )
+    assert "XAUTHORITY=${SESSION_XAUTH:-/home/${LIVE_USER}/.Xauthority}" in driver, (
+        "the driver must prefer the session's own X authority (its /proc environ) and "
+        "fall back to the live account's home, not guess between them"
+    )
+    assert 'say "session XAUTHORITY: $XAUTHORITY"' in driver, (
+        "the chosen X authority must be printed into the evidence"
+    )
 
 
 def test_the_self_test_has_an_installed_mode() -> None:

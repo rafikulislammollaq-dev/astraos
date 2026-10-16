@@ -110,9 +110,19 @@ sha256sum "$MODULES/partition.conf" "$MODULES/users.conf" "$SEED/settings-instal
 rm -f "$SEED/done" "$SEED/calamares-console.log" "$SEED/calamares-session.log"
 
 # --- run the installer -----------------------------------------------------------------
-XAUTHORITY="/home/${LIVE_USER}/.Xauthority"
+# Calamares runs as root and must borrow the live session's X cookie. The session's own
+# environment is the truth (the window manager's /proc environ); the copy in the live
+# account's home is the fallback the self-test's live-mode checks already rely on. The
+# value is printed so a failure here is readable in the evidence instead of guessed at.
+SESSION_PID=$(pgrep -u "$LIVE_USER" xfwm4 | head -n 1 || true)
+SESSION_XAUTH=""
+if [ -n "$SESSION_PID" ] && [ -r "/proc/$SESSION_PID/environ" ]; then
+    SESSION_XAUTH=$(tr '\0' '\n' < "/proc/$SESSION_PID/environ" | sed -n 's/^XAUTHORITY=//p' | head -n 1)
+fi
+XAUTHORITY=${SESSION_XAUTH:-/home/${LIVE_USER}/.Xauthority}
 export DISPLAY=:0
 export XAUTHORITY
+say "session XAUTHORITY: $XAUTHORITY"
 live_uid=$(id -u "$LIVE_USER" 2>/dev/null || true)
 if [ -n "$live_uid" ] && [ -d "/run/user/$live_uid" ]; then
     export XDG_RUNTIME_DIR="/run/user/$live_uid"
