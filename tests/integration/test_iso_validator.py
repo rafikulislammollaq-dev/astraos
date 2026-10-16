@@ -50,7 +50,7 @@ MEDIUM_HOOK = (
     / "0800-disk-info.hook.binary"
 )
 
-# The components the validator looks for inside the live filesystem: the same nine paths,
+# The components the validator looks for inside the live filesystem: the same paths,
 # spelled the way `unsquashfs -l` prints them under its `squashfs-root/` prefix.
 COMPONENTS = [
     "usr/bin/astraos-info",
@@ -62,6 +62,12 @@ COMPONENTS = [
     "usr/share/plymouth/themes/astraos",
     "usr/share/astraos/wallpapers",
     "var/lib/dpkg/info/astraos-base",
+    "usr/bin/astraos-hud",
+    "usr/lib/astraos-hud/astraos_hud/__init__.py",
+    "usr/bin/astra-ai",
+    "usr/share/astraos/ai/knowledge",
+    "var/lib/dpkg/info/astraos-hud",
+    "var/lib/dpkg/info/astraos-ai",
 ]
 
 COMPONENT_DESCRIPTIONS = [
@@ -74,6 +80,12 @@ COMPONENT_DESCRIPTIONS = [
     "the AstraOS Plymouth theme",
     "the AstraOS wallpaper",
     "the astraos-base package",
+    "the AstraOS HUD launcher",
+    "the AstraOS HUD application",
+    "the assistant command",
+    "the assistant knowledge corpus",
+    "the astraos-hud package",
+    "the astraos-ai package",
 ]
 
 ASTRAOS_MEDIUM = "AstraOS 0.1.0 alpha (amd64, based on Debian 13) amd64 LIVE Binary 20261014-00:00"
@@ -243,8 +255,8 @@ def test_a_missing_component_is_still_reported_missing() -> None:
     """The checks must fail when something really is absent.
 
     Without this, a repair that made every check pass unconditionally would pass the test
-    above — which is the failure mode this whole file exists to prevent. Note that the other
-    eight components must still be reported present: a wholesale failure is not a check.
+    above — which is the failure mode this whole file exists to prevent. Note that every
+    other component must still be reported present: a wholesale failure is not a check.
     """
     absent = "usr/bin/astraos-info"
     with tempfile.TemporaryDirectory() as directory:
@@ -304,7 +316,7 @@ def test_a_listing_that_cannot_be_interpreted_fails_once() -> None:
         "an uninterpretable listing was not reported:\n" + output
     )
     assert "does NOT contain" not in output, (
-        "an uninterpretable listing was reported as nine missing components, which blames the "
+        "an uninterpretable listing was reported as missing components, which blames the "
         "image for a defect in the validator:\n" + output
     )
     assert result.returncode != 0, "the validator accepted an image it could not inspect"

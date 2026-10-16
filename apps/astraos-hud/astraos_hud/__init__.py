@@ -3,11 +3,13 @@
 Package layout note
 -------------------
 The application is installed as a plain importable package under
-``/usr/lib/astraos-hud`` and launched by a one-line shim in ``/usr/bin``:
+``/usr/lib/astraos-hud`` and launched by a POSIX shell shim in ``/usr/bin`` that
+puts that directory on PYTHONPATH and runs ``python3 -m astraos_hud`` - the same
+``__main__.py`` entry point the source tree is run with during development:
 
-    #!/usr/bin/env python3
-    import sys; sys.path.insert(0, '/usr/lib/astraos-hud')
-    from astraos_hud import main; main.main()
+    ASTRAOS_HUD_LIB="/usr/lib/astraos-hud"
+    PYTHONPATH="${ASTRAOS_HUD_LIB}${PYTHONPATH:+:${PYTHONPATH}}"
+    exec python3 -m astraos_hud "$@"
 
 Nothing here imports GTK at module scope. ``import astraos_hud.systemdata`` must
 keep working on a build host with no PyGObject installed at all — the data layer
@@ -37,7 +39,13 @@ APP_NAME = "AstraOS HUD"
 
 
 def main(argv: Any = None) -> int:
-    """Run the HUD. Imported lazily so the package stays GTK-free on import."""
-    from . import main as _main
+    """Run the HUD. Imported lazily so the package stays GTK-free on import.
 
-    return _main.main(argv)
+    ``from .main import main`` rather than ``from . import main``: this function is
+    named ``main`` and is bound on the package, so ``from . import main`` would find
+    the function itself (the package attribute shadows the submodule) and the call
+    below would raise AttributeError. The submodule has to be named explicitly.
+    """
+    from .main import main as _run
+
+    return _run(argv)

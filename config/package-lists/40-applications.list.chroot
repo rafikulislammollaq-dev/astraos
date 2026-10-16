@@ -53,6 +53,15 @@ libreoffice-writer
 
 python3
 python3-gi
+# The GTK 3 typelib and the Cairo text bindings. astraos-hud imports
+# gi.repository.Gtk, Pango and PangoCairo to draw every panel, and live-build
+# installs with --no-install-recommends, so the package's own Recommends is not
+# enough to put them in the image: without them the HUD fails to import.
+gir1.2-gtk-3.0
+python3-gi-cairo
+# The embedded terminal in the HUD's MAIN SHELL region. Without it the region
+# shows why it is unavailable; with it, it is a real shell.
+gir1.2-vte-3.91
 python3-apt
 python3-dbus
 python3-pycurl

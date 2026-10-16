@@ -17,7 +17,7 @@ Debian release, and not a website pretending to be an operating system.
 | 1 | Source tree and static checks pass | Yes |
 | 2 | ISO builds in CI | Yes (Build ISO run #26, 2026-10-13, about 13 minutes, ISO about 2.15 GB) |
 | 3 | ISO boots in a virtual machine | **Yes** (VirtualBox, live session, 2026-10-15) |
-| 4 | Network and browser work out of the box | **Partly.** Browser works after a DNS workaround (see Known issues) |
+| 4 | Network and browser work out of the box | **Cause fixed in the source.** The last boot-tested ISO predates the fix; see Known issues |
 | 5 | Installer runs and installed system boots | Not tested yet |
 | 6 | Tested on physical hardware | Not tested yet |
 | 7 | Secure Boot, signed images, stable release | Not supported |
@@ -39,7 +39,8 @@ Tested by hand on 2026-10-15 in Oracle VirtualBox on a Windows 11 host
 - Firefox loads websites once DNS is configured (YouTube loaded in the test).
 
 Not tested: the installer, installing to disk, Wi-Fi, GPUs, physical machines,
-UEFI boot, audio, printing, Bluetooth.
+UEFI boot, audio, printing, Bluetooth, and the on-screen rendering of the AstraOS
+HUD and the assistant's web page (both packaged and statically tested only).
 
 ---
 
@@ -55,6 +56,8 @@ and recommended packages.
 | Kernel | Debian `linux-image-amd64` (6.12 series), plus kernel headers |
 | Init | systemd |
 | Desktop | Xfce, configured and branded |
+| Session dashboard | AstraOS HUD (`astraos-hud`): one full-screen window with live CPU, memory, network, disk and temperature panels, an on-screen keyboard and an embedded terminal, started from its menu entry or launcher |
+| Assistant | `astraos-ai`: an opt-in local assistant with a three-tier model ladder and a shipped skills/knowledge library. No model is bundled and nothing runs until one is installed (`docs/AI.md`) |
 | Display manager | LightDM (GTK greeter) |
 | Display server | X11 |
 | Boot splash | Plymouth, AstraOS theme |
@@ -196,6 +199,7 @@ astraos/
 ├── config/           distribution settings, branding, package lists, live-build config and hooks
 ├── branding/         original artwork and the asset renderer
 ├── desktop/          Xfce configuration, launchers, autostart, GTK theme
+├── apps/             runnable applications packaged from this tree (astraos-hud)
 ├── packages/         AstraOS .deb packages and their sources
 ├── system/           identity files and kernel/security default templates
 ├── installer/        Calamares configuration and branding
@@ -212,13 +216,18 @@ of HTML, CSS and Make. The operating system itself comes from Debian packages.
 
 ## Roadmap
 
-1. Fix DNS so networking works out of the box, and add a validator check for it.
-2. Confirm the ISO passes structural validation in CI.
+1. ~~Fix DNS so networking works out of the box~~ **Done in 0.2.0**: `resolvconf` was
+   removed from the package list and `tests/static/test_packages.py` keeps it out.
+2. ~~Confirm the ISO passes structural validation in CI~~ **Done** (build run #26 records
+   `structural=PASS`).
 3. Test the Calamares installer: install to a VM disk and boot the installed system.
 4. Reduce ISO size (turn off APT recommends, trim firmware and large optional apps).
 5. Add Guest Additions support for VMs.
 6. Test on physical hardware.
-7. Decide what makes AstraOS different from other Xfce distros.
+7. Prove the AstraOS HUD on a real screen. It is packaged, launched from the menu and
+   covered by static tests, but its rendering has not yet been seen on a display.
+8. Run the assistant end to end with a real model
+   (`astra-ai setup --model spark-x2.5-1.7b-q4_k_m`), and reach its page from a phone.
 
 ---
 

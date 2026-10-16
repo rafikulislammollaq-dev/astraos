@@ -304,6 +304,19 @@ AI_STAGE="$(stage_package astraos-ai)"
 # machines have no business fetching a gigabyte of model per ISO, and because a
 # distribution that ships the model silently has decided for the user.
 
+say "assembling astraos-hud"
+HUD_STAGE="$(stage_package astraos-hud)"
+# The HUD is a runnable application, so its source lives in apps/astraos-hud rather than in
+# the package's own root/ tree. It is installed as an importable package under
+# /usr/lib/astraos-hud, which is exactly the directory the /usr/bin/astraos-hud shim puts on
+# PYTHONPATH. Those two paths are one decision written in two places, so
+# tests/static/test_astra_hud.py pins them together: if they drift the launcher dies on
+# ImportError and nothing else in the repository notices.
+mkdir -p "${HUD_STAGE}/usr/lib/astraos-hud"
+cp -a "${REPO_ROOT}/apps/astraos-hud/astraos_hud" "${HUD_STAGE}/usr/lib/astraos-hud/"
+# A local run of the application can leave __pycache__ behind; it is not part of the package.
+find "${HUD_STAGE}/usr/lib/astraos-hud" -type d -name '__pycache__' -prune -exec rm -rf {} +
+
 say "assembling astraos-branding"
 BRAND_STAGE="$(stage_package astraos-branding)"
 require_dir() { [ -e "$1" ] || die "branding asset missing: $1 (run branding/tools/render_assets.py)"; }
@@ -418,7 +431,7 @@ cp -a "${REPO_ROOT}/desktop/launchers/." "${DESKTOP_STAGE}/usr/share/application
 # the same trap that once made the build ship a non-executable astraos-info - so the
 # bit is applied to the staged copy.
 mkdir -p "${DESKTOP_STAGE}/etc/skel/Desktop"
-for entry in astraos-installer astraos-welcome; do
+for entry in astraos-installer astraos-welcome astraos-hud; do
     cp -f "${DESKTOP_STAGE}/usr/share/applications/${entry}.desktop" \
           "${DESKTOP_STAGE}/etc/skel/Desktop/"
 done
@@ -496,6 +509,7 @@ DEBS+=("$(finish_package astraos-base "$BASE_STAGE")")
 DEBS+=("$(finish_package astraos-system-tools "$TOOLS_STAGE")")
 DEBS+=("$(finish_package astraos-winbridge "$WINBRIDGE_STAGE")")
 DEBS+=("$(finish_package astraos-ai "$AI_STAGE")")
+DEBS+=("$(finish_package astraos-hud "$HUD_STAGE")")
 DEBS+=("$(finish_package astraos-branding "$BRAND_STAGE")")
 DEBS+=("$(finish_package astraos-desktop "$DESKTOP_STAGE")")
 DEBS+=("$(finish_package astraos-installer "$INSTALLER_STAGE")")

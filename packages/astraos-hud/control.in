@@ -1,0 +1,29 @@
+Package: @@PACKAGE@@
+Version: @@VERSION@@
+Architecture: @@ARCH@@
+Maintainer: @@VENDOR@@ <maintainers@astraos.invalid>
+Section: x11
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: astraos-base (>= @@VERSION@@), python3 (>= 3.11), python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, coreutils, procps
+Recommends: gir1.2-vte-3.91, fonts-dejavu-core
+Description: AstraOS full-screen system dashboard
+ The AstraOS HUD is the session's overview surface: one full-screen window that
+ shows what the machine is doing at a glance. It is drawn with GTK 3 and Cairo
+ and reads its numbers straight from /proc and /sys, with no third-party Python
+ package - there is no psutil in the image.
+ .
+  * CPU, per-core load, memory, swap, load average and the top processes
+  * per-interface network traffic, latency and a rolling traffic graph
+  * mounted filesystems and their usage, disk I/O and temperatures
+  * the clock, uptime and battery state, in the AstraOS palette
+ .
+ It is started by hand or from its launcher. It is not a system service, it
+ registers no autostart entry, and nothing starts it at boot, so it costs the
+ session nothing until it is asked for.
+ .
+ A value that cannot be measured - no battery, no thermal zone, a counter with
+ only one sample - is shown as a dash rather than invented, so a number on screen
+ is always something the kernel actually reported. The embedded terminal appears
+ only when gir1.2-vte-3.91 is installed; without it the HUD starts anyway and
+ says so instead of failing.

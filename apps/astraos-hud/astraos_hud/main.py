@@ -1,12 +1,13 @@
 """Entry point for astraos-hud.
 
-Installed as a one-line shim rather than a console script, because the image has
-no pip and no setuptools step to generate one:
+Installed as an importable package under ``/usr/lib/astraos-hud`` and started by
+a POSIX shell shim in ``/usr/bin`` that puts that directory on PYTHONPATH and
+runs ``python3 -m astraos_hud`` - the same entry point the source tree is run
+with during development, so there is exactly one code path:
 
-    #!/usr/bin/env python3
-    import sys; sys.path.insert(0, '/usr/lib/astraos-hud')
-    from astraos_hud import main
-    raise SystemExit(main.main())
+    ASTRAOS_HUD_LIB="/usr/lib/astraos-hud"
+    PYTHONPATH="${ASTRAOS_HUD_LIB}${PYTHONPATH:+:${PYTHONPATH}}"
+    exec python3 -m astraos_hud "$@"
 
 This module therefore owns exactly three things: the command line, the
 single-instance guard, and the Gtk.main() call. Everything else lives in

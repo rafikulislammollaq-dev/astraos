@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=AstraOS HUD
+Comment=The full-screen AstraOS dashboard: CPU, memory, network, disks and temperature
+Comment[en]=The full-screen AstraOS dashboard: CPU, memory, network, disks and temperature
+Exec=astraos-hud
+Icon=astraos-logo
+Terminal=false
+Categories=System;Monitor;Utility;
+Keywords=AstraOS;HUD;system;monitor;dashboard;cpu;memory;network;disk;temperature;
+StartupNotify=true

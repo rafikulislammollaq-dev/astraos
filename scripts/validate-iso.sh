@@ -237,6 +237,15 @@ if command -v unsquashfs >/dev/null 2>&1 && command -v xorriso >/dev/null 2>&1; 
         # image containing no AstraOS package at all: it proved nothing. dpkg writes
         # /var/lib/dpkg/info/<package>.* only for a package it has actually installed.
         check_in_squashfs "the astraos-base package"        'squashfs-root/var/lib/dpkg/info/astraos-base'
+        # The two applications that make the live session what it is: the dashboard and the
+        # assistant. They ship in their own packages, so a build that silently dropped
+        # either one would pass every check above while the icon in the menu did nothing.
+        check_in_squashfs "the AstraOS HUD launcher"        'squashfs-root/usr/bin/astraos-hud'
+        check_in_squashfs "the AstraOS HUD application"     'squashfs-root/usr/lib/astraos-hud/astraos_hud/__init__.py'
+        check_in_squashfs "the assistant command"           'squashfs-root/usr/bin/astra-ai'
+        check_in_squashfs "the assistant knowledge corpus"  'squashfs-root/usr/share/astraos/ai/knowledge'
+        check_in_squashfs "the astraos-hud package"         'squashfs-root/var/lib/dpkg/info/astraos-hud'
+        check_in_squashfs "the astraos-ai package"          'squashfs-root/var/lib/dpkg/info/astraos-ai'
         fi
     fi
 else

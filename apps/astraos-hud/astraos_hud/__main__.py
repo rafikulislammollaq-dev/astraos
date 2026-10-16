@@ -5,13 +5,20 @@ with no install step and no generated console script:
 
     cd apps/astraos-hud && python3 -m astraos_hud --windowed
 
-On a real install the shim in /usr/bin does the same thing by putting
-/usr/lib/astraos-hud on sys.path and calling :func:`astraos_hud.main.main`.
+On a real install the shim in /usr/bin runs exactly this module
+(``python3 -m astraos_hud``), so there is one entry point rather than two.
+
+The import is ``from .main import main``, not ``from . import main``. The package
+``__init__`` binds a *function* named ``main`` as its public entry point, and a
+function bound on the package shadows the ``main`` submodule for ``from . import
+main`` - which therefore returned the function, so ``main.main()`` raised
+AttributeError and the HUD could not start at all. Naming the submodule reaches
+the module unambiguously.
 """
 
 from __future__ import annotations
 
-from . import main
+from .main import main
 
 if __name__ == "__main__":
-    raise SystemExit(main.main())
+    raise SystemExit(main())
