@@ -151,6 +151,17 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- **The firewall's port check reads the `ufw status` listing ufw actually prints (its
+  first run proved the firewall and failed on its own spelling).** Run 38903678646
+  ended the boot self-test at `51 checks, 1 failed`: `firewall-page-allowed` demanded
+  `8765/tcp … ALLOW IN …` from plain `ufw status`, but the shipped ufw (0.36.2,
+  `backend_iptables.py`) blanks the direction column outside verbose mode — a check
+  that could never pass, while the behaviour it stands for was proven in the same run:
+  the host's probe of an unallowed port died at the firewall, the guest recorded no
+  arrival, and the assistant's page answered a private-range connection. The check now
+  reads `ufw status verbose` (one call, shared with the default-policy check) and
+  prints the rows it saw when it fails.
+
 - **The installer's configuration is made true (source; its first end-to-end run is
   pending).** Every key in `installer/calamares/settings.conf` and `users.conf` was
   checked against the exact Calamares Debian 13 ships (the 3.3.14 sources), and three

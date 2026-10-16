@@ -151,8 +151,12 @@ therefore not covered until the user widens the rule:
 
 `/etc/ufw/astraos-policy.conf` (shipped in the image) says the same thing where the
 rules live. The default-on decision, its reasons and the self-test exercise that
-proves it are recorded in `docs/ROADMAP.md`; the exercise was added 2026-10-16 and
-its first run was pending at the time of writing.
+proves it are recorded in `docs/ROADMAP.md`; the exercise was added 2026-10-16. Its
+first run (38903678646) proved the behavioural half — under the host's probe a port
+no rule allows stayed unreached while the assistant's page answered a private-range
+connection — and failed one static check that demanded a `ufw status` spelling ufw
+never prints; the check now reads the verbose listing, and the next run carries the
+fix.
 
 ### 3.6 The installer module set is minimal
 

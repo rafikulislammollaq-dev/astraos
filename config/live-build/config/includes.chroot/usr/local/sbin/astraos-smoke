@@ -172,7 +172,13 @@ run "dns" getent hosts deb.debian.org
 # page and mDNS (what finds printers). The behavioural half of the proof is inside the
 # phone section: a port no rule allows is watched there while the caller of this script
 # deliberately probes it from outside.
-ufw_status=$(ufw status 2>/dev/null || true)
+#
+# The rule check reads `ufw status verbose`, not plain `ufw status`: the direction ("IN")
+# is part of the Action column only in verbose mode (the shipped ufw 0.36.2 blanks it
+# otherwise). The check's first CI run (38903678646) failed on exactly that spelling
+# while the rule was provably enforced - a check must read what the tool prints, not
+# what one remembers.
+ufw_status=$(ufw status verbose 2>/dev/null || true)
 case "$ufw_status" in
     "Status: active"*)
         ok "firewall-active" "ufw reports active"
@@ -182,16 +188,17 @@ case "$ufw_status" in
         ;;
 esac
 
-if ufw status verbose 2>/dev/null | grep -q '^Default: deny (incoming)'; then
+if printf '%s\n' "$ufw_status" | grep -q '^Default: deny (incoming)'; then
     ok "firewall-default-deny" "incoming is denied unless a rule allows it"
 else
     bad "firewall-default-deny" "the default incoming policy is not deny"
 fi
 
-if printf '%s\n' "$ufw_status" | grep -Eq '^8765/tcp[[:space:]]+ALLOW IN[[:space:]]+192\.168\.0\.0/16'; then
+if printf '%s\n' "$ufw_status" | grep -qE '^8765/tcp[[:space:]]+ALLOW IN[[:space:]]+192\.168\.0\.0/16'; then
     ok "firewall-page-allowed" "the assistant's port is reachable from local networks"
 else
-    bad "firewall-page-allowed" "8765/tcp from 192.168.0.0/16 is not in ufw status"
+    rows=$(printf '%s\n' "$ufw_status" | grep -E '^8765/tcp|^5353/' | tr '\n' ';')
+    bad "firewall-page-allowed" "8765/tcp from 192.168.0.0/16 is not in ufw status (rows ufw showed: ${rows:-none})"
 fi
 
 # --- 9. the phone page (only when the caller asked: astraos.phone=1) -----------------

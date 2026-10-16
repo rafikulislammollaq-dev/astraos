@@ -376,6 +376,16 @@ def test_the_guest_proves_the_firewall_is_on_and_blocking() -> None:
     text = _text(GUEST_SCRIPT)
     for marker in ("firewall-active", "firewall-default-deny", "firewall-page-allowed"):
         assert marker in text, f"the self-test no longer asserts {marker}"
+    assert "ufw_status=$(ufw status verbose" in text, (
+        "the rule checks must read `ufw status verbose`: plain `ufw status` blanks the "
+        "direction column, so `ALLOW IN` never appears there. The check's first run "
+        "(38903678646) failed on exactly that spelling while the rule was provably "
+        "enforced - a check must read what the tool prints"
+    )
+    assert "rows ufw showed" in text, (
+        "a failing rule check must print the rows it saw, or the next failure costs "
+        "another CI cycle to diagnose"
+    )
     assert 'sock.bind(("0.0.0.0", 8766))' in text, (
         "the guest watches a port nothing allows; the host's probe of it must die at "
         "the firewall and be counted there"
