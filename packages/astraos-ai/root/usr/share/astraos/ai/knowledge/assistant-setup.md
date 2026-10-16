@@ -39,10 +39,15 @@ should take.
 The runtime is the `llama-server` binary, on `PATH` or in the assistant's own bin
 directory. `astra-ai setup --build llama` builds it from upstream source, and there is a
 real reason to prefer that over downloading a release binary: on this class of CPU - AVX
-but no AVX2, no F16C - a prebuilt binary dies immediately with an illegal instruction,
-and the build only takes a few minutes. The build script deliberately passes
-`-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=OFF -DGGML_F16C=OFF -DGGML_AVX512=OFF
--DGGML_BLAS=OFF`, which compiles for exactly the instructions the machine has; the same
+but no AVX2, no F16C, no FMA, no BMI2 - a prebuilt binary dies immediately with an illegal
+instruction, and the build only takes a few minutes. The build deliberately passes
+`-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_BMI2=OFF
+-DGGML_F16C=OFF -DGGML_AVX512=OFF -DGGML_BLAS=OFF -DBUILD_SHARED_LIBS=OFF`, which
+compiles for exactly the instructions the machine has. FMA and BMI2 matter as much as
+AVX2: they are Haswell features and the build enables them by default even with AVX2
+switched off, which produced a server that died with SIGILL and no output at all on the
+first model it loaded. The last flag makes the installed program one self-contained file
+instead of an executable that still needs the build tree for its libraries. The same
 applies to whisper with `astra-ai setup --build whisper` (or `--build all` for both).
 Voice needs one more thing: `astra-ai setup --voice` covers espeak-ng for speaking and a
 whisper model for transcribing, and `astra ai say TEXT` speaks a line through the

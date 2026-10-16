@@ -21,11 +21,26 @@ Why no sudo, anywhere:
 Why the build flags are what they are:
 
     The machine this release is tested on is a Sandy Bridge: AVX is present,
-    AVX2 and F16C are not. llama.cpp and whisper.cpp both compile for the
-    host's features by default (-DGGML_NATIVE=ON), which produces a binary
-    that dies with "Illegal instruction" on the reference machine when the
-    build happened on a newer one. The flags below pin the instruction set
-    explicitly: AVX on, AVX2 off, F16C off, AVX512 off.
+    AVX2, F16C, FMA and BMI2 are not. llama.cpp and whisper.cpp both compile
+    for the host's features by default (-DGGML_NATIVE=ON), which produces a
+    binary that dies with "Illegal instruction" on the reference machine when
+    the build happened on a newer one. The flags below pin the instruction set
+    explicitly: AVX on, AVX2 off, F16C off, FMA off, BMI2 off, AVX512 off.
+
+    FMA and BMI2 are not optional extras of the AVX2 switch. With only
+    GGML_AVX2=OFF, CMake still turns GGML_FMA and GGML_BMI2 on by default -
+    measured on 2026-10-16, when the first real end-to-end run died with
+    SIGILL (exit 132) and not one line of output, because the model loader
+    reached an FMA instruction before it printed anything. A build that
+    configures cleanly, links cleanly and then dies silently on the machine it
+    was made for is the exact failure this list exists to prevent.
+
+    BUILD_SHARED_LIBS=OFF makes the installed program self-contained.
+    llama.cpp builds shared libraries whose RPATH points into the build tree,
+    so a copied llama-server starts only while src/llama-build is still there:
+    delete that tree to reclaim the disk space, and the assistant's engine
+    stops loading its own libraries. The static binary is one file, about
+    8 MB, with nothing outside bin_dir to depend on.
 """
 
 from __future__ import annotations
@@ -56,9 +71,21 @@ CPU_FLAGS = [
     "-DGGML_NATIVE=OFF",
     "-DGGML_AVX=ON",
     "-DGGML_AVX2=OFF",
+    # FMA and BMI2 arrived with Haswell, the same generation as AVX2, and ggml
+    # turns both on by default even when GGML_AVX2 is off. Leaving them out is
+    # not a theoretical mistake: on the Sandy Bridge reference machine the
+    # server configured, built, and then died with SIGILL and zero output on
+    # the first tensor it loaded, because the log is empty until the model is
+    # in memory. Measured 2026-10-16.
+    "-DGGML_FMA=OFF",
+    "-DGGML_BMI2=OFF",
     "-DGGML_F16C=OFF",
     "-DGGML_AVX512=OFF",
     "-DGGML_BLAS=OFF",
+    # One self-contained file: see the module docstring. A shared build copied
+    # out of the build tree keeps an RPATH into it and stops working as soon as
+    # the tree is gone.
+    "-DBUILD_SHARED_LIBS=OFF",
 ]
 
 # The models that may be installed, as a three-tier ladder rather than one
@@ -498,7 +525,9 @@ def build_tools(which: str) -> None:
         source = _config.PATHS.bin_dir / "src" / (target + ".cpp")
         build = _config.PATHS.bin_dir / "src" / (target + "-build")
 
-        print(f"building {target} (AVX on, AVX2 off, F16C off: this CPU has no AVX2)")
+        print(
+            f"building {target} (AVX on; AVX2, F16C, FMA and BMI2 off; static binary)"
+        )
         if (source / ".git").is_dir():
             print(f"  source already at {source}; updating it")
             _run(["git", "-C", str(source), "pull", "--ff-only"])

@@ -114,9 +114,16 @@ class Engine:
                 "astra-ai setup --build llama"
             )
         if self.model() is None:
+            # The same advice tiers.ready_message() gives, built from the
+            # ladder instead of typed out: a literal here drifts from the
+            # catalogue the moment a model is replaced, and the user is then
+            # told to install something `astra-ai setup` no longer sells.
+            # tiers imports this module, so the import is local.
+            from .tiers import REQUIRED_TIER, TIERS
+
             return (
                 "no model is installed - install one with: "
-                "astra-ai setup --model qwen2.5-1.5b-instruct-q4_k_m"
+                f"astra-ai setup --model {TIERS[REQUIRED_TIER]['prefer'][0]}"
             )
         return ""
 

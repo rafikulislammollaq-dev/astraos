@@ -1466,3 +1466,58 @@ def test_the_cli_is_executable_in_git() -> None:
         f"astra-ai is mode {mode} in git, so a checkout on Linux gets a file "
         "that cannot be executed - the assistant becomes a command that is not "
         "there")
+
+
+# ---------------------------------------------------------------------------
+# Build flags
+# ---------------------------------------------------------------------------
+
+
+def _cpu_flags() -> dict[str, str]:
+    """CPU_FLAGS as a mapping, so a test can ask about one switch."""
+    out: dict[str, str] = {}
+    for flag in ai_setup.CPU_FLAGS:
+        if flag.startswith("-D") and "=" in flag:
+            name, value = flag.split("=", 1)
+            out[name] = value
+    return out
+
+
+def test_the_build_flags_never_ask_for_instructions_this_cpu_lacks() -> None:
+    """The reference CPU has avx and sse4_2, and nothing else.
+
+    Measured 2026-10-16: with only GGML_AVX2 off, CMake still enabled
+    GGML_FMA and GGML_BMI2. Both are Haswell features, the same generation as
+    AVX2, and the freshly installed llama-server died with SIGILL (exit 132)
+    before its first log line - which is why the log file was empty and the
+    failure looked like nothing had happened at all.
+    """
+    flags = _cpu_flags()
+    for feature in ("GGML_AVX2", "GGML_F16C", "GGML_FMA", "GGML_BMI2", "GGML_AVX512"):
+        assert flags.get(f"-D{feature}") == "OFF", (
+            f"{feature} is not pinned off, so a build that configures and "
+            "links cleanly still dies with Illegal instruction on the machine "
+            f"this release is tested on: {ai_setup.CPU_FLAGS!r}")
+    assert flags.get("-DGGML_AVX") == "ON", (
+        "AVX is present on the reference CPU; turning it off makes every "
+        "question needlessly slow")
+    assert flags.get("-DGGML_NATIVE") == "OFF", (
+        "GGML_NATIVE=ON compiles for whatever CPU the build machine happens "
+        "to have instead of the one the binary will run on, which is the same "
+        f"defect one level up: {ai_setup.CPU_FLAGS!r}")
+
+
+def test_the_installed_engine_is_self_contained() -> None:
+    """A shared build keeps an RPATH into the build tree it was copied from.
+
+    The installed llama-server would load libllama.so and the ggml libraries
+    from bin_dir/src/llama-build - and stop starting the moment that tree is
+    removed, which is the first thing anyone does to reclaim the disk space
+    after a build. BUILD_SHARED_LIBS=OFF makes the installed file the whole
+    program, with nothing outside bin_dir to depend on.
+    """
+    flags = _cpu_flags()
+    assert flags.get("-DBUILD_SHARED_LIBS") == "OFF", (
+        "the build does not ask for a static binary, so the installed "
+        "llama-server still points at the build tree for its libraries: "
+        f"{ai_setup.CPU_FLAGS!r}")
