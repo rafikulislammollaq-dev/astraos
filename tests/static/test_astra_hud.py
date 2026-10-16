@@ -205,3 +205,59 @@ def test_the_application_still_imports_without_gtk() -> None:
         "astraos_hud imports but declares no __version__; the release identity check in "
         "test_config.py reads it"
     )
+
+
+def _code_only(path: Path) -> str:
+    """The file with docstrings and comment lines removed.
+
+    Two of the checks below forbid a *call* whose name appears in the prose that
+    explains why the call is forbidden, so the scan has to look at code only.
+    """
+    text = re.sub(r'"""(?:.|\n)*?"""', "", path.read_text(encoding="utf-8"))
+    return "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
+def test_no_pango_markup_carries_a_css_length() -> None:
+    """A Pango markup size is a number, never a CSS length: "56px" is a parse error.
+
+    Regression test for the first on-screen run (Xvfb, 2026-10-16). The clock
+    label and the prompt label were built with font_size='56px' and '10px'; GTK
+    refused every set_markup() call with "could not be parsed", so the clock
+    showed its placeholder and the prompt showed nothing. A CSS length is valid
+    GTK CSS and invalid Pango markup - no import check can see the difference,
+    and the labels simply do not appear. Sizes come from widgets.markup_size().
+    """
+    offenders: list[str] = []
+    for path in sorted(SOURCE.glob("*.py")):
+        for match in re.finditer(r"font_size=(['\"])([^'\"]*)\1", _code_only(path)):
+            value = match.group(2)
+            if "px" in value or value.endswith("%"):
+                offenders.append(f"{path.name}: font_size={value!r}")
+    assert not offenders, (
+        "a Pango markup size is a CSS length, which Pango cannot parse; build it "
+        "with markup_size() from widgets.py instead:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_the_letter_spacing_attribute_uses_the_constructor_that_exists() -> None:
+    """PyGObject exposes pango_attr_letter_spacing_new(), not a Pango.Attr class.
+
+    Regression test for the first on-screen run (Xvfb, 2026-10-16): _text()
+    called Pango.AttrLetterSpacing.new(), PyGObject raised AttributeError inside
+    the draw handler on the very first frame, and the entire window stayed
+    unpainted while every static check passed. The tracking itself stays - it is
+    part of DESIGN.md's micro-label look - but it is built through the
+    constructor the bindings actually provide.
+    """
+    code = "\n".join(_code_only(path) for path in sorted(SOURCE.glob("*.py")))
+    assert not re.search(r"Pango\.Attr[A-Za-z]*\.new\(", code), (
+        "the source builds a Pango attribute through a Pango.Attr* class, which "
+        "PyGObject does not expose; the draw handler raises AttributeError on the "
+        "first frame and nothing renders - use the pango_attr_*_new() constructor"
+    )
+    assert "attr_letter_spacing_new" in code, (
+        "widgets.py no longer builds the letter-spacing attribute at all, so the "
+        "uppercase micro-labels lose the wide tracking DESIGN.md asks for"
+    )

@@ -39,9 +39,11 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import gi
 
 gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402  (version must be pinned first)
 
 try:  # PangoCairo comes from python3-gi-cairo; without it the toy text API is used.
+    gi.require_version("PangoCairo", "1.0")
     from gi.repository import PangoCairo  # noqa: E402
 
     _HAVE_PANGO = True
@@ -73,6 +75,19 @@ def font_description(pixels: float, *, mono: bool = True, bold: bool = False) ->
     return description
 
 
+def markup_size(pixels: float) -> str:
+    """A pixel height as a Pango markup size, in absolute Pango units.
+
+    Pango markup does not accept CSS lengths: font_size="56px" is a parse
+    error, and the set_markup() call that carries it is refused - the label
+    keeps its old text, or shows nothing at all, which is how the clock and
+    the prompt label were first seen under Xvfb on 2026-10-16. Values above
+    PANGO_SCALE are read as absolute sizes in Pango units, the same convention
+    font_description() uses.
+    """
+    return str(int(max(1.0, float(pixels)) * Pango.SCALE))
+
+
 def _text(cr, text: str, x: float, y: float, pixels: float, colour: Colour,
           *, mono: bool = True, bold: bool = False, align: str = "left",
           tracking: float = 0.0, max_width: Optional[float] = None) -> float:
@@ -90,8 +105,19 @@ def _text(cr, text: str, x: float, y: float, pixels: float, colour: Colour,
         layout.set_text(text)
         if tracking:
             # Micro-labels are uppercase with wide tracking (DESIGN.md §2); Pango
-            # expresses that as an absolute letter spacing in Pango units.
-            layout.set_attributes(Pango.AttrLetterSpacing.new(int(tracking * Pango.SCALE)))
+            # expresses that as an absolute letter spacing in Pango units. The
+            # attribute is built through the pango_attr_letter_spacing_new()
+            # constructor, because PyGObject exposes no Pango.AttrLetterSpacing
+            # class: the first on-screen run called one, raised AttributeError
+            # inside draw(), and left the whole window unpainted (measured under
+            # Xvfb, 2026-10-16). Tracking is best-effort - a binding without the
+            # constructor still draws every label, just without the spacing.
+            maker = getattr(Pango, "attr_letter_spacing_new", None)
+            attrs_type = getattr(Pango, "AttrList", None)
+            if maker is not None and attrs_type is not None:
+                attributes = attrs_type()
+                attributes.insert(maker(int(tracking * Pango.SCALE)))
+                layout.set_attributes(attributes)
         if max_width is not None:
             layout.set_ellipsize(Pango.EllipsizeMode.END)
             layout.set_width(int(max_width * Pango.SCALE))
@@ -847,8 +873,9 @@ class ClockDisplay(Gtk.Label):
     def _refresh(self) -> None:
         features = "tnum 1"  # tabular figures; ignored harmlessly if unsupported
         self.set_markup(
-            "<span font_family='%s' font_features='%s' font_size='%dpx'>%s</span>"
-            % (sd.FONT_DISPLAY, features, self._size, self._text or "--:--:--")
+            "<span font_family='%s' font_features='%s' font_size='%s'>%s</span>"
+            % (sd.FONT_DISPLAY, features, markup_size(self._size),
+               self._text or "--:--:--")
         )
 
 
@@ -869,8 +896,9 @@ class PromptLabel(Gtk.Label):
     def set_prompt(self, user: str, host: str, path: str) -> None:
         prompt = f"{user or sd.NA}@{host or sd.NA}:{path or '~'}$ "
         self.set_markup(
-            "<span font_family='%s' font_size='10px' foreground='%s'>%s</span>"
-            % (sd.FONT_MONO, sd.PALETTE["COLOR_HUD_TEAL"], GLib.markup_escape_text(prompt))
+            "<span font_family='%s' font_size='%s' foreground='%s'>%s</span>"
+            % (sd.FONT_MONO, markup_size(10), sd.PALETTE["COLOR_HUD_TEAL"],
+               GLib.markup_escape_text(prompt))
         )
 
 

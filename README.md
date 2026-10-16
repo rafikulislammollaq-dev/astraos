@@ -38,9 +38,17 @@ Tested by hand on 2026-10-15 in Oracle VirtualBox on a Windows 11 host
 - Network link works: `ping 8.8.8.8` replies with 0% loss.
 - Firefox loads websites once DNS is configured (YouTube loaded in the test).
 
+Tested from the source tree on 2026-10-16 in WSL on the same hardware:
+
+- The AstraOS HUD renders. Started with the same command the installed shim runs,
+  under GTK 3 on a virtual X display, it paints its full layout - the clock, the
+  per-core and memory meters, the process and filesystem tables, the traffic
+  graph, the world-view panel and the on-screen keyboard - with no warnings.
+  Three defects that stopped the very first frame were found and fixed by doing
+  this (see `fix(hud)` in the log for 2026-10-16).
+
 Not tested: the installer, installing to disk, Wi-Fi, GPUs, physical machines,
-UEFI boot, audio, printing, Bluetooth, and the on-screen rendering of the AstraOS
-HUD and the assistant's web page (both packaged and statically tested only).
+UEFI boot, audio, printing, Bluetooth, and the assistant's web page.
 
 ---
 
@@ -224,8 +232,9 @@ of HTML, CSS and Make. The operating system itself comes from Debian packages.
 4. Reduce ISO size (turn off APT recommends, trim firmware and large optional apps).
 5. Add Guest Additions support for VMs.
 6. Test on physical hardware.
-7. Prove the AstraOS HUD on a real screen. It is packaged, launched from the menu and
-   covered by static tests, but its rendering has not yet been seen on a display.
+7. See the AstraOS HUD on a booted ISO's screen. It renders from the source tree
+   under GTK 3 on a virtual display (2026-10-16), but no built image has shown it
+   on a real screen yet.
 8. Run the assistant end to end with a real model
    (`astra-ai setup --model spark-x2.5-1.7b-q4_k_m`), and reach its page from a phone.
 
