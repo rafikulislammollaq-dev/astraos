@@ -65,9 +65,11 @@ nothing in this section changes.
 **Consequence:** statements about the live system booting in a virtual machine, and about
 the live session's networking, are now backed by recorded runs. Everything about
 *installing* — the installer, the installed system, disk encryption — and everything about
-*physical hardware* and *UEFI booting* is still a statement of *intent backed by
-configuration*, not a report of a test. The build manifest records those items as
-`UNTESTED`.
+*physical hardware* is still a statement of *intent backed by configuration*, not a report
+of a test. UEFI booting has crossed that line: the image's own GRUB entry has carried its
+kernel to the live system's login prompt under QEMU's own firmware (plain UEFI run, green,
+2026-10-16 and after); Secure Boot enforcement is a separate claim and is still owed a
+green run. The build manifest records them as `UNTESTED`.
 
 ### 1.2 Secure Boot is not supported
 
