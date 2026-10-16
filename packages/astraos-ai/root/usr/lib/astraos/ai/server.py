@@ -7,9 +7,10 @@ Why this exists and why it is written this way:
     by default and the page makes no request of any kind except to this server.
 
   * --lan opens the page to the local network so a phone can act as the microphone
-    for a PC that has none. That is the whole feature and the whole risk: there is
-    no authentication. The one-line warning printed at startup says so, and every
-    action still needs an explicit confirmation in the page before it runs.
+    for a PC that has none. A phone on the network is a guest until it pairs: it
+    enters a short code shown on this computer (`astra-ai pair`), gets a token,
+    and the token can be revoked (`astra-ai unpair`). Every action still needs an
+    explicit confirmation in the page before it runs.
 
   * Streaming is newline-delimited JSON over a chunked response: one JSON object
     per line, flushed as it happens, so the reply appears as the model produces it.
@@ -34,18 +35,23 @@ The safety model, in the order the checks run:
      execute(plan, confirmed=True). The client cannot widen the repertoire by
      editing the JSON, and the tests pin that down.
 
-Limits, stated honestly: no authentication on --lan, no TLS, no per-action
-sandbox -- actions run as the logged-in user with the same rights as the terminal
-they would otherwise be typed into. See docs/AI.md in the source tree.
+Limits, stated honestly: pairing is a code over plain HTTP on the local network,
+so there is no TLS and an eavesdropper on the same Wi-Fi can see the traffic; a
+paired token is trusted until `astra-ai unpair` revokes every phone, or the
+server stops. No per-action sandbox -- actions run as the logged-in user with
+the same rights as the terminal they would otherwise be typed into. See
+docs/AI.md in the source tree.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import secrets
 import socket
 import sys
 import threading
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -76,8 +82,8 @@ SETUP_HINT = "The assistant has no local model yet. In a terminal run: astra ai 
 # Printed once by every --lan start. One line, and it has to say both things:
 # the page is reachable by the whole network, and execution still needs a human.
 LAN_WARNING = (
-    "warning: this page is open to every device on the local network; "
-    "actions still require confirmation in the page"
+    "note: every device on the local network can reach this page, and only a "
+    "paired phone can use it; actions still need confirmation in the page"
 )
 
 JSON_TYPE = "application/json; charset=utf-8"
@@ -86,6 +92,24 @@ NDJSON_TYPE = "application/x-ndjson; charset=utf-8"
 # Keys that commonly carry an action name in a plan. The value is what matters,
 # not the key: see plan_action_name().
 _NAME_KEYS = ("action", "name", "tool", "id")
+
+# --- pairing -------------------------------------------------------------------
+# A phone on the local network is a guest until it presents the code shown on
+# this computer. The numbers are the whole policy, and they are small on
+# purpose: a six-digit code that lives ten minutes, five wrong tries before a
+# one-minute cooling-off, and tokens that exist only in this process. Nothing
+# is written to disk; stopping the server unpairs every phone.
+PAIR_CODE_DIGITS = 6
+PAIR_CODE_TTL = 600          # seconds one code stays valid
+PAIR_MAX_ATTEMPTS = 5        # wrong codes before the cooling-off
+PAIR_LOCKOUT = 60            # seconds of cooling-off after too many wrong codes
+PAIR_COOKIE = "astraos_pair"
+LOOPBACK_ADDRESSES = ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+
+def is_loopback(host: str) -> bool:
+    """True when the address is this machine talking to itself."""
+    return host in LOOPBACK_ADDRESSES
 
 
 def normalize_history(value: Any) -> list[dict[str, str]]:
@@ -352,6 +376,99 @@ class Assistant:
         return 200, {"ok": False, "detail": "The speech tool was not able to speak the text."}
 
 
+class Pairing:
+    """The phone-pairing state of one server run: one code window and its tokens.
+
+    All of it lives in memory, guarded by one lock. An armed code pairs exactly
+    one phone (a second phone means arming a new code), expires on its own, and
+    wrong tries are counted before they turn into a cooling-off period. Tokens
+    are bearer tokens with no storage: `astra-ai unpair` is the revocation, and
+    stopping the server revokes everything.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.armed = False
+        self.code = ""
+        self.expires_at = 0.0
+        self.attempts_left = PAIR_MAX_ATTEMPTS
+        self.locked_until = 0.0
+        # token -> {"ip": str, "created": float, "announced": bool}
+        self.tokens: dict[str, dict] = {}
+
+    def arm(self) -> str:
+        """Start (or restart) the pairing window and return the new code."""
+        with self._lock:
+            self.code = "".join(secrets.choice("0123456789")
+                                for _ in range(PAIR_CODE_DIGITS))
+            self.armed = True
+            self.expires_at = time.time() + PAIR_CODE_TTL
+            self.attempts_left = PAIR_MAX_ATTEMPTS
+            self.locked_until = 0.0
+            return self.code
+
+    def status(self) -> dict:
+        """What the computer is allowed to see about pairing right now."""
+        with self._lock:
+            now = time.time()
+            return {
+                "armed": self.armed and now < self.expires_at,
+                "expires_in": max(0, int(self.expires_at - now)) if self.armed else 0,
+                "locked_for": max(0, int(self.locked_until - now)),
+                "devices": [
+                    {"ip": entry.get("ip", ""), "created": entry.get("created", 0)}
+                    for entry in self.tokens.values()
+                ],
+            }
+
+    def submit(self, code: str, client_ip: str) -> tuple[str | None, str]:
+        """Check one pairing code. Returns (token, reason); reason is "" on success."""
+        with self._lock:
+            now = time.time()
+            if not self.armed:
+                return None, ("pairing is not armed on this computer; on the "
+                              "computer run: astra-ai pair")
+            if now < self.locked_until:
+                return None, ("too many wrong codes; pairing is locked for "
+                              f"{int(self.locked_until - now) + 1} more seconds")
+            if now >= self.expires_at:
+                self.armed = False
+                return None, ("the pairing code expired; on the computer run: "
+                              "astra-ai pair again")
+            if not isinstance(code, str) or code.strip() != self.code:
+                self.attempts_left -= 1
+                if self.attempts_left <= 0:
+                    self.locked_until = now + PAIR_LOCKOUT
+                    self.attempts_left = PAIR_MAX_ATTEMPTS
+                    return None, ("too many wrong codes; pairing is locked for "
+                                  f"{PAIR_LOCKOUT} seconds")
+                return None, f"that code is not right; {self.attempts_left} tries left"
+            # The code pairs its phone, once. A second phone means a new code.
+            self.armed = False
+            token = secrets.token_hex(16)
+            self.tokens[token] = {"ip": client_ip, "created": now, "announced": False}
+            return token, ""
+
+    def authorize(self, token: str) -> tuple[bool, bool]:
+        """(ok, first request) for one token; first is True exactly once."""
+        if not token:
+            return False, False
+        with self._lock:
+            entry = self.tokens.get(token)
+            if entry is None:
+                return False, False
+            first = not entry.get("announced")
+            entry["announced"] = True
+            return True, first
+
+    def revoke_all(self) -> int:
+        """Drop every token; returns how many were revoked."""
+        with self._lock:
+            count = len(self.tokens)
+            self.tokens.clear()
+            return count
+
+
 class RequestHandler(BaseHTTPRequestHandler):
     """HTTP surface. Thin: parse, delegate to Assistant, frame the answer."""
 
@@ -443,13 +560,75 @@ class RequestHandler(BaseHTTPRequestHandler):
             # is nothing left that this server can say.
             self.close_connection = True
 
+    # -- pairing / the gate --------------------------------------------------
+
+    def _token(self) -> str:
+        """The pairing token this request carries, if any (header or cookie)."""
+        header = self.headers.get("Authorization", "")
+        if header.lower().startswith("bearer "):
+            return header[7:].strip()
+        for part in self.headers.get("Cookie", "").split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == PAIR_COOKIE:
+                return value.strip()
+        return ""
+
+    def _gate(self) -> bool:
+        """True when this request may reach the API; otherwise a 401 went out.
+
+        The computer itself is always the owner of this page: the person at the
+        keyboard already has a shell. Everyone else -- the phone, the tablet,
+        anything on the Wi-Fi -- is a guest until a pairing token says otherwise.
+        """
+        server = self.server
+        if is_loopback(self.client_address[0]) and server.trust_loopback:
+            return True
+        token = self._token()
+        if token:
+            allowed, first = server.pairing.authorize(token)
+            if allowed:
+                if first:
+                    print(f"pair: authorized from={self.client_address[0]}", flush=True)
+                return True
+        print(f"pair: refused token from={self.client_address[0]}", flush=True)
+        self._json(HTTPStatus.UNAUTHORIZED, {
+            "ok": False,
+            "needs_pairing": True,
+            "detail": ("This page needs a pairing code from the computer. On the "
+                       "computer run 'astra-ai pair', then enter the code here."),
+        })
+        return False
+
+    def _loopback_only(self) -> bool:
+        """True when the caller is this machine; otherwise a 403 went out."""
+        if is_loopback(self.client_address[0]):
+            return True
+        print(f"pair: refused admin from={self.client_address[0]}", flush=True)
+        self._json(HTTPStatus.FORBIDDEN, {
+            "ok": False,
+            "detail": ("Pairing is managed on the computer itself, not over the "
+                       "network. Run 'astra-ai pair' or 'astra-ai unpair' there."),
+        })
+        return False
+
     # -- routing ------------------------------------------------------------
 
     def do_GET(self) -> None:  # noqa: N802 - name fixed by BaseHTTPRequestHandler
         try:
             path = urlsplit(self.path).path
             if path in ("/", "/index.html"):
+                # Served to anyone, paired or not: it is the page that tells a
+                # phone how to pair, and it holds no data of its own.
                 self._serve_index()
+            elif path == "/api/pairing":
+                # Pairing is managed on the computer itself.
+                if not self._loopback_only():
+                    return
+                self._json(200, {"ok": True, **self.server.pairing.status()})
+            elif path == "/favicon.ico":
+                self._no_content()
+            elif not self._gate():
+                return
             elif path == "/api/health":
                 self._json(200, self.server.assistant.health())
             elif path == "/api/actions":
@@ -469,8 +648,6 @@ class RequestHandler(BaseHTTPRequestHandler):
                                      "detail": f"Could not read the journal: {exc}"})
                     return
                 self._json(200, {"journal": report})
-            elif path == "/favicon.ico":
-                self._no_content()
             else:
                 self._json(404, {"ok": False, "detail": f"No such path: {path}"})
         except Exception as exc:
@@ -479,7 +656,22 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 - name fixed by BaseHTTPRequestHandler
         try:
             path = urlsplit(self.path).path
-            if path == "/api/chat":
+            if path == "/api/pair":
+                # Reachable from the whole network on purpose: the phone is the
+                # one that sends the code. The code, its lifetime and its attempt
+                # limit are the whole check, and Pairing owns all three.
+                self._pair()
+            elif path == "/api/pairing":
+                if not self._loopback_only():
+                    return
+                self._arm()
+            elif path == "/api/unpair":
+                if not self._loopback_only():
+                    return
+                self._unpair()
+            elif not self._gate():
+                return
+            elif path == "/api/chat":
                 self._chat()
             elif path == "/api/confirm":
                 self._confirm()
@@ -640,19 +832,74 @@ class RequestHandler(BaseHTTPRequestHandler):
         status, body = self.server.assistant.speak(text.strip())
         self._json(status, body)
 
+    # -- pairing endpoints --------------------------------------------------
+
+    def _pair(self) -> None:
+        payload = self._read_json(MAX_CHAT_BYTES)
+        if payload is None:
+            return
+        code = payload.get("code")
+        client_ip = self.client_address[0]
+        token, reason = self.server.pairing.submit(
+            code if isinstance(code, str) else "", client_ip)
+        if token is None:
+            print(f"pair: refused code from={client_ip} ({reason})", flush=True)
+            self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "detail": reason})
+            return
+        print(f"pair: paired from={client_ip}", flush=True)
+        body = json.dumps({"ok": True, "token": token}).encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", JSON_TYPE)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Set-Cookie",
+                         f"{PAIR_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _arm(self) -> None:
+        """Show a fresh code (asked for from the computer, or at startup)."""
+        code = self.server.pairing.arm()
+        print(f"pair: code={code} (valid {PAIR_CODE_TTL // 60} minutes; "
+              f"enter it on the phone page)", flush=True)
+        port = self.server.server_address[1]
+        self._json(200, {
+            "ok": True, "code": code, "expires_in": PAIR_CODE_TTL,
+            "urls": [f"http://{address}:{port}/" for address in lan_addresses()],
+        })
+
+    def _unpair(self) -> None:
+        payload = self._read_json(MAX_CHAT_BYTES)
+        if payload is None:
+            return
+        if payload.get("all") is not True:
+            self._json(400, {"ok": False, "detail": (
+                'Expected {"all": true}; revoking a single phone is not '
+                "implemented yet, and every phone can be paired again.")})
+            return
+        count = self.server.pairing.revoke_all()
+        print(f"pair: revoked all tokens ({count})", flush=True)
+        self._json(200, {"ok": True, "revoked": count})
+
 
 class AIServer(ThreadingHTTPServer):
-    """ThreadingHTTPServer plus the shared Assistant and the page path."""
+    """ThreadingHTTPServer plus the shared Assistant, the page path and pairing."""
 
     daemon_threads = True
     allow_reuse_address = True
 
     def __init__(self, address: tuple[str, int], assistant: Assistant,
-                 web_index: Path | None, verbose: bool = False) -> None:
+                 web_index: Path | None, verbose: bool = False,
+                 pairing: Pairing | None = None,
+                 trust_loopback: bool = True) -> None:
         super().__init__(address, RequestHandler)
         self.assistant = assistant
         self.web_index = web_index
         self.verbose = verbose
+        self.pairing = pairing if pairing is not None else Pairing()
+        # One switch exists for the tests: they flip it to meet the gate the way
+        # a phone does, from a loopback socket. A real server trusts loopback.
+        self.trust_loopback = trust_loopback
 
 
 def local_ip() -> str | None:
@@ -675,14 +922,22 @@ def local_ip() -> str | None:
         sock.close()
 
 
+def lan_addresses() -> list[str]:
+    """The addresses a phone could use to reach this server, best effort."""
+    address = local_ip()
+    return [address] if address else []
+
+
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="astra ai",
         description="AstraOS local assistant server (no account, no cloud).",
     )
     parser.add_argument("--lan", action="store_true",
-                        help="bind 0.0.0.0 so a phone on the same network can use "
-                             "the page as a microphone; there is no authentication")
+                        help="bind 0.0.0.0 so a phone on the same network can "
+                             "reach the page; every phone must pair first")
+    parser.add_argument("--pair", action="store_true",
+                        help="show a phone pairing code as soon as it starts")
     parser.add_argument("--host", default=None,
                         help=f"bind address (default {DEFAULT_HOST}, or 0.0.0.0 with --lan)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT,
@@ -719,6 +974,16 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"phone or another computer: http://<this machine's address>:{args.port}/",
                   flush=True)
+        if args.pair:
+            code = server.pairing.arm()
+            print(f"pair: code={code} (valid {PAIR_CODE_TTL // 60} minutes; "
+                  f"enter it on the phone page)", flush=True)
+        else:
+            print("pair: not armed - on this computer run: astra-ai pair", flush=True)
+    elif args.pair:
+        code = server.pairing.arm()
+        print(f"pair: code={code} (valid {PAIR_CODE_TTL // 60} minutes) - note: "
+              f"without --lan the page is only reachable on this machine", flush=True)
     if not assistant.ready():
         print(f"note: {SETUP_HINT}", flush=True)
 

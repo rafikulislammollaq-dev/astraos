@@ -124,7 +124,13 @@ updated. Every step proven in CI or recorded as untested.
   with the assistant's page as the only listener — becomes the new default, and
   prove the result in the self-test.
 - [ ] **The assistant's web page on a phone**: localhost until paired, then the LAN
-  with pairing and the firewall on.
+  with pairing and the firewall on. The pairing half exists in the source
+  (2026-10-16) as its first slice: `astra-ai pair` shows a six-digit code, a phone on
+  the LAN pairs with it, `astra-ai unpair` revokes every phone, and the boot
+  self-test's `astraos.phone=1` section — with the host-side `phone-host.log` as
+  evidence — is built to prove the whole arc end to end. The checkbox flips on the
+  first boot-self-test run that carries it green; the firewall half stays with the
+  firewall item above.
 - [ ] **Try Secure Boot**: live-build's `--uefi-secure-boot` path with Debian's
   signed shim and GRUB (check the installed live-build version supports it).
   Document the firmware configurations that are actually known to boot. Until a

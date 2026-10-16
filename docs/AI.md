@@ -27,10 +27,12 @@ Start it from a terminal:
 
 ```bash
 astra ai start          # http://127.0.0.1:8765/ - available only on this machine
-astra ai start --lan    # also reachable from other devices on the local network
+astra ai start --lan    # listen on the local network too; a phone must pair:
+astra-ai pair           # show the six-digit code the phone enters to pair
+astra-ai unpair         # revoke every paired phone
 astra ai open           # open the page in the browser
 astra ai status         # is it running, is a model installed
-astra ai stop           # stop it
+astra ai stop           # stop it (stopping also revokes every paired phone)
 
 astra ai work TASK      # do a task: plan it, run it, verify every step
 astra ai journal        # what ran, what failed, and what you must decide
@@ -199,19 +201,23 @@ Five rules, all of them structural rather than advisory:
    A machine with the package installed and no model still works: `/api/health`
    reports not ready, and the page explains how to finish the setup.
 
-One thing that is *not* a boundary: the `--lan` mode. There is no password on the
-page, no TLS, and anyone on the same network who can reach the address can chat
-with the assistant and see its answers. Actions still require confirmation *in
-the page they are watching*, so a stranger can propose but the person at the PC
-decides. The server prints this in one line at startup, and the sentence is part
-of the interface on purpose:
+One thing that is *not* a boundary: the `--lan` mode. A device that is not the
+computer itself cannot use the page until it pairs - `astra-ai pair` shows a
+six-digit code on the PC, the phone enters it once, and `astra-ai unpair` takes
+the access away again. That is still not a strong boundary, and the honest
+limits are: there is no TLS, so the code and the paired token travel in clear
+text on the local network; a paired token is trusted until it is revoked; and
+someone at the PC can always act without pairing at all. Actions additionally
+require confirmation *in the page that proposed them*, so a stranger can propose
+but the person at the PC decides. The server says its own version of all this in
+one line at startup:
 
 ```
-warning: this page is open to every device on the local network; actions still require confirmation in the page
+note: every device on the local network can reach this page, and only a paired phone can use it; actions still need confirmation in the page
 ```
 
 Use `--lan` on a network you trust, for the minutes you need it, and stop the
-server afterwards (`astra ai stop`).
+server afterwards (`astra ai stop`), which revokes every paired phone.
 
 ---
 
@@ -304,8 +310,11 @@ microphone, but the user is holding a phone. The assistant can use it:
 
 1. Start the server in LAN mode on the PC: `astra ai start --lan`. It prints an
    address such as `http://192.168.1.20:8765/`.
-2. Open that address on the phone, on the same network.
-3. Tap the microphone button and speak. The transcription appears in the PC's
+2. On the PC, run `astra-ai pair`: it shows a six-digit code that is valid for
+   ten minutes and pairs one phone.
+3. Open the address on the phone, on the same network, and enter the code in the
+   pairing banner.
+4. Tap the microphone button and speak. The transcription appears in the PC's
    input box; press Send there (or on the phone).
 
 There are two ways the page listens, and it uses the better one available:
@@ -333,8 +342,12 @@ Two honest caveats:
   because it is a different permission. If neither works, listen on the PC side:
   run the page at `http://127.0.0.1:8765/` on the PC itself (which *is* a secure
   context) with a microphone attached.
-* There is **no authentication**. Anyone else on the network can open the same
-  page. Confirmation protects execution, not conversation.
+* **Pairing is a bearer code, not an account.** The page itself opens for anyone
+  on the network, but it only answers a phone that has entered the code shown by
+  `astra-ai pair`; the token is kept by that browser, and `astra-ai unpair`
+  revokes every phone. On plain HTTP a watcher on the same Wi-Fi can see the
+  traffic (see the no-TLS entry below). Confirmation protects execution; a
+  paired phone is trusted for conversation.
 
 ---
 
@@ -357,7 +370,7 @@ Stated so the omissions are decisions, not surprise gaps:
 * **No vision, no image input, no attachments.** Text and voice only.
 * **No per-action sandbox.** Actions run as you, with your rights. There is no
   AppArmor profile or container around them.
-* **No TLS and no authentication**, covered above.
+* **No TLS, with pairing as the whole access control**, covered above.
 * **No automatic updates.** Nothing fetches or replaces a model on its own.
   The catalogue downloader (`astra-ai setup --model NAME`) runs only when
   typed, and `astra ai setup` itself only imports files you already have.

@@ -166,6 +166,113 @@ fi
 # up and every name lookup fails. Resolving a real name is the only honest check.
 run "dns" getent hosts deb.debian.org
 
+# --- 8. the phone page (only when the caller asked: astraos.phone=1) -----------------
+# The mesh's first slice: the computer serves the assistant page on the local network,
+# a phone pairs with a code shown on the computer, and revoking ends its access. The
+# "phone" here is the CI host itself, reaching the guest through QEMU's port forward;
+# it answers the "phone-code:" marker this section prints. The section runs only when
+# scripts/smoke-boot.sh asked for it with astraos.phone=1, so a hand boot with
+# astraos.ci alone is unchanged.
+if grep -q 'astraos.phone' /proc/cmdline; then
+    phone_log=/tmp/astraos-phone.log
+    python3 /usr/lib/astraos/ai/server.py --lan --pair --port 8765 >"$phone_log" 2>&1 &
+    phone_pid=$!
+
+    # 1. the code appears (the host needs it to pair)
+    waited=0
+    while [ "$waited" -lt 60 ]; do
+        grep -q 'pair: code=' "$phone_log" 2>/dev/null && break
+        sleep 2
+        waited=$((waited + 1))
+    done
+    phone_code=$(sed -n 's/.*pair: code=\([0-9][0-9]*\).*/\1/p' "$phone_log" 2>/dev/null | head -n 1)
+    if [ -n "$phone_code" ]; then
+        ok "phone-armed" "pairing code shown after $((waited * 2))s"
+        say "phone-code: $phone_code"
+    else
+        bad "phone-armed" "no pairing code after $((waited * 2))s"
+    fi
+
+    # 2. the computer itself needs no pairing: loopback is the owner's road in
+    if python3 - <<'PY'
+import json
+import urllib.request
+with urllib.request.urlopen("http://127.0.0.1:8765/api/health", timeout=15) as answer:
+    assert answer.status == 200, answer.status
+    assert "ready" in json.loads(answer.read().decode("utf-8"))
+PY
+    then
+        ok "phone-localhost" "the page answers on this machine without pairing"
+    else
+        bad "phone-localhost" "the page did not answer on 127.0.0.1"
+    fi
+
+    # 3. the phone pairs (the host does it the moment it reads phone-code above)
+    waited=0
+    while [ "$waited" -lt 240 ]; do
+        grep -q 'pair: paired from=' "$phone_log" 2>/dev/null && break
+        sleep 2
+        waited=$((waited + 1))
+    done
+    if grep -q 'pair: paired from=' "$phone_log" 2>/dev/null; then
+        ok "phone-paired" "a phone paired with the code"
+    else
+        bad "phone-paired" "no phone paired within 240s"
+    fi
+
+    # 4. a paired request was served - the gate is a door, not a wall
+    waited=0
+    while [ "$waited" -lt 120 ]; do
+        grep -q 'pair: authorized from=' "$phone_log" 2>/dev/null && break
+        sleep 2
+        waited=$((waited + 1))
+    done
+    if grep -q 'pair: authorized from=' "$phone_log" 2>/dev/null; then
+        ok "phone-served" "a paired request was served"
+    else
+        bad "phone-served" "no paired request was served within 120s"
+    fi
+
+    # 5. revocation is the desktop user's own act, over loopback
+    refusals_before=$(grep -c 'pair: refused token from=' "$phone_log" 2>/dev/null || true)
+    refusals_before=${refusals_before:-0}
+    if python3 - <<'PY'
+import json
+import urllib.request
+request = urllib.request.Request(
+    "http://127.0.0.1:8765/api/unpair", method="POST",
+    data=json.dumps({"all": True}).encode("utf-8"),
+    headers={"Content-Type": "application/json"})
+with urllib.request.urlopen(request, timeout=15) as answer:
+    payload = json.loads(answer.read().decode("utf-8"))
+    assert answer.status == 200 and payload.get("ok"), payload
+    assert payload.get("revoked", 0) >= 1, payload
+PY
+    then
+        ok "phone-revoked" "every paired phone was revoked from this machine"
+    else
+        bad "phone-revoked" "the unpair request failed"
+    fi
+
+    # 6. the revoked phone keeps asking; its refusal is the last event to observe
+    refusals=$refusals_before
+    waited=0
+    while [ "$waited" -lt 120 ]; do
+        refusals=$(grep -c 'pair: refused token from=' "$phone_log" 2>/dev/null || true)
+        refusals=${refusals:-0}
+        [ "$refusals" -gt "$refusals_before" ] && break
+        sleep 2
+        waited=$((waited + 1))
+    done
+    if [ "$refusals" -gt "$refusals_before" ]; then
+        ok "phone-refused-after-revoke" "the revoked phone was refused"
+    else
+        bad "phone-refused-after-revoke" "no refusal after revoking within 120s"
+    fi
+
+    kill "$phone_pid" 2>/dev/null || true
+fi
+
 # --- result ---------------------------------------------------------------------------
 say "checks: $CHECKS, failed: $FAILED"
 if [ "$FAILED" -eq 0 ]; then

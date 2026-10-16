@@ -19,6 +19,9 @@ HOW TO RUN IT
            astraos.ci=1 console=ttyS0,115200n8
 
        the console= part is optional; without it the output is only in the journal.
+       Add astraos.phone=1 only when another machine will answer the phone-page
+       exercise (scripts/smoke-boot.sh does); without a phone to pair, those checks
+       fail after their waits.
 
     2. boot. The machine reaches the desktop, checks itself, prints ASTRAOS-SMOKE lines
        ending in
@@ -42,7 +45,11 @@ WHAT IT CHECKS
   * the commands run: the HUD, the assistant, the all-in-one command, the Windows
     bridge, wine, ffmpeg, flatpak;
   * Flatpak knows the Flathub remote; NetworkManager is up, the machine has an
-    address, and a real name resolves through DNS.
+    address, and a real name resolves through DNS;
+  * with astraos.phone=1 on the kernel command line: the assistant's page serves on
+    the local network, an unpaired guest is refused, a phone that pairs with the
+    code the machine prints is served, and the revoked phone is refused again. The
+    caller prints the code as "phone-code:" and must answer it.
 
   A line marked "note" is information, not a verdict: the shipped image has no AI model
   installed, so "assistant-status" reporting no model is expected.

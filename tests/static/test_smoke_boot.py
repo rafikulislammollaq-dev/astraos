@@ -270,3 +270,38 @@ def test_the_flathub_hook_only_points_at_the_store() -> None:
     assert "flatpak install" not in text, (
         "the hook may point at Flathub, never install an application in the build"
     )
+
+
+def test_the_host_script_forwards_the_phone_page_port() -> None:
+    text = _text(HOST_SCRIPT)
+    assert "hostfwd=tcp:127.0.0.1:18765-:8765" in text, (
+        "without the forward there is no phone: the guest's assistant page can "
+        "only be reached through QEMU's network")
+    assert "astraos.phone=1" in text, (
+        "the guest's phone-page section runs only when the caller asks for it")
+
+
+def test_the_guest_phone_section_answers_the_hosts_sequence() -> None:
+    text = _text(GUEST_SCRIPT)
+    assert "astraos.phone" in text, (
+        "the phone section must be gated on its own switch, not on astraos.ci, so "
+        "a hand boot with astraos.ci alone is unchanged")
+    assert "server.py --lan --pair" in text, (
+        "the guest must start the page with pairing armed, not bare --lan")
+    assert "/api/unpair" in text, "the guest revokes every phone from the computer"
+    for marker in (
+        "phone-code: ",
+        "pair: paired from=",
+        "pair: authorized from=",
+        "pair: refused token from=",
+    ):
+        assert marker in text, f"the guest no longer waits for {marker!r}"
+
+
+def test_the_host_answers_the_guest_phone_sequence() -> None:
+    text = _text(HOST_SCRIPT)
+    assert r"phone-code: (\d+)" in text, (
+        "the host must read the pairing code the guest prints on the serial console")
+    for marker in ("/api/pair", "/api/health"):
+        assert marker in text, f"the host no longer drives {marker}"
+    assert "phone-host.log" in text, "the host's phone steps must leave evidence"

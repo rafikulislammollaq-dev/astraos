@@ -43,6 +43,7 @@ import re
 import sys
 import tempfile
 import threading
+import time
 import types
 from pathlib import Path
 from typing import Any
@@ -263,6 +264,7 @@ class _Running:
         self.prompt = stubs["astraos.ai.prompt"]
         self.voice = stubs["astraos.ai.voice"]
         self._httpd = httpd
+        self.pairing = httpd.pairing
         self.port = httpd.server_address[1]
 
     def request(self, method: str, path: str, body: bytes | None = None,
@@ -307,13 +309,23 @@ class _Running:
 
 
 @contextlib.contextmanager
-def running_app():
-    """A live server on a loopback port, torn down however the test ends."""
+def running_app(*, untrusted=False, armed=False):
+    """A live server on a loopback port, torn down however the test ends.
+
+    untrusted=True builds the server with trust_loopback=False: loopback requests
+    then meet the pairing gate exactly the way a phone's would, which is the only
+    way to exercise the phone side from a single-machine test. armed=True starts
+    with a pairing window already open.
+    """
     module, stubs = _load_server()
     _reset_stubs(stubs)
     assistant = module.Assistant()
     engine = _StubEngine.instances[-1]
-    httpd = module.AIServer(("127.0.0.1", 0), assistant, module.locate_web_index())
+    pairing = module.Pairing()
+    if armed:
+        pairing.arm()
+    httpd = module.AIServer(("127.0.0.1", 0), assistant, module.locate_web_index(),
+                            pairing=pairing, trust_loopback=not untrusted)
     thread = threading.Thread(target=httpd.serve_forever,
                               kwargs={"poll_interval": 0.05}, daemon=True)
     thread.start()
@@ -342,6 +354,22 @@ def needs_a_server(func):
     @functools.wraps(func)
     def run() -> None:
         with running_app() as app:
+            func(app)
+    run.__signature__ = inspect.Signature()
+    return run
+
+
+def needs_a_phone(func):
+    """Run a test against a server that treats every caller as a phone.
+
+    The socket is still loopback - the test machine is both the computer and the
+    phone - but the server is built with trust_loopback=False, the one switch a
+    real server never flips, so the pairing gate answers exactly as it would for
+    a device on the Wi-Fi.
+    """
+    @functools.wraps(func)
+    def run() -> None:
+        with running_app(untrusted=True) as app:
             func(app)
     run.__signature__ = inspect.Signature()
     return run
@@ -624,3 +652,137 @@ def test_server_refuses_to_say_it_is_ready_without_the_engine(app) -> None:
     events = app.chat("hello")
     assert events[0]["type"] == "error"
     assert "no engine" in events[0]["text"]
+
+
+# ---------------------------------------------------------------------------
+# Pairing: a phone is a guest until the code says otherwise.
+# ---------------------------------------------------------------------------
+
+
+def test_loopback_is_recognised_and_a_network_address_is_not() -> None:
+    module, _stubs = _load_server()
+    assert module.is_loopback("127.0.0.1")
+    assert module.is_loopback("::1")
+    assert module.is_loopback("::ffff:127.0.0.1")
+    assert not module.is_loopback("10.0.2.2"), (
+        "a phone reaches the guest as 10.0.2.2 in QEMU's network; it must not "
+        "be trusted as the computer itself")
+    assert not module.is_loopback("192.168.1.5")
+
+
+@needs_a_phone
+def test_a_guest_is_refused_until_it_pairs(app) -> None:
+    # The page itself is served - it is where the code is typed - but nothing
+    # else answers without a token.
+    status, content_type, _body = app.request("GET", "/")
+    assert status == 200 and "text/html" in content_type
+
+    status, payload = app.get_json("/api/health")
+    assert status == 401 and payload.get("needs_pairing") is True, (
+        "an unpaired guest reached the API; pairing would be decoration")
+
+    # Even a wrong path says 401, not 404: an unpaired guest learns nothing.
+    status, _payload = app.get_json("/api/nope")
+    assert status == 401
+
+
+@needs_a_phone
+def test_wrong_codes_are_counted_and_lock_the_window(app) -> None:
+    right = app.pairing.arm()
+    wrong = "000000" if right != "000000" else "111111"
+
+    for remaining in (4, 3, 2, 1):
+        status, payload = app.post_json("/api/pair", {"code": wrong})
+        assert status == 401, f"a wrong code was accepted: {payload}"
+        assert str(remaining) in payload["detail"], (
+            f"the answer should say how many tries are left: {payload['detail']!r}")
+
+    status, payload = app.post_json("/api/pair", {"code": wrong})
+    assert status == 401 and "locked" in payload["detail"]
+
+    status, _payload = app.post_json("/api/pair", {"code": right})
+    assert status == 401, "the right code was accepted during the cooling-off"
+
+
+@needs_a_phone
+def test_the_code_pairs_one_phone_and_the_token_authorizes(app) -> None:
+    code = app.pairing.arm()
+    status, payload = app.post_json("/api/pair", {"code": code})
+    assert status == 200 and payload.get("ok") is True
+    token = str(payload.get("token") or "")
+    assert len(token) >= 32, "the pairing token is too short to be a secret"
+
+    status, _payload = app.post_json("/api/pair", {"code": code})
+    assert status == 401, "the code paired a second phone; it must pair exactly one"
+
+    status, _ct, _raw = app.request(
+        "GET", "/api/health", headers={"Authorization": "Bearer " + token})
+    assert status == 200, "a paired phone's token was not honoured"
+
+    status, _ct, _raw = app.request(
+        "GET", "/api/actions", headers={"Cookie": "astraos_pair=" + token})
+    assert status == 200, "the cookie the server set was not honoured"
+
+
+@needs_a_phone
+def test_revocation_ends_access_and_an_expired_code_does_not_pair(app) -> None:
+    code = app.pairing.arm()
+    status, payload = app.post_json("/api/pair", {"code": code})
+    token = str(payload.get("token") or "")
+    assert token
+
+    # Revocation is a computer-side act; it must work there and nowhere else.
+    status, payload = app.post_json("/api/unpair", {"all": True})
+    assert status == 200 and payload.get("revoked") == 1
+
+    status, _ct, _raw = app.request(
+        "GET", "/api/health", headers={"Authorization": "Bearer " + token})
+    assert status == 401, "a revoked token was still accepted"
+
+    # A code that is not used in time stops working.
+    app.pairing.arm()
+    app.pairing.expires_at = 0.0
+    status, payload = app.post_json("/api/pair", {"code": app.pairing.code})
+    assert status == 401 and "expired" in payload["detail"]
+
+
+@needs_a_phone
+def test_unpair_requires_the_all_flag(app) -> None:
+    status, payload = app.post_json("/api/unpair", {})
+    assert status == 400 and payload["ok"] is False
+
+
+@needs_a_phone
+def test_pairing_status_is_reported_to_the_computer(app) -> None:
+    status, payload = app.get_json("/api/pairing")
+    assert status == 200 and payload["armed"] is False and payload["devices"] == []
+    app.pairing.arm()
+    status, payload = app.get_json("/api/pairing")
+    assert payload["armed"] is True and payload["expires_in"] > 0
+
+
+def test_the_server_prints_the_pairing_events_the_boot_test_waits_for() -> None:
+    text = SERVER_PY.read_text(encoding="utf-8")
+    for needle in (
+        "pair: code=",
+        "pair: paired from=",
+        "pair: authorized from=",
+        "pair: refused token from=",
+        "pair: revoked all tokens",
+    ):
+        assert needle in text, (
+            f"the boot self-test waits for {needle!r} on the serial console; "
+            "the print format is evidence, not decoration")
+
+
+def test_the_page_carries_the_pairing_ui() -> None:
+    text = INDEX_HTML.read_text(encoding="utf-8")
+    for needle, why in (
+        ('id="pair-banner"', "the pairing banner"),
+        ('id="pair-code"', "the code input"),
+        ('id="pair-submit"', "the Pair button"),
+        ('"/api/pair"', "the pairing request"),
+        ("astra-ai pair", "the instruction that names the command"),
+        ("astraos_pair_token", "where the phone keeps its token"),
+    ):
+        assert needle in text, f"the page is missing {needle!r} ({why})"

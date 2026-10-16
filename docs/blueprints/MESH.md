@@ -1,9 +1,12 @@
 # The mesh: your devices as one computer
 
-Blueprint, October 2026. Status: **proposed.** Nothing in this document is implemented,
-and no built image offers anything like it. Most of it sits beyond the roadmap's
-stages; the first slices are the Stage 1 phone page and Stage 5's Astra Link
-([PHONE_LINK.md](PHONE_LINK.md)), and the Stage 7 old-PC AI host
+Blueprint, October 2026. Status: **proposed.** Nothing here is implemented except the
+first slice of the Stage 1 phone page ([PHONE_LINK.md](PHONE_LINK.md)): the assistant
+page pairs a phone with a code shown on the computer, and the pairing is revocable.
+That slice exists in the source and awaits its first boot-self-test run as proof; no
+built image offers it yet, and everything else described below is not implemented.
+Most of it sits beyond the roadmap's stages; the first slices are the Stage 1 phone
+page and Stage 5's Astra Link, and the Stage 7 old-PC AI host
 ([REACH.md](REACH.md)). What exists today is in [`../../README.md`](../../README.md).
 
 ## The promise

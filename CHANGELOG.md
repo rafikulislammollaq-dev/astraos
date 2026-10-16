@@ -19,6 +19,25 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The assistant's page can now be reached from a phone — by pairing.** The roadmap's
+  Stage 1 phone-page item got its first slice: `astra-ai serve --lan` opens the page to
+  the local network, but every request from anything that is not the computer itself is
+  refused (HTTP 401) until the phone enters the six-digit code shown by `astra-ai pair`.
+  A code lives ten minutes, pairs exactly one phone, counts its wrong tries (five, then
+  a one-minute cooling-off), and the paired token can be revoked at any time with
+  `astra-ai unpair`; the computer itself is never asked to pair. The page grew the
+  pairing screen (a code input when the server says pairing is needed), tokens live in
+  the phone's browser only, and nothing is written to disk — stopping the server
+  revokes every phone. The boot self-test exercises the whole arc over QEMU's
+  forwarded port — this computer serves without pairing, the phone is refused
+  unpaired, pairs with the code, gets a served request, and is refused again after
+  revocation — with the host side of that exercise recorded in `phone-host.log` beside
+  `serial.log`. Honest first-slice scope: plain HTTP on the local network (no TLS yet),
+  bearer tokens, and the firewall default stays undecided (see the roadmap's firewall
+  item). Unit and static tests pin the gate, the code policy, the page and the evidence
+  markers; the first boot-self-test run carrying the phone section is the CI proof, and
+  it will be recorded here when it happens.
+
 - **The first green boot self-test.** 2026-10-16, run 38881934636 (commit 8f81e3d): the
   built ISO booted under QEMU on a runner with no KVM — pure CPU emulation — and the
   image's own self-test reported `RESULT: PASS (39 checks, 0 failed)`. The guest reached

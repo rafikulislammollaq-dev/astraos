@@ -1,9 +1,14 @@
 # The phone and the computer as one device
 
-Blueprint, October 2026. Status: **proposed.** Nothing here is implemented, and
-no built image offers anything like it. The roadmap items are Stage 1 (the
-phone page) and Stage 5 (Astra Link); what exists today is in
-[`../../README.md`](../../README.md).
+Blueprint, October 2026. Status: **proposed.** Nothing here is implemented
+except the first slice of the Stage 1 phone page: the computer serves the
+assistant page on the local network, a phone pairs with a six-digit code shown
+on the computer (`astra-ai pair`), and the pairing can be revoked (`astra-ai
+unpair`). That slice exists in the source and awaits its first boot-self-test
+run as proof; no built image offers it yet, and everything else in this
+document — the companion application, notifications, clipboard, calls — is not
+implemented. The roadmap items are Stage 1 (the phone page) and Stage 5 (Astra
+Link); what exists today is in [`../../README.md`](../../README.md).
 
 ## The promise
 

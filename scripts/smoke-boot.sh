@@ -8,11 +8,16 @@
 #      config/distribution.env), with a serial console and astraos.ci=1 added (the
 #      switch the image's self-test unit conditions on). The medium is found by
 #      live-boot's own device scan - nothing tells the guest where the squashfs is;
-#   3. waits for "ASTRAOS-SMOKE: RESULT:" on the serial console - or gives up as soon as
+#   3. answers the guest's phone-page exercise like a phone would: it reads the pairing
+#      code the guest prints on the serial console, pairs through QEMU's forwarded port,
+#      proves the paired request is served and the revoked one refused (the guest half is
+#      the astraos.phone=1 section of its self-test), and keeps its transcript as
+#      evidence;
+#   4. waits for "ASTRAOS-SMOKE: RESULT:" on the serial console - or gives up as soon as
 #      the console shows the boot itself failed;
-#   4. takes a screenshot of the booted desktop through the QEMU monitor, so a build
+#   5. takes a screenshot of the booted desktop through the QEMU monitor, so a build
 #      leaves behind a picture of what a person would have seen;
-#   5. exits 0 only when the image reported PASS.
+#   6. exits 0 only when the image reported PASS.
 #
 # The workflow .github/workflows/build-iso.yml runs this against the ISO it has just
 # built; a person runs it against any built ISO. It is documented in docs/BUILDING.md,
@@ -37,10 +42,11 @@ usage() {
     cat <<'USAGE'
 Usage: scripts/smoke-boot.sh [--timeout MINUTES] [--out DIR] ISO
 
-Boots a built AstraOS ISO in QEMU with its own live parameters plus a serial console
-and "astraos.ci=1" (the switch the image's self-test conditions on), waits for the
-image to report "ASTRAOS-SMOKE: RESULT:", takes a screenshot of the booted desktop
-through the QEMU monitor, and exits 0 only on PASS.
+Boots a built AstraOS ISO in QEMU with its own live parameters plus a serial console,
+"astraos.ci=1" (the switch the image's self-test conditions on) and "astraos.phone=1"
+(its phone-pairing exercise), answers that exercise from this host the way a phone
+would, waits for the image to report "ASTRAOS-SMOKE: RESULT:", takes a screenshot of
+the booted desktop through the QEMU monitor, and exits 0 only on PASS.
 
   --timeout MINUTES  how long to wait for the self-test (default 25)
   --out DIR          copy serial.log, screenshot.png and qemu.out there
@@ -100,10 +106,14 @@ fi
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/astraos-smoke.XXXXXX")"
 QEMU_PID=""
+PHONE_DRIVER_PID=""
 
 cleanup() {
     if [ -n "$QEMU_PID" ]; then
         kill "$QEMU_PID" 2>/dev/null || true
+    fi
+    if [ -n "$PHONE_DRIVER_PID" ]; then
+        kill "$PHONE_DRIVER_PID" 2>/dev/null || true
     fi
     if mountpoint -q "$WORK/iso" 2>/dev/null; then
         "${SUDO[@]}" umount "$WORK/iso" || true
@@ -112,6 +122,7 @@ cleanup() {
         mkdir -p "$OUT_DIR"
         cp -f "$WORK/serial.log" "$OUT_DIR/serial.log" 2>/dev/null || true
         cp -f "$WORK/qemu.out" "$OUT_DIR/qemu.out" 2>/dev/null || true
+        cp -f "$WORK/phone-host.log" "$OUT_DIR/phone-host.log" 2>/dev/null || true
         if [ -f "$WORK/screen.png" ]; then
             cp -f "$WORK/screen.png" "$OUT_DIR/screenshot.png"
         elif [ -f "$WORK/screen.ppm" ]; then
@@ -158,7 +169,9 @@ APPEND="$APPEND locales=en_US.UTF-8"
 APPEND="$APPEND keyboard-layouts=us keyboard-variant= timezone=UTC"
 APPEND="$APPEND live-config.hostname=${ASTRAOS_LIVE_HOSTNAME}"
 APPEND="$APPEND quiet splash"
-APPEND="$APPEND console=ttyS0,115200n8 astraos.ci=1"
+# astraos.phone=1 asks the guest for its phone-page section: the pairing exercise the
+# host answers in step 4a below. A hand boot with astraos.ci alone is unchanged.
+APPEND="$APPEND console=ttyS0,115200n8 astraos.ci=1 astraos.phone=1"
 
 # --- 3. QEMU --------------------------------------------------------------------------
 # -cpu host is only meaningful under KVM; `max` gives the guest the widest CPU that
@@ -178,16 +191,118 @@ say "booting $ISO (self-test timeout ${TIMEOUT_MINUTES} min)"
 # what the runner can spare - four cores and 4 GiB let the parallel boot actually run in
 # parallel, and zram is not asked to make up for a memory shortage a test can simply
 # avoid.
+# The user-mode network forwards one port (18765 on the host to 8765 in the guest) so
+# that this host can act as the phone in step 4a: without the forward, the guest's
+# assistant page is unreachable from outside and the exercise could not run.
 qemu-system-x86_64 "${ACCEL[@]}" \
     -m 4096 -smp 4 -vga std \
     -cdrom "$ISO" \
     -kernel "$WORK/vmlinuz" -initrd "$WORK/initrd.img" -append "$APPEND" \
-    -nic user,model=e1000 \
+    -nic user,model=e1000,hostfwd=tcp:127.0.0.1:18765-:8765 \
     -display none -no-reboot \
     -serial "file:$WORK/serial.log" \
     -monitor "unix:$WORK/monitor.sock,server,nowait" \
     >"$WORK/qemu.out" 2>&1 &
 QEMU_PID=$!
+
+# --- 4a. the phone stand-in -----------------------------------------------------------
+# The guest's phone-page section prints its pairing code on the serial console; the
+# helper below reads it and does what a phone would do over the network: load the page,
+# be refused while unpaired, pair with the code, make an authorized request, and finally
+# observe the refusal once the guest revokes it. Its transcript is kept as evidence
+# (phone-host.log); the guest's own checks decide PASS or FAIL, so a helper that gives
+# up can only leave the guest waiting - it cannot produce a false PASS.
+python3 - "$WORK/serial.log" "$WORK/phone-host.log" <<'PY' >"$WORK/phone-host.out" 2>&1 &
+import json
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+
+serial_path, log_path = sys.argv[1], sys.argv[2]
+BASE = "http://127.0.0.1:18765"
+
+
+def log(line):
+    try:
+        with open(log_path, "a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        pass
+
+
+def request(method, path, payload=None, token=None):
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    req = urllib.request.Request(BASE + path, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status, json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            return exc.code, json.loads(exc.read().decode("utf-8"))
+        except ValueError:
+            return exc.code, {}
+    except OSError as exc:
+        return 0, {"detail": str(exc)}
+
+
+deadline = time.time() + 900
+code = None
+while time.time() < deadline and code is None:
+    try:
+        with open(serial_path, "r", errors="replace") as handle:
+            text = handle.read()
+    except OSError:
+        text = ""
+    match = re.search(r"phone-code: (\d+)", text)
+    if match:
+        code = match.group(1)
+    else:
+        time.sleep(2)
+
+if code is None:
+    log("host: the guest never printed a pairing code; giving up")
+    sys.exit(0)
+
+log("host: pairing code read from the serial console: " + code)
+
+# The page loads for anyone (it is where the code is typed), and an unpaired guest is
+# refused: that is what "localhost until paired" means from the outside.
+status, _payload = request("GET", "/")
+log("host: page GET -> %s (expected 200)" % status)
+status, payload = request("GET", "/api/health")
+log("host: unpaired health GET -> %s needs_pairing=%s (expected 401/True)"
+    % (status, payload.get("needs_pairing")))
+
+status, payload = request("POST", "/api/pair", {"code": code})
+token = str(payload.get("token") or "")
+log("host: pair POST with the code -> %s (expected 200)" % status)
+if not token:
+    log("host: no token came back; giving up")
+    sys.exit(0)
+
+status, payload = request("GET", "/api/health", token=token)
+log("host: paired health GET -> %s ready=%s (expected 200)" % (status, payload.get("ready")))
+
+# The computer revokes the phone; keep asking until the answer turns 401. That refused
+# request is the last event the guest waits for.
+deadline = time.time() + 300
+while time.time() < deadline:
+    status, _payload = request("GET", "/api/health", token=token)
+    if status == 401:
+        log("host: after revocation health GET -> 401 (expected): the phone is out")
+        break
+    time.sleep(3)
+else:
+    log("host: the revoked token was still accepted after 300s")
+PY
+PHONE_DRIVER_PID=$!
 
 # --- 4. wait for the self-test result --------------------------------------------------
 deadline=$(( $(date +%s) + TIMEOUT_MINUTES * 60 ))
@@ -253,6 +368,11 @@ echo
 say "self-test output:"
 grep 'ASTRAOS-SMOKE:' "$WORK/serial.log" 2>/dev/null | sed 's/^/  /' || true
 echo
+if [ -s "$WORK/phone-host.log" ]; then
+    say "phone page (host side):"
+    sed 's/^/  /' "$WORK/phone-host.log"
+    echo
+fi
 
 if [ -z "$result" ]; then
     say "FAILED: the image never reported a result. Last serial lines:"
@@ -269,7 +389,7 @@ case "$result" in
         say "the image booted, reached the desktop, and passed its self-test"
         say "$result"
         if [ -n "$OUT_DIR" ]; then
-            say "evidence kept in $OUT_DIR (serial.log, screenshot.png, qemu.out)"
+            say "evidence kept in $OUT_DIR (serial.log, phone-host.log, screenshot.png, qemu.out)"
         fi
         exit 0
         ;;

@@ -253,6 +253,22 @@
 
   .copy-btn:active { transform: translateY(1px); }
 
+  .pair-code {
+    width: 9ch;
+    margin-left: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--line-strong);
+    background: rgba(0, 0, 0, 0.32);
+    color: var(--text);
+    font: inherit;
+    font-family: var(--mono);
+    letter-spacing: 0.18em;
+    outline: none;
+  }
+
+  .pair-code:focus { border-color: rgba(139, 92, 246, 0.65); }
+
   .transcript {
     flex: 1;
     min-height: 0;
@@ -616,6 +632,17 @@
       </div>
       <button class="copy-btn" id="copy-setup" type="button">Copy</button>
     </div>
+    <div class="setup-banner" id="pair-banner" hidden>
+      <div class="setup-text">
+        <strong>Pair this phone</strong>
+        <span>On the computer run <code>astra-ai pair</code>, then enter the code
+          it shows:</span>
+        <input class="pair-code" id="pair-code" type="text" inputmode="numeric"
+               autocomplete="one-time-code" placeholder="000000" maxlength="6"
+               aria-label="Pairing code">
+      </div>
+      <button class="copy-btn" id="pair-submit" type="button">Pair</button>
+    </div>
     <div class="transcript" id="transcript" aria-live="polite"></div>
   </section>
 
@@ -662,7 +689,10 @@
     mic: document.getElementById("mic-btn"),
     speakSeg: document.getElementById("speak-seg"),
     capabilities: document.getElementById("capabilities"),
-    hint: document.getElementById("hint")
+    hint: document.getElementById("hint"),
+    pairBanner: document.getElementById("pair-banner"),
+    pairCode: document.getElementById("pair-code"),
+    pairSubmit: document.getElementById("pair-submit")
   };
 
   const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -773,6 +803,76 @@
     return !!value && typeof value === "object" && !Array.isArray(value);
   }
 
+  // ---------------------------------------------------------------- pairing
+  // This page is the computer's own page and, after pairing, a phone's page.
+  // The computer needs no token; a phone gets one by entering the code shown
+  // there (astra-ai pair). The token lives in this browser only, every request
+  // carries it, and the computer can revoke it at any time (astra-ai unpair).
+  const TOKEN_KEY = "astraos_pair_token";
+
+  function pairToken() {
+    try { return window.localStorage.getItem(TOKEN_KEY) || ""; }
+    catch (err) { return ""; }
+  }
+
+  function setPairToken(value) {
+    try {
+      if (value) window.localStorage.setItem(TOKEN_KEY, value);
+      else window.localStorage.removeItem(TOKEN_KEY);
+    } catch (err) { /* private mode: the pairing lasts for this page only */ }
+  }
+
+  function showPairing(show) {
+    if (!els.pairBanner) return;
+    els.pairBanner.hidden = !show;
+    if (show) els.pairCode.focus();
+  }
+
+  const rawFetch = window.fetch.bind(window);
+  window.fetch = (input, options) => {
+    const init = Object.assign({}, options || {});
+    const token = pairToken();
+    if (token) {
+      init.headers = Object.assign({}, init.headers || {},
+                                   { "Authorization": "Bearer " + token });
+    }
+    return rawFetch(input, init).then((response) => {
+      if (response.status === 401) {
+        setPairToken("");
+        showPairing(true);
+      }
+      return response;
+    });
+  };
+
+  async function submitPairCode() {
+    const code = els.pairCode.value.trim();
+    if (!code) return;
+    els.pairSubmit.disabled = true;
+    try {
+      const response = await rawFetch("/api/pair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: code })
+      });
+      const payload = await readJson(response);
+      if (response.ok && payload.token) {
+        setPairToken(String(payload.token));
+        els.pairCode.value = "";
+        showPairing(false);
+        addMessage("assistant", "Paired. This phone can use the assistant now.");
+        refreshHealth();
+      } else {
+        hint(payload.detail || "The code was not accepted.");
+        els.pairCode.select();
+      }
+    } catch (err) {
+      hint("Could not reach the computer: " + err.message);
+    } finally {
+      els.pairSubmit.disabled = false;
+    }
+  }
+
   // ---------------------------------------------------------------- health
 
   function scheduleHealthPoll(ready) {
@@ -785,6 +885,12 @@
   async function refreshHealth() {
     try {
       const response = await fetch("/api/health", { headers: { "Accept": "application/json" } });
+      if (response.status === 401) {
+        state.serverSTT = false;
+        state.serverTTS = false;
+        renderCapabilities();
+        return;
+      }
       const health = await readJson(response);
       const voice = health.voice || {};
       state.serverSTT = voice.stt === true;
@@ -1323,6 +1429,14 @@
       els.copySetup.textContent = "Selected";
     }
     window.setTimeout(() => { els.copySetup.textContent = "Copy"; }, 1600);
+  });
+
+  els.pairSubmit.addEventListener("click", submitPairCode);
+  els.pairCode.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submitPairCode();
+    }
   });
 
   document.addEventListener("keydown", (event) => {
