@@ -252,6 +252,25 @@ def test_the_install_unit_is_enabled_and_wanted_by_the_desktop_target() -> None:
     )
 
 
+def test_the_driver_has_a_usb_controller_to_click_with() -> None:
+    """usb-tablet needs a USB bus: the exercise's first CI run died without one.
+
+    The driver clicks with absolute coordinates, which is what usb-tablet provides.
+    "-device usb-tablet" on a machine with no USB controller makes
+    qemu-system-x86_64 exit before the guest boots ("No 'usb-bus' bus found for
+    device 'usb-tablet'", run 38919644411), so the controller must be on the command
+    line and defined before the tablet that attaches to it.
+    """
+    code = _code(HOST_SCRIPT)
+    assert "qemu-xhci" in code, (
+        "the phase-1 QEMU command must bring its own USB controller; usb-tablet alone "
+        "kills QEMU at startup"
+    )
+    assert code.index("qemu-xhci") < code.index("usb-tablet"), (
+        "the controller must be defined before the tablet that attaches to it"
+    )
+
+
 def test_the_workflow_runs_the_exercise() -> None:
     workflow = _text(WORKFLOW)
     assert re.search(r"^      install_boot:", workflow, re.M), (

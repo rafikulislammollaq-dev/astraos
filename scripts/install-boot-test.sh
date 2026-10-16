@@ -286,6 +286,10 @@ say "creating a blank 20 GiB disk"
 qemu-img create -f qcow2 "$WORK/disk.qcow2" 20G
 
 say "phase 1: booting the live medium to install it onto the blank disk"
+# usb-tablet is the absolute-positioning pointer the driver clicks with, and a tablet
+# device needs a USB controller to attach to: without qemu-xhci before it QEMU refuses
+# the device at startup ("No 'usb-bus' bus found for device 'usb-tablet'") and dies
+# before the guest ever boots.
 qemu-system-x86_64 "${ACCEL[@]}" \
     -m 4096 -smp 4 -vga std \
     -cdrom "$ISO" \
@@ -296,6 +300,7 @@ qemu-system-x86_64 "${ACCEL[@]}" \
     -display none -no-reboot \
     -serial "file:$WORK/serial1.log" \
     -monitor "unix:$WORK/monitor1.sock,server,nowait" \
+    -device qemu-xhci \
     -device usb-tablet \
     >"$WORK/qemu1.out" 2>&1 &
 QEMU_PID=$!
