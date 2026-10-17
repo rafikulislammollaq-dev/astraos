@@ -214,11 +214,21 @@ part of CI that runs the image. It:
 1. reads the live kernel and initrd out of the freshly built ISO (read-only loop mount);
 2. boots them in QEMU with the ISO attached as the live medium, using the same live
    parameters as the ISO's own boot entry — `config/distribution.env` is their single
-   definition — plus `console=ttyS0,115200n8` and `astraos.ci=1`;
-3. waits for the serial console to report `ASTRAOS-SMOKE: RESULT: PASS`;
-4. takes a screenshot of the booted desktop through the QEMU monitor;
-5. uploads `serial.log` and `screenshot.png` as the `astraos-boot-self-test` artifact
-   and fails when the result is missing or FAIL.
+   definition — plus `console=ttyS0,115200n8`, `astraos.ci=1` and `astraos.phone=1`, and
+   attaches a virtio serial port named `org.qemu.guest_agent.0` whose host end is kept
+   for step 3;
+3. answers the guest while it runs: it drives the phone-page exercise over QEMU's
+   forwarded port (pairing, an authorized request, the refusal after revocation —
+   `phone-host.log` is the transcript) and pings the QEMU guest agent over the virtio
+   serial port (`guest-sync`, `guest-ping`, `guest-info` — `qga-host.log`); the guest
+   starts the agent from the port via its package's own udev rule, and the guest's
+   self-test reports whether its unit is active;
+4. waits for the serial console to report `ASTRAOS-SMOKE: RESULT: PASS`, or gives up as
+   soon as the console shows the boot itself failed;
+5. takes a screenshot of the booted desktop through the QEMU monitor;
+6. uploads `serial.log`, `phone-host.log`, `qga-host.log` and `screenshot.png` as the
+   `astraos-boot-self-test` artifact and fails when the result is missing or FAIL — and
+   when the image reported PASS but the guest agent never answered the host.
 
 The guest half ships in every ISO at
 `config/live-build/config/includes.chroot/usr/local/sbin/astraos-smoke`, behind

@@ -14,7 +14,10 @@
 #      the astraos.phone=1 section of its self-test), and keeps its transcript as
 #      evidence;
 #   4. waits for "ASTRAOS-SMOKE: RESULT:" on the serial console - or gives up as soon as
-#      the console shows the boot itself failed;
+#      the console shows the boot itself failed - and, while the guest still holds its
+#      session, pings the QEMU guest agent over the virtio serial port attached below
+#      (the guest half is its "qemu-guest-agent" check; this host half is what proves the
+#      agent actually speaks, and its transcript is qga-host.log);
 #   5. takes a screenshot of the booted desktop through the QEMU monitor and verifies it
 #      has content: a flat capture is retried while the guest still holds the session,
 #      because a QEMU stdvga blanking defect can otherwise leave a healthy boot looking
@@ -47,7 +50,8 @@ Usage: scripts/smoke-boot.sh [--timeout MINUTES] [--out DIR] ISO
 Boots a built AstraOS ISO in QEMU with its own live parameters plus a serial console,
 "astraos.ci=1" (the switch the image's self-test conditions on) and "astraos.phone=1"
 (its phone-pairing exercise), answers that exercise from this host the way a phone
-would, waits for the image to report "ASTRAOS-SMOKE: RESULT:", takes a screenshot of
+would, waits for the image to report "ASTRAOS-SMOKE: RESULT:", pings the QEMU guest
+agent over the virtio serial port the guest starts it against, takes a screenshot of
 the booted desktop through the QEMU monitor, and exits 0 only on PASS.
 
   --timeout MINUTES  how long to wait for the self-test (default 25)
@@ -126,6 +130,7 @@ cleanup() {
         cp -f "$WORK/qemu.out" "$OUT_DIR/qemu.out" 2>/dev/null || true
         cp -f "$WORK/phone-host.log" "$OUT_DIR/phone-host.log" 2>/dev/null || true
         cp -f "$WORK/phone-host.out" "$OUT_DIR/phone-host.out" 2>/dev/null || true
+        cp -f "$WORK/qga-host.log" "$OUT_DIR/qga-host.log" 2>/dev/null || true
         if [ -f "$WORK/screen.png" ]; then
             cp -f "$WORK/screen.png" "$OUT_DIR/screenshot.png"
         elif [ -f "$WORK/screen.ppm" ]; then
@@ -200,11 +205,22 @@ say "booting $ISO (self-test timeout ${TIMEOUT_MINUTES} min)"
 # guest watches 8766, nothing in its rules allows it, and the driver's probe of 18766
 # must time out - any connection that instead reaches 8766 is recorded by the guest,
 # which fails its own check.
+#
+# The virtio serial port is the guest-agent exercise: inside the guest, the shipped
+# qemu-guest-agent package's udev rule starts the agent against
+# /dev/virtio-ports/org.qemu.guest_agent.0 the moment this port appears (the guest's
+# self-test checks the unit), and step 4b below pings the agent through the host end of
+# the channel ($WORK/qga.sock) - the half the guest cannot perform itself. Without the
+# port the agent would never start, and "the package is installed" would be all anyone
+# could say.
 qemu-system-x86_64 "${ACCEL[@]}" \
     -m 4096 -smp 4 -vga std \
     -cdrom "$ISO" \
     -kernel "$WORK/vmlinuz" -initrd "$WORK/initrd.img" -append "$APPEND" \
     -nic user,model=e1000,hostfwd=tcp:127.0.0.1:18765-:8765,hostfwd=tcp:127.0.0.1:18766-:8766 \
+    -chardev "socket,id=qga,path=$WORK/qga.sock,server=on,wait=off" \
+    -device virtio-serial-pci \
+    -device "virtserialport,chardev=qga,name=org.qemu.guest_agent.0" \
     -display none -no-reboot \
     -serial "file:$WORK/serial.log" \
     -monitor "unix:$WORK/monitor.sock,server,nowait" \
@@ -377,6 +393,25 @@ while : ; do
     sleep 5
 done
 
+# --- 4b. the guest agent answers the host ----------------------------------------------
+# The virtio serial port attached above is what makes the shipped qemu-guest-agent
+# package's udev rule start the agent inside the guest; the guest's self-test reports
+# whether its unit is active. This is the other half: the protocol itself -
+# guest-sync, guest-ping, guest-info - performed from outside the guest.
+# scripts/qga-ping.py holds the dialogue and its transcript is kept as evidence. The
+# guest holds its desktop for ~25s after reporting its result, so the exchange happens
+# well inside that window.
+QGA_OK=0
+if [ -n "$result" ] && kill -0 "$QEMU_PID" 2>/dev/null; then
+    if python3 "$REPO_ROOT/scripts/qga-ping.py" "$WORK/qga.sock" "$WORK/qga-host.log"; then
+        QGA_OK=1
+    else
+        say "the QEMU guest agent did not answer; qga-host.log records what happened"
+    fi
+else
+    say "the QEMU guest agent was not asked: the guest did not hold a session"
+fi
+
 # --- 5. a picture of the booted system -------------------------------------------------
 # The guest holds the desktop for this after reporting its result, having just turned
 # blanking off and repainted the screen (its "screenshot-ready" check). The capture is
@@ -458,6 +493,11 @@ if [ -s "$WORK/phone-host.log" ]; then
     sed 's/^/  /' "$WORK/phone-host.log"
     echo
 fi
+if [ -s "$WORK/qga-host.log" ]; then
+    say "QEMU guest agent (host side):"
+    sed 's/^/  /' "$WORK/qga-host.log"
+    echo
+fi
 
 if [ -z "$result" ]; then
     say "FAILED: the image never reported a result. Last serial lines:"
@@ -471,6 +511,13 @@ fi
 
 case "$result" in
     *"RESULT: PASS"*)
+        # The image's self-test cannot prove the agent speaks; this host half can.
+        # A green image with a silent agent is still a broken promise, so it fails
+        # here rather than being mentioned in passing.
+        if [ "$QGA_OK" -ne 1 ]; then
+            say "FAILED: the image passed its self-test, but the QEMU guest agent did not answer the host; see qga-host.log and the guest's qemu-guest-agent check"
+            exit 1
+        fi
         say "the image booted, reached the desktop, and passed its self-test"
         say "$result"
         if [ -n "$OUT_DIR" ]; then

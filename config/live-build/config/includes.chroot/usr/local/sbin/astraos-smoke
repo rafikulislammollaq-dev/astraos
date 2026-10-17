@@ -183,6 +183,23 @@ for pkg in intel-microcode amd64-microcode fwupd zram-tools vainfo \
     has_pkg "$pkg"
 done
 
+# --- 4b. the virtual-machine guest agents --------------------------------------------
+# AstraOS is most often tried in a virtual machine, so the image ships the agents the
+# hypervisors expect (35-hardware.list.chroot). Where the caller provided the serial
+# port a hypervisor would provide, the agent must actually be running: the package's
+# udev rule starts qemu-guest-agent.service when the virtio port appears, so an active
+# unit proves the port, the rule and the binary together. scripts/smoke-boot.sh always
+# provides the port; a boot without it (the install exercise's disk boot, a hand boot
+# of the raw kernel) says so instead of quietly passing.
+for pkg in qemu-guest-agent spice-vdagent open-vm-tools open-vm-tools-desktop; do
+    has_pkg "$pkg"
+done
+if [ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]; then
+    run "qemu-guest-agent" systemctl is-active qemu-guest-agent
+else
+    say "note qemu-guest-agent: no virtio guest-agent port on this boot; the agent ships but was not exercised"
+fi
+
 # --- 5. commands that must run -------------------------------------------------------
 run "hud-version" astraos-hud --version
 run "assistant-cli" astra-ai --help

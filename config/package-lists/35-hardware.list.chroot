@@ -82,3 +82,25 @@ squashfs-tools
 # two driver families cover the largest share of consumer printers.
 printer-driver-gutenprint
 printer-driver-escpr
+
+# --- Virtual machines ---------------------------------------------------------------
+# AstraOS is usually tried in a virtual machine first (the README's quick start boots
+# it in VirtualBox, and CI boots it under QEMU on every build), so the guest side ships
+# the agents each hypervisor expects. None of them needs enabling by hand: the QEMU and
+# SPICE agents are started by the packages' own udev rules when their virtio ports
+# appear, the VMware daemon's unit is conditioned on the hypervisor, and the session
+# halves (clipboard, display resize) autostart with the desktop. All are self-gating,
+# so the same image behaves the same on bare metal.
+#
+# The display side is already covered: xserver-xorg-video-all (25-graphics) carries the
+# QXL, VMware and virtio drivers.
+qemu-guest-agent
+spice-vdagent
+open-vm-tools
+open-vm-tools-desktop
+#
+# NOT here: VirtualBox's Guest Additions. Debian 13 does not package the VirtualBox
+# guest utilities (virtualbox-guest-* exists only in Debian's unstable suite), and this
+# project ships only its pinned release — so in VirtualBox, install that application's
+# own Guest Additions ISO in the guest, as docs/TROUBLESHOOTING.md says. Recorded here
+# so the absence reads as a decision with a reason, not an omission.

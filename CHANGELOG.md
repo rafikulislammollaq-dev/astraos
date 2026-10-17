@@ -19,6 +19,47 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The virtual machines people try first now have their guest agents (source; the
+  QEMU agent's first CI exercise is pending).** AstraOS is usually booted in a virtual
+  machine before it is trusted with anything, and the image shipped none of the guest
+  tooling: clipboard sharing, display resize and host-initiated clean shutdown depended
+  on installing it by hand, and in VirtualBox they were impossible from Debian's own
+  packages. `config/package-lists/35-hardware.list.chroot` now selects
+  `qemu-guest-agent` (QEMU/KVM: clean shutdown, time sync, host queries),
+  `spice-vdagent` (SPICE: clipboard and display resize) and `open-vm-tools` with
+  `open-vm-tools-desktop` (VMware, both halves). Every name, path, unit and udev rule
+  was read out of the pinned trixie packages themselves — the `.deb` files downloaded
+  and opened — rather than guessed, and nothing needs enabling: the QEMU and SPICE
+  agents are started by their packages' own udev rules when their virtio ports appear,
+  and the VMware daemon's unit is conditioned on the hypervisor, so every agent is
+  inert on every other machine and the same image behaves the same on bare metal.
+  VirtualBox's Guest Additions stay absent, and now say why: Debian 13 packages
+  `virtualbox-guest-*` only in its unstable suite, and this project ships only its
+  pinned release — `docs/TROUBLESHOOTING.md` tells VirtualBox users to install
+  VirtualBox's own Guest Additions ISO, which is what was always necessary. The image
+  asserts the claim before the medium is packed: `0700-verify` checks the binaries, the
+  units, the udev rules and the session autostarts, the boot self-test checks the four
+  packages, and — where the caller provided the port a hypervisor would provide — that
+  the agent they start is actually running, reporting a portless boot (the install
+  exercise's disk boot) as a note instead of a silent pass. The service policy records
+  the one enabled unit (VMware's, self-conditioned) and notes the two udev-activated
+  ones so the audit explains them.
+
+- **The boot exercise now talks to the guest agent (source; its first run is pending).**
+  The guest's own self-test can only see that the agent's unit is active; the protocol
+  is what a hypervisor actually uses. `scripts/smoke-boot.sh` now attaches a virtio
+  serial port named `org.qemu.guest_agent.0` (host end in a unix socket) and, while the
+  guest still holds its session, `scripts/qga-ping.py` performs the dialogue QEMU's
+  documentation defines: `guest-sync-delimited` (which flushes channel noise and proves
+  the peer echoes our id), `guest-ping`, then `guest-info` for the version — kept as
+  `qga-host.log` beside the other evidence. An image that reported PASS with an agent
+  that never answered fails the run; the guest half of the same claim lives in its
+  `qemu-guest-agent` check. The client's framing is pinned on every host by
+  `tests/integration/test_qga_ping.py` against a fake agent that prefixes messages with
+  `0xFF`, emits events and non-JSON filler, and splits a message across reads — the
+  shapes a real channel arrives in — plus a silent channel that must time out and a
+  reply with the wrong id that must be refused.
+
 - **The APT archive the packages were missing (source; its first CI assembly is
   pending).** An installed AstraOS got Debian packages and nothing else: no archive
   carried `astraos-*` updates.

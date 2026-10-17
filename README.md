@@ -85,7 +85,8 @@ Built and proven on GitHub Actions on 2026-10-16 (Build AI engine run #1, about
   ladder's answer quality.)
 
 Not tested: the installer, installing to disk, Wi-Fi, GPUs, physical machines,
-UEFI Secure Boot, audio, printing, Bluetooth, and the assistant's web page beyond
+UEFI Secure Boot, audio, printing, Bluetooth, the virtual-machine guest agents against
+real hypervisor interfaces, and the assistant's web page beyond
 the pairing arc. The installer's first CI attempt did not reach the guest — QEMU
 refused the driver's tablet for want of a USB controller (run 38919644411); the
 retry started the guest and reached a running Calamares, which then exited at
@@ -97,9 +98,9 @@ the tree, and the next attempt is pending.
 
 ## What is included
 
-Built from Debian 13 (trixie). The image comes from 348 reviewed selections across 10
-package lists plus their dependencies and recommended packages; the built live
-filesystem holds 182,962 files (2,159 MiB extracted).
+Built from Debian 13 (trixie). The image comes from 351 distinct reviewed package
+selections across 10 package lists plus their dependencies and recommended packages; the built
+live filesystem holds 182,962 files (2,159 MiB extracted).
 
 | Component | Choice |
 |---|---|
@@ -110,6 +111,7 @@ filesystem holds 182,962 files (2,159 MiB extracted).
 | Session dashboard | AstraOS HUD (`astraos-hud`): one full-screen window with live CPU, memory, network, disk and temperature panels, an on-screen keyboard and an embedded terminal, started from its menu entry or launcher |
 | Assistant | `astraos-ai`: an opt-in local assistant with a three-tier model ladder and a shipped skills/knowledge library. No model is bundled and nothing runs until one is installed (`docs/AI.md`) |
 | Hardware enablement | VA-API video decode for Intel and AMD (`intel-media-va-driver`, `i965-va-driver`, `mesa-va-drivers`) with `vainfo`; `fwupd` for device firmware updates; `zram-tools` compressed swap; `irqbalance`; `bluez-firmware` |
+| Virtual machines | Guest agents for the hypervisors people try first: `qemu-guest-agent` (QEMU/KVM: clean shutdown, time sync, host queries), `spice-vdagent` (SPICE: clipboard and display resize) and `open-vm-tools` with its desktop plugins (VMware). All start only inside their own hypervisor — udev rules on the virtio ports, or a unit conditioned on VMware. VirtualBox's Guest Additions are not in Debian 13, so in VirtualBox use that application's own Guest Additions ISO (see `docs/TROUBLESHOOTING.md`) |
 | Phones and media over USB | MTP for Android phones and cameras in Thunar (`libmtp-runtime`, `mtp-tools`), `adb` and `fastboot` with udev rules |
 | Disk compatibility | `ntfs-3g` (read-write Windows disks), `exfatprogs` (SD cards and cameras), `squashfs-tools` |
 | Media codecs | `libavcodec-extra`, `ffmpeg`, the GStreamer libav/bad/ugly set, DVD navigation (`libdvdnav4`) |
@@ -147,9 +149,14 @@ the ISO stores the system as a compressed squashfs.
    firmware, but that run is pending; until it is green, treat a machine enforcing
    Secure Boot as one that refuses the medium, and turn Secure Boot off to try
    AstraOS.
-2. **Copy and paste between the host and a virtual machine needs Guest Additions**,
-   which the image does not ship. Right Ctrl releases the mouse; inside the terminal
-   copy is Ctrl+Shift+C and paste is Ctrl+Shift+V.
+2. **Copy and paste between the host and a virtual machine depends on the hypervisor's
+   guest tools.** The image ships the guest agents (see "Virtual machines" above), but
+   they have not been exercised against a real hypervisor's interface yet: in
+   QEMU/KVM with SPICE the clipboard and display resize come from `spice-vdagent`, in
+   VMware from `open-vm-tools`, and in VirtualBox you must install VirtualBox's own
+   Guest Additions from its CD image — Debian 13 does not package the VirtualBox guest
+   utilities, so AstraOS cannot ship them. Right Ctrl releases the mouse; inside the
+   terminal copy is Ctrl+Shift+C and paste is Ctrl+Shift+V.
 3. **Physical hardware and the installer are untested.** The image boots in virtual
    machines — by hand in VirtualBox through the live menu (2026-10-15), and in CI
    under QEMU through its own boot menus on BIOS and UEFI (run 38913161772) — but
@@ -291,7 +298,12 @@ of HTML, CSS and Make. The operating system itself comes from Debian packages.
    `structural=PASS`; latest 2026-10-16, run 38864588609).
 3. Test the Calamares installer: install to a VM disk and boot the installed system.
 4. Reduce ISO size (turn off APT recommends, trim firmware and large optional apps).
-5. Add Guest Additions support for VMs.
+5. ~~Add Guest Additions support for VMs~~ **The VirtualBox kind is impossible from
+   Debian 13** (nothing in main/contrib/non-free packages the guest utilities; only
+   Debian's unstable suite does, and this project ships its pinned release), so
+   VirtualBox users install VirtualBox's own Guest Additions ISO. The QEMU/KVM (SPICE
+   included) and VMware agents now ship in the image; the QEMU agent's first CI
+   exercise is pending (`CHANGELOG.md`).
 6. Test on physical hardware.
 7. See the AstraOS HUD on a booted ISO's screen. It renders from the source tree
    under GTK 3 on a virtual display (2026-10-16), but no built image has shown it

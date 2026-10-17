@@ -429,3 +429,61 @@ def test_the_guest_proves_the_firewall_is_on_and_blocking() -> None:
     assert "firewall-probe-listening" in text, (
         "a listener that never came up would make an empty arrival count a false proof"
     )
+
+
+def test_the_virtual_machine_guest_agents_ship() -> None:
+    """The image is most often tried in a VM; a hypervisor's guest must be able to speak.
+
+    The four packages are the guest side of QEMU/KVM (SPICE included) and VMware. Each
+    name was checked against the real trixie archive, and each service needs no enabling:
+    the packages' own udev rules or ConditionVirtualization lines start them in the
+    right hypervisor and nowhere else. VirtualBox is deliberately absent: Debian 13 does
+    not package virtualbox-guest-*, so listing it would stop the build in the chroot
+    stage - the hardware list names it in a comment for exactly that reason.
+    """
+    hardware = _text(HARDWARE_LIST)
+    for package in ("qemu-guest-agent", "spice-vdagent", "open-vm-tools", "open-vm-tools-desktop"):
+        assert package in hardware, f"{package} is missing from 35-hardware.list.chroot"
+    entries = [line.strip() for line in hardware.splitlines()]
+    for absent in ("virtualbox-guest-utils", "virtualbox-guest-x11"):
+        assert absent not in entries, (
+            f"{absent} is requested from the pinned Debian release, which does not "
+            "package it (only Debian's unstable suite does), so the image build would "
+            "stop in the chroot stage"
+        )
+
+
+def test_the_guest_self_test_checks_the_agents_where_a_hypervisor_would() -> None:
+    text = _text(GUEST_SCRIPT)
+    for package in ("qemu-guest-agent", "spice-vdagent", "open-vm-tools", "open-vm-tools-desktop"):
+        assert package in text, f"the boot self-test no longer checks {package}"
+    assert "/dev/virtio-ports/org.qemu.guest_agent.0" in text, (
+        "the agent check must be tied to the port that starts it: running it blindly "
+        "would fail the install exercise's disk boot, which attaches no port"
+    )
+    assert "systemctl is-active qemu-guest-agent" in text, (
+        "the guest half reports whether the udev rule started the agent"
+    )
+    assert "note qemu-guest-agent" in text, (
+        "a boot without the port must say so - an unperformed check is never a pass"
+    )
+
+
+def test_the_host_script_attaches_the_guest_agent_port_and_requires_an_answer() -> None:
+    text = _text(HOST_SCRIPT)
+    assert "org.qemu.guest_agent.0" in text and "virtio-serial" in text, (
+        "without the virtio serial port the guest agent never starts, and the exercise "
+        "would prove only that a package is installed"
+    )
+    assert "qga-ping.py" in text and "qga-host.log" in text, (
+        "the host must perform the agent protocol and keep the transcript as evidence; "
+        "the guest cannot test the dialogue with itself"
+    )
+    assert "QGA_OK" in text, (
+        "a silent agent must fail the run, not warn about it"
+    )
+    assert "the image passed its self-test, but the QEMU guest agent did not answer" in text, (
+        "a green image with a silent agent is still a broken promise; the PASS branch "
+        "must refuse it"
+    )
+

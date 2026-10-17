@@ -131,6 +131,7 @@ never on physical hardware.
 | Legacy BIOS boot | **CI PASS** (the syslinux menu, run 38913161772) | Physical hardware |
 | UEFI boot | **CI PASS** (the GRUB menu, run 38913161772) | Physical hardware |
 | Live desktop startup | **CI PASS** (LightDM active, Xfce session as `astra`) | Booting the image by hand and interacting |
+| Virtual-machine guest agents (QEMU/SPICE, VMware) | UNTESTED (the packages ship in every image; the QEMU agent's first CI run is pending) | One boot per hypervisor, exercising clipboard, resize and shutdown |
 | Mouse, keyboard and display resolution in the live session | UNTESTED | Booting the image |
 | Live session applications (browser, file manager, terminal) | UNTESTED | Booting the image |
 | Network recognition in the live session | **CI PASS** (NetworkManager active, IPv4 address, DNS resolution) | Physical hardware |

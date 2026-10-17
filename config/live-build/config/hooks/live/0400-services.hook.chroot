@@ -81,6 +81,17 @@ enable_unit astraos-smoke.service         "boot self-test; runs only with astrao
 # scripts/install-boot-test.sh (docs/BUILDING.md, "The install exercise").
 enable_unit astraos-install.service       "install exercise; runs only with astraos.ci.install on the kernel command line"
 
+# --- Virtual-machine guest integration -----------------------------------------
+# The guest agents are self-gating, so exactly one of them has a unit to enable: the
+# VMware daemon, whose unit itself is conditioned on the hypervisor. The QEMU and
+# SPICE agents are started by their packages' own udev rules when their virtio ports
+# appear, so they never appear in the enabled list - recorded as comments so the
+# audit does not leave their absence unexplained. 35-hardware.list.chroot carries the
+# packages; 0700-verify asserts the rules and units.
+enable_unit open-vm-tools.service "VMware guest integration; the unit is conditioned on ConditionVirtualization=vmware and skips itself everywhere else"
+printf '# note: qemu-guest-agent.service is not enabled by design - 60-qemu-guest-agent.rules starts it when the virtio port appears\n' >> "$POLICY"
+printf '# note: spice-vdagentd.socket is not enabled by design - 70-spice-vdagentd.rules starts it when the virtio port appears\n' >> "$POLICY"
+
 # --- Deliberately not enabled -------------------------------------------------
 # Each of these is installed or present, but enabling it would widen the attack
 # surface or slow boot without a user-facing benefit (plan §13.2).

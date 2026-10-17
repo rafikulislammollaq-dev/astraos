@@ -37,6 +37,14 @@ Rationale for every service is written into the image at
 thermald, systemd-timesyncd, udisks2, upower, accounts-daemon, rsyslog, cron, avahi,
 lm-sensors, ufw (the inbound firewall itself; on from boot — §3).
 
+**Enabled only where the hypervisor is:** `open-vm-tools.service` — the unit is
+conditioned on VMware (`ConditionVirtualization=vmware`) and skips itself on every other
+machine. The QEMU and SPICE guest agents need no entry here at all: their packages' udev
+rules start them when their virtio ports appear (`60-qemu-guest-agent.rules`,
+`70-spice-vdagentd.rules`) and nowhere else. All four packages ship in every image
+(`config/package-lists/35-hardware.list.chroot`); `0700-verify` asserts the binaries,
+units and rules.
+
 **Deliberately not enabled:** `ssh.service`, `sshd.service`, `cups-browsed.service`.
 
 **Not installed at all:** any SSH server. The build fails if `/usr/sbin/sshd` exists. The

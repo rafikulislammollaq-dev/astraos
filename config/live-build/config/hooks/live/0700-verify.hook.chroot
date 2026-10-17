@@ -143,6 +143,25 @@ check "calamares settings exist"          test -f /etc/calamares/settings.conf
 check "calamares astraos branding exists" test -d /usr/share/calamares/branding/astraos
 check "unsquashfs is available"           sh -c 'command -v unsquashfs'
 
+# --- Virtual machine guest integration -----------------------------------------
+# The image is most often tried in a virtual machine, so the guest agents the
+# hypervisors expect must be in it (35-hardware.list.chroot carries them). Their
+# system services need no enabling: QEMU's and SPICE's are started by the packages'
+# own udev rules when the virtio ports appear, and the VMware daemon's unit is
+# conditioned on the hypervisor. Those rules and units are what make that true, so
+# they are asserted with the binaries - a wrong path here refuses the build rather
+# than the user's first virtual machine.
+check "the QEMU guest agent is installed"      test -x /usr/sbin/qemu-ga
+check "the QEMU guest agent unit is shipped"   test -f /usr/lib/systemd/system/qemu-guest-agent.service
+check "the QEMU guest agent starts from udev"  test -f /usr/lib/udev/rules.d/60-qemu-guest-agent.rules
+check "the SPICE agent daemon is installed"    test -x /usr/sbin/spice-vdagentd
+check "the SPICE session agent is installed"   test -x /usr/bin/spice-vdagent
+check "the SPICE agent starts from udev"       test -f /usr/lib/udev/rules.d/70-spice-vdagentd.rules
+check "the SPICE session agent autostarts"     test -f /etc/xdg/autostart/spice-vdagent.desktop
+check "the VMware tools daemon is installed"   test -x /usr/bin/vmtoolsd
+grep_q "the VMware unit is conditioned on VMware" /usr/lib/systemd/system/open-vm-tools.service '^ConditionVirtualization=vmware$'
+check "the VMware session agent autostarts"    test -f /etc/xdg/autostart/vmware-user.desktop
+
 # --- Networking and audio -----------------------------------------------------
 check "NetworkManager is installed"       test -x /usr/sbin/NetworkManager
 check "nm-applet is installed"            test -x /usr/bin/nm-applet

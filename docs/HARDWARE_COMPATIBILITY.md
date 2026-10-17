@@ -62,6 +62,7 @@ driver into something the desktop can use — is `config/package-lists/35-hardwa
 | Phones, cameras, players over USB | `libmtp-runtime`, `mtp-tools`, `adb`, `fastboot`, `android-sdk-platform-tools-common` |
 | Plugged-in filesystems | `ntfs-3g`, `exfatprogs`, `squashfs-tools` |
 | Printer drivers | `printer-driver-gutenprint`, `printer-driver-escpr` |
+| Virtual machines | `qemu-guest-agent`, `spice-vdagent`, `open-vm-tools`, `open-vm-tools-desktop` (each starts only inside its own hypervisor) |
 
 On a machine where video playback stutters, `vainfo` prints which decode entry points
 exist; `fwupdmgr get-updates` is the firmware half; `mtp-detect` explains a phone that
@@ -77,6 +78,7 @@ does not appear.
 | USB keyboards, mice, storage | Should work | High |
 | VirtualBox virtual hardware | Should work; the primary target | High |
 | QEMU/KVM virtual hardware | Should work | Medium |
+| Guest integration in a virtual machine | QEMU/KVM with SPICE (clipboard, resize, clean shutdown) and VMware ship their agents; VirtualBox needs VirtualBox's own Guest Additions ISO | Medium |
 | Intel integrated graphics | Should work with `i915` | Medium |
 | AMD graphics with `amdgpu` | Should work | Medium |
 | Wired Ethernet (common chipsets) | Should work | Medium |

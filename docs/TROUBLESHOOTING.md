@@ -29,9 +29,11 @@ without hardware acceleration is slow. Give the VM at least 2 CPUs and 4 GB RAM.
 hardware, the live session is still slower than an installed system by design.
 
 **The screen resolution is wrong in the live session.**
-Settings → Display. In a VM, install guest additions on the host side, or choose a
-standard mode. The live session does not install guest additions for you, and doing so
-would require network access and privileged packages in a read-only session.
+Settings → Display. In QEMU/KVM with SPICE the shipped `spice-vdagent` follows the client
+window, and in VMware the shipped `open-vm-tools` desktop plugins do the same; on other
+displays, choose a standard mode. In VirtualBox, install VirtualBox's own Guest Additions
+from its CD image — Debian 13 does not package the VirtualBox guest utilities, so AstraOS
+cannot ship them (see "Virtual machines" in `README.md` and `KNOWN_LIMITATIONS.md` §2).
 
 **I cannot log in to the live session.**
 The live user `astra` has no password. Select the user and press Enter at the empty
