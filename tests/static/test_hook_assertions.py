@@ -101,6 +101,17 @@ HOOK_ASSERTIONS: list[tuple[str, str, str, str, bool]] = [
         "/usr/share/calamares/branding/astraos/branding.desc",
         True,
     ),
+    # The module-presence loop above cannot see a search path that finds nothing:
+    # the modules were on disk in run 38940011841 and the installer still opened on
+    # "Calamares Initialization Failed". This entry pins that the hook reads
+    # modules-search from settings.conf and that the shipped file still sets it.
+    (
+        "0300-installer.hook.chroot",
+        r"^modules-search:",
+        "installer/calamares/settings.conf",
+        "/etc/calamares/settings.conf",
+        True,
+    ),
 ]
 
 # grep(1) and Python agree on the syntax these patterns use, except for POSIX character

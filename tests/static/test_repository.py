@@ -160,6 +160,24 @@ def test_calamares_configuration_has_the_safety_properties() -> None:
         "show: phase after exec, or the installer ends with no finished page."
     )
 
+    # Calamares 3.3 hands `modules-search` straight to its module search paths
+    # (src/libcalamares/Settings.cpp), so a settings file without the key searches no
+    # directory at all and the wizard opens on "Calamares Initialization Failed"
+    # ("Found 0 modules") instead of its first page. The install exercise in run
+    # 38940011841 measured exactly that, on an image whose build hook had passed: the
+    # hook checked that the modules exist on disk, not that Calamares looks there.
+    search = re.search(r"^modules-search:\s*\[(.*)\]", settings, re.M)
+    assert search, "settings.conf must set modules-search; without it Calamares finds no module"
+    entries = [entry.strip() for entry in search.group(1).split(",")]
+    assert "local" in entries, (
+        "modules-search must name `local`, the install prefix's calamares/modules directory"
+    )
+    assert "/usr/lib/x86_64-linux-gnu/calamares/modules" in entries, (
+        "modules-search must name Debian's multiarch module directory explicitly: it is "
+        "where the build hook found the modules, and naming it keeps Calamares and the "
+        "hook pointing at the same place"
+    )
+
     # Keys no Calamares in the pinned suite reads are configuration in appearance
     # only. The 3.3.14 sources (src/libcalamares/Settings.cpp) read neither of these;
     # they were removed from settings.conf and must not come back.

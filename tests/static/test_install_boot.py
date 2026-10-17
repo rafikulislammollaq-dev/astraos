@@ -285,3 +285,23 @@ def test_the_workflow_runs_the_exercise() -> None:
     assert "astraos-install-test" in workflow, (
         "the evidence artifact name is part of the contract"
     )
+
+
+def test_a_dead_installer_is_caught_before_the_deadline() -> None:
+    """A Calamares that never initializes must not cost the whole timeout.
+
+    Run 38940011841 ran the full 45-minute budget against a guest showing
+    "Calamares Initialization Failed": the destructive phase never started, the report
+    file was never written, and the verdict said only that no report appeared. The wait
+    loop now watches the console log the installer streams into the seed share and gives
+    up in seconds with a name for what happened.
+    """
+    code = _code(HOST_SCRIPT)
+    assert "Calamares Initialization Failed" in code, (
+        "the wait loop must notice a Calamares that never drew a page; the driver alone "
+        "cannot, because it clicks at coordinates regardless of what is on screen"
+    )
+    assert 'problems+=("phase 1: ${init_failure}")' in code, (
+        "an initialization failure must reach the verdict as its own problem, not as "
+        "'the installer never wrote its report'"
+    )

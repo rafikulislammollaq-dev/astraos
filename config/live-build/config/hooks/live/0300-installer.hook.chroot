@@ -84,6 +84,37 @@ if [ "$MISSING" -gt 0 ]; then
 fi
 log "all ${COUNT} configured Calamares modules are installed"
 
+# --- Module search path --------------------------------------------------------
+# The loop above proves the modules exist; it cannot prove Calamares will look for
+# them where they are. Settings.cpp passes `modules-search` straight to the module
+# search paths, so a settings file without the key searches nowhere and the installer
+# opens on "Calamares Initialization Failed" before drawing a page. The install
+# exercise for this release died exactly there (run 38940011841) on an image this hook
+# had passed, because presence on disk is not the same as being in the search path.
+# Require the list, and require one of its entries to really carry modules.
+SEARCH="$(sed -n 's/^modules-search:[[:space:]]*\[\(.*\)\].*/\1/p' /etc/calamares/settings.conf)"
+[ -n "${SEARCH}" ] \
+    || fail "settings.conf has no modules-search list; Calamares would search no directory at all and open on its initialization error dialog"
+
+search_ok=no
+for entry in $(printf '%s' "${SEARCH}" | tr ',' ' '); do
+    if [ "${entry}" = local ]; then
+        # `local` is resolved by Calamares to the install prefix's lib directory, and
+        # MODULE_DIRS is what that directory is on this system.
+        dirs="${MODULE_DIRS}"
+    else
+        dirs="${entry}"
+    fi
+    for dir in ${dirs}; do
+        if [ -d "${dir}/welcome" ] && [ -d "${dir}/unpackfs" ]; then
+            search_ok=yes
+        fi
+    done
+done
+[ "${search_ok}" = yes ] \
+    || fail "modules-search names no directory that holds the Calamares modules (entries: ${SEARCH})"
+log "modules-search names a directory that holds the modules"
+
 # --- Branding sanity ----------------------------------------------------------
 # The files the branding descriptor references must exist next to it: Calamares 3.3
 # exits at the branding constructor when an image or the slideshow file is missing, so

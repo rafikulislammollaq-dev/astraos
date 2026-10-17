@@ -486,12 +486,25 @@ UI_DRIVER_PID=$!
 
 # --- 5. wait for the installer's report ------------------------------------------------
 deadline=$(( $(date +%s) + TIMEOUT_MINUTES * 60 ))
+init_failure=""
 while : ; do
     if [ -s "$WORK/seed/done" ]; then
         break
     fi
     if grep -qE 'BOOT FAILED!|Kernel panic' "$WORK/serial1.log" 2>/dev/null; then
         say "the live boot itself failed before the installer could run"
+        break
+    fi
+    # An installer that cannot initialize never draws a page: Calamares opens on
+    # "Calamares Initialization Failed" and sits there, and the driver presses Return
+    # at its pages' coordinates until the deadline. The installer streams its console
+    # log into the seed share while it runs, so this failure is caught in seconds.
+    # Run 38940011841 measured the 45-minute version: a settings.conf without
+    # modules-search, which 0300-installer.hook.chroot now refuses to build.
+    if [ -z "$init_failure" ] \
+        && grep -qa 'Calamares Initialization Failed' "$WORK/seed/calamares-console.log" 2>/dev/null; then
+        init_failure="Calamares failed to initialize and never drew a page"
+        say "$init_failure (its console log is kept with the evidence)"
         break
     fi
     if ! kill -0 "$QEMU_PID" 2>/dev/null; then
@@ -549,7 +562,9 @@ if [ "$phase1_rc" = "0" ]; then
 fi
 
 problems=()
-if [ "$phase1_ok" -ne 1 ]; then
+if [ -n "$init_failure" ]; then
+    problems+=("phase 1: ${init_failure}")
+elif [ "$phase1_ok" -ne 1 ]; then
     if [ -z "$phase1_rc" ]; then
         problems+=("phase 1: the installer never wrote its report")
     else
@@ -726,6 +741,11 @@ say "install driver output:"
 grep 'ASTRAOS-INSTALL:' "$WORK/serial1.log" 2>/dev/null | sed 's/^/  /' || true
 if [ -n "$phase1_rc" ]; then
     say "Calamares exit report: rc=${phase1_rc}"
+fi
+if [ -n "$init_failure" ]; then
+    say "the installer's console log reports:"
+    grep -aE 'Found [0-9]+ modules|ERROR: Module|Initialization Failed' \
+        "$WORK/seed/calamares-console.log" 2>/dev/null | head -n 6 | sed 's/^/  /' || true
 fi
 echo
 say "installed system's self-test:"
