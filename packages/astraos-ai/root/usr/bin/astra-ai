@@ -55,6 +55,7 @@ if str(_LIB) not in sys.path:
     sys.path.append(str(_LIB))
 
 from astraos.ai import actions, config, llm  # noqa: E402
+from astraos.ai import eval as ai_eval  # noqa: E402
 from astraos.ai import machine  # noqa: E402
 from astraos.ai import prompt as ai_prompt  # noqa: E402
 from astraos.ai import setup as ai_setup  # noqa: E402
@@ -739,6 +740,29 @@ def cmd_knowledge(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_eval(args: argparse.Namespace) -> int:
+    """Run the fixed evaluation tasks and write the report.
+
+    The numbers are the product, so a task the model failed is a measurement
+    and not an error: the exit status is 0 whenever a report was written, and
+    1 only when there is no engine to measure with. The engine is started
+    before the first task, so model loading does not land inside any task's
+    measured time.
+    """
+    engine = _engine()
+    engine.start()
+    report = ai_eval.run(engine, limit=args.limit or None, progress=_note)
+    path = ai_eval.save(report)
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print(ai_eval.render(report), end="")
+    if args.stop:
+        engine.stop()
+    _note(f"report written to {path}")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -837,6 +861,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("knowledge", help="search this machine's own documentation")
     p.add_argument("query", nargs="*", help="what to look up; omit it for a summary")
     p.set_defaults(handler=cmd_knowledge)
+
+    p = sub.add_parser("eval", help="run the fixed evaluation tasks and write the numbers")
+    p.add_argument("--limit", type=int, default=0, metavar="N",
+                   help="run only the first N tasks")
+    p.add_argument("--stop", action="store_true",
+                   help="stop the model server when the suite is done")
+    p.add_argument("--json", action="store_true", help="print the report as JSON")
+    p.set_defaults(handler=cmd_eval)
 
     return parser
 

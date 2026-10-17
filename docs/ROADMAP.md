@@ -221,7 +221,15 @@ rung itself. The SIGILL lesson becomes a feature.
 - [ ] **An "AI readiness" tier** derived from measurements, not branding.
 - [ ] **An evaluation suite with fixed tasks**; publish success rate and tokens per
   second per tier, with answer quality and execution quality scored separately. The
-  360M model stays a smoke test and is never presented as a quality result.
+  360M model stays a smoke test and is never presented as a quality result. The
+  source exists (2026-10-17): `astra-ai eval` runs eight fixed tasks with
+  deterministic checks — five through the call a question uses, three through the
+  worker's constrained JSON — scores answer quality and execution quality
+  separately, takes tokens per second from the engine's own usage block (or says it
+  was not reported), and writes a JSON report beside the models under the
+  assistant's data directory. The engine workflow runs the suite on the 360M smoke
+  model, asserts the report is well formed, and uploads it as a smoke result. First
+  run pending: the report from a green **Build AI engine** run.
 - [ ] **Run the full ladder on the project's target machine** (the 1.7B executor is
   already downloaded) and record the numbers: that is what turns "runs on old PCs"
   from a design goal into a measurement.

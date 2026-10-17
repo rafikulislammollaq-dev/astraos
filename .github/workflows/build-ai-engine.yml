@@ -47,7 +47,13 @@
 #   * the ladder accepts a request end to end (`astra-ai work --json`) and
 #     returns an outcome, even when the only installed model is the smallest
 #     catalogue entry (a 360M router-class model — CI is a smoke test, not a
-#     quality test; answer quality is what the 1.7B/4B ladder is for).
+#     quality test; answer quality is what the 1.7B/4B ladder is for);
+#   * the evaluation suite runs against the smoke model through the real CLI,
+#     attempts every task, scores answer quality and execution quality
+#     separately, and its report is well formed and names the model it
+#     measured — the numbers themselves are the smoke model's and are
+#     explicitly not a quality result, in the report, in the uploaded artifact
+#     and in this job's summary (docs/ROADMAP.md, Stage 2).
 #
 # WHAT IS *NOT* PROVEN HERE
 # -------------------------
@@ -260,6 +266,41 @@ jobs:
           print("the JSON grammar holds")
           PY
 
+      - name: The evaluation suite runs on the smoke model
+        run: |
+          # What is asserted: the suite runs through the real CLI, attempts
+          # every task, produces a well-formed report that names the model it
+          # measured, and scored both halves. The numbers are the 360M smoke
+          # model's and are explicitly NOT a quality result - the report says
+          # so itself, this step repeats it in the summary, and the artifact is
+          # named as a smoke result. --stop hands the port to the ladder step.
+          python3 "$ASTRA_AI" eval --stop --json > /tmp/eval.json
+          python3 - <<'PY' | tee /tmp/eval-summary.txt
+          import json
+
+          report = json.load(open("/tmp/eval.json"))
+          assert report["schema"] == 1, report
+          assert report["model"], "the report must name the model it measured"
+          summary = report["summary"]
+          for kind in ("answer", "execution"):
+              assert summary[kind]["total"] > 0, (kind, summary[kind])
+          assert len(report["tasks"]) == summary["total"], report
+          print("model:", report["model"])
+          print("answer:", "%d/%d" % (summary["answer"]["passed"], summary["answer"]["total"]))
+          print("execution:", "%d/%d" % (summary["execution"]["passed"], summary["execution"]["total"]))
+          print("seconds:", summary["seconds"])
+          print("tokens per second:", summary["tokens_per_second"])
+          print("(smoke model - not a quality result)")
+          PY
+
+      - name: Upload the evaluation report (smoke model)
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-ai-eval-smoke-model
+          retention-days: 30
+          if-no-files-found: error
+          path: /tmp/eval.json
+
       - name: The ladder accepts a request end to end
         run: |
           # A small model's judgment is not asserted here (CI is not the place
@@ -328,6 +369,12 @@ jobs:
             echo ""
             echo '```'
             cat /tmp/ask.txt 2>/dev/null || echo "(no answer captured)"
+            echo '```'
+            echo ""
+            echo "Evaluation suite (smoke model - not a quality result):"
+            echo ""
+            echo '```'
+            cat /tmp/eval-summary.txt 2>/dev/null || echo "(no evaluation summary captured)"
             echo '```'
             echo ""
             echo "### Not tested by this workflow"

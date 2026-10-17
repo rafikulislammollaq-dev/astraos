@@ -75,6 +75,11 @@ class Engine:
         self._process: subprocess.Popen | None = None
         self._logfile = None
         self._lock = threading.Lock()
+        # The usage block of the last non-streaming answer, or None. llama.cpp
+        # reports the prompt and completion token counts there, and `astra-ai
+        # eval` reads them after each task so its tokens-per-second is the
+        # engine's own count rather than a word estimate wearing that name.
+        self.last_usage: dict | None = None
 
     # ------------------------------------------------------------------
     # What is installed
@@ -426,6 +431,10 @@ class Engine:
                 data = json.loads(response.read().decode("utf-8", "replace"))
         except (urllib.error.URLError, OSError, ValueError) as exc:
             raise EngineUnavailable(f"the model server did not answer: {exc}") from exc
+
+        usage = data.get("usage") if isinstance(data, dict) else None
+        if isinstance(usage, dict):
+            self.last_usage = usage
 
         text = _first_content(data)
         if text:

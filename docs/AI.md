@@ -244,10 +244,12 @@ The supported model profile is therefore deliberately narrow:
   model, not larger. Transcription is slower than real time on these CPUs; a
   10-second recording may take tens of seconds on the smallest whisper model.
 
-There is no benchmark table here because none has been measured on real hardware.
-If you measure words-per-second on a specific model and CPU, a report is welcome
-(`CONTRIBUTING.md`); until then treat the numbers above as the design envelope,
-not as measurements.
+There is no benchmark table here because none has been measured on the reference
+hardware. What exists is the instrument that would produce one - `astra-ai eval`
+(section 4.1) - and the rule that its numbers travel with the model name they were
+measured on. If you measure words-per-second on a specific model and CPU, a report
+is welcome (`CONTRIBUTING.md`); until then treat the numbers above as the design
+envelope, not as measurements.
 
 ---
 
@@ -300,6 +302,42 @@ After any of this, `astra ai status` reports whether the model is ready, and
 `astra ai start` serves the page. The server never needs a restart to notice a
 missing tool: each endpoint reports "not installed" with the command that would
 fix it.
+
+### 4.1 Measuring what you installed (`astra-ai eval`)
+
+"It runs" and "it answers well" are different claims, and the second one needs a
+number before it is worth repeating. `astra-ai eval` runs the fixed task suite
+(`docs/ROADMAP.md`, Stage 2):
+
+* **Eight tasks, deterministic checks.** Five go through the same call a question
+  uses (*answer* tasks: arithmetic, a capital, a three-line format, a translation,
+  a one-sentence summary); three go through the worker's constrained JSON
+  interface (*execution* tasks: an answer, an action, and a refusal). Every check
+  is a script's decision - "did the answer contain 42" - never a model's or a
+  human's opinion, so the same answers score the same way twice.
+* **Two scores, counted apart.** A model that chats well and cannot emit a valid
+  tool call is a broken assistant, and one percentage would hide which half is
+  missing. The report prints answer quality and execution quality separately, and
+  each failure carries its reason and the answer it read.
+* **Tokens per second from the engine's own numbers.** What gets divided is the
+  usage block llama-server returns with each answer; when the engine reports none,
+  the report says "not reported" instead of estimating tokens from words.
+* **A file, not a screenful.** The report is JSON under
+  `~/.local/share/astraos/ai/eval/` (beside the models), named by date and model,
+  so this week's run can be read beside last month's.
+
+What the numbers are **not**: they describe the model file and the machine named
+in the report, not AstraOS. A run with the 360M smoke model is a smoke test of
+the suite itself, never answer quality - the report says so in its own text, and
+the CI workflow uploads such a run as a smoke result, not as a benchmark. Run the
+suite once per model that matters to you and keep each report with its model name;
+that is what makes two reports comparable instead of decorative.
+
+Run it with `astra-ai eval` (or `astra ai eval`). `--limit N` runs a prefix of the
+suite for a quick check, `--json` prints the report for a script, and `--stop`
+ends the model server when the suite is done. A task the model failed is a
+measurement, not an error: the exit status is 0 whenever a report was written, and
+1 only when there is no engine to measure with.
 
 ---
 
@@ -380,8 +418,9 @@ Stated so the omissions are decisions, not surprise gaps:
 * **No GPU acceleration plan for this release.** If a future machine can use it,
   that is a future decision; Sandy Bridge cannot.
 * **No measurements section.** As in `HARDWARE_COMPATIBILITY.md`, nothing here
-  has been benchmarked on real hardware yet. This document describes what is
-  built and configured - not what has been proven.
+  has been benchmarked on the reference machine yet. The evaluation suite
+  (`astra-ai eval`, section 4.1) is the instrument; a number is published only
+  with the model name and the machine it was measured on.
 
 ---
 
@@ -391,6 +430,11 @@ Stated so the omissions are decisions, not surprise gaps:
   page depends on, the not-ready path, the refusal of plans outside the action
   repertoire, and the "no external addresses in the page" rule. It runs without
   a network, a model or a display.
+* `tests/static/test_astra_ai_eval.py` - the suite's scoring: every task can pass
+  and can fail, a failure keeps its reason and the answer it read, the two scores
+  are counted apart, tokens per second is the engine's own count or is absent,
+  and a machine with no engine gets one actionable line and exit 1 instead of a
+  report full of zeroes.
 * `astra ai status` - the on-machine answer to "is it actually working".
 
 The usual rule applies: an unperformed check is never a pass. If the assistant

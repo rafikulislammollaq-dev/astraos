@@ -247,6 +247,7 @@ do_ai_usage() {
     astra ai journal        what ran, what failed, and what you must decide
     astra ai skills         the installed skills and what each one needs here
     astra ai knowledge WORDS search this computer's own documentation
+    astra ai eval           run the fixed tasks, write the numbers as a report
 
   The model runs on this computer. `astra ai work` uses two of them: a small
   executor that does one step at a time and reads what came back, and - when
@@ -464,6 +465,7 @@ do_ai() {
         journal)            astra-ai journal "$@" ;;
         skills)             astra-ai skills "$@" ;;
         knowledge|docs)     astra-ai knowledge "$@" ;;
+        eval)               astra-ai eval "$@" ;;
         *)
             printf "Unknown 'astra ai' subcommand: %s\n\n" "$_what"
             do_ai_usage

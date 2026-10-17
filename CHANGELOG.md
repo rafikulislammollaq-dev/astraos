@@ -19,6 +19,31 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The evaluation suite the model ladder was missing (source; its first CI run is
+  pending).** `docs/ROADMAP.md`, Stage 2 asks for fixed tasks and a published success
+  rate before a model is described with confidence, and "the assistant works" said
+  after one friendly question was the habit that had to go. `astra-ai eval` runs eight
+  fixed tasks with deterministic checks — five through the same call a question uses
+  (arithmetic, a capital, a three-line format, a translation, a one-sentence summary)
+  and three through the worker's constrained JSON interface (an answer, an action, a
+  refusal) — and scores **answer quality and execution quality separately**, because a
+  model that chats well and cannot emit a valid tool call is a broken assistant and
+  one percentage would hide which half is missing. Every failure keeps its reason and
+  the answer it read; every check has a passing and a failing example pinned in
+  `tests/static/test_astra_ai_eval.py`, because a check that cannot fail would score
+  every model 100%. Tokens per second is the engine's own usage block (`llm.Engine`
+  now records `last_usage` from each non-streaming answer) or says "not reported" —
+  an estimate from words would be a false measurement. The report is JSON under
+  `~/.local/share/astraos/ai/eval/`, named by date and model so runs can be diffed,
+  and it names the model file and the machine it measured; the text report carries
+  the sentence that stops a smoke-model run from being read as answer quality. A
+  machine with no engine gets one actionable line and exit 1, never a report full of
+  zeroes. The **Build AI engine** workflow now runs the suite on the 360M smoke model
+  through the real CLI, asserts the report is well formed and scored both halves,
+  uploads it as a smoke result, and states the distinction in its summary;
+  `astra ai eval` passes through the `astra` dispatcher like the other sub-commands,
+  and `docs/AI.md` section 4.1 explains what the numbers are and are not.
+
 - **The virtual machines people try first now have their guest agents (source; the
   QEMU agent's first CI exercise is pending).** AstraOS is usually booted in a virtual
   machine before it is trusted with anything, and the image shipped none of the guest
