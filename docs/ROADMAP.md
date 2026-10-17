@@ -144,10 +144,17 @@ updated. Every step proven in CI or recorded as untested.
   (WSL): a host's own apt fetched the index from the assembled archive
   (`Get: ... stable/main amd64 Packages`, no errors) and the signed variant verifies
   (`gpg --verify InRelease` → Good signature). The build job now assembles it from
-  the packages it built and uploads `astraos-apt-repo` (unsigned). Still open: no
-  installed system has ever fetched updates from it, and where the archive will be
-  served from is an undecided hosting question (a GitHub Pages branch, a static
-  host, or a file:// medium for airgapped fleets are the candidates).
+  the packages it built and uploads `astraos-apt-repo` (unsigned); the first CI
+  assembly is recorded (2026-10-17, run 39024106426). The same job also carries the
+  consumption proof: a fresh `debian:trixie` container adds the tree as
+  `deb [trusted=yes] file:/repo stable main`, runs `apt-get update` against it, and
+  installs `astraos-system-tools` out of it — its dependency drags `astraos-base` in
+  with it, and the step ends by requiring the installed package to report back,
+  through the file it ships and the command that reads it, the exact version dpkg
+  recorded; that step's first green run is pending. Still open: an *installed*
+  system has never fetched updates from it, and where the archive will be served
+  from is an undecided hosting question (a GitHub Pages branch, a static host, or a
+  file:// medium for airgapped fleets are the candidates).
 - [x] **Firewall decision: default-on.** Decided and implemented on 2026-10-16: ufw
   starts on boot (`ENABLED=yes` in `/etc/ufw/ufw.conf`, installed by the identity
   hook), inbound is denied, and exactly two things are reachable from the local

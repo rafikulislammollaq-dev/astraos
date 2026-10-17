@@ -181,6 +181,33 @@ jobs:
           # read-back re-hashes every file the index names before it reports success.
           ./scripts/build-apt-repo.sh --debs build/live-build/packages --out dist/apt-repo
 
+      - name: Prove apt can read the archive
+        run: |
+          # An archive nothing has read is a directory tree. This is a real apt - a
+          # fresh debian:trixie container, the release this repository pins - reading
+          # the file:// tree exactly as an installed system would read it over HTTP,
+          # with the trusted=yes an unsigned archive requires. astraos-system-tools is
+          # installed out of the archive, and its depends drags astraos-base in with
+          # it, so a version range from the archive's own index is resolved too. The
+          # last assertion is the end-to-end one: the installed astraos-base ships
+          # /etc/astraos-release, and astraos-release-info must report back the very
+          # version dpkg recorded.
+          docker run --rm --volume "$PWD/dist/apt-repo:/repo:ro" debian:trixie bash -c '
+            set -eu
+            echo "deb [trusted=yes] file:/repo stable main" > /etc/apt/sources.list.d/astraos.list
+            apt-get update
+            candidate=$(apt-cache policy astraos-base | sed -n "s/^  Candidate: //p" | head -1)
+            echo "apt sees astraos-base at: ${candidate:-(nothing)}"
+            test -n "$candidate"
+            apt-get install -y --no-install-recommends astraos-system-tools
+            installed=$(dpkg-query -W -f="\${Version}" astraos-base)
+            reported=$(astraos-release-info | sed -n "s/^  version *//p" | head -1)
+            echo "dpkg installed astraos-base ${installed}; astraos-release-info reports ${reported}"
+            test "$installed" = "$candidate"
+            test "$installed" = "$reported"
+            echo "apt updated from the archive and installed a package out of it"
+          '
+
       - name: Upload the ISO
         if: ${{ inputs.upload_artifact }}
         uses: actions/upload-artifact@v4
@@ -242,8 +269,12 @@ jobs:
             echo "someone drives by hand - remains docs/INSTALLATION_VIRTUALBOX.md."
             echo ""
             echo "The APT archive this build assembled (dist/apt-repo, uploaded as"
-            echo "astraos-apt-repo) is unsigned, and no installed system has ever"
-            echo "fetched updates from one."
+            echo "astraos-apt-repo) is unsigned, and a fresh debian:trixie container"
+            echo "in this job updates from it and installs astraos-system-tools out"
+            echo "of it; if that step is red, the archive was not proven to be"
+            echo "apt-consumable. What is still untested is an *installed* AstraOS"
+            echo "updating from a hosted archive: the hosting decision is open and"
+            echo "nothing in CI is a long-lived installed system."
             echo ""
             echo "The manifest records them as UNTESTED until they are actually performed."
           } >> "$GITHUB_STEP_SUMMARY"

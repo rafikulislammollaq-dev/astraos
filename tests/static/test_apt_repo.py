@@ -12,8 +12,9 @@ system's apt can read. What these tests pin, and why:
   * the script reads its own index back before reporting success: every file the
     index names is re-hashed, and a mismatch fails the script, because an index that
     does not describe its pool is worse than no archive;
-  * the build workflow assembles the archive from the packages it built and uploads
-    it, and the building/roadmap documents describe that state.
+  * the build workflow assembles the archive from the packages it built, uploads
+    it, and proves a real apt on the pinned release can update from it and install
+    a package out of it; the building/roadmap documents describe that state.
 """
 
 from __future__ import annotations
@@ -106,10 +107,39 @@ def test_the_workflow_assembles_and_uploads_the_archive() -> None:
     )
 
 
+def test_the_workflow_proves_apt_can_read_the_archive() -> None:
+    """A tree apt has never read is a claim, not an archive. The workflow reads it
+    with a real apt on the release this repository pins, and installs out of it.
+
+    The three assertions are the three ways the proof could quietly stop being
+    one: the container could be the runner's own Ubuntu apt (same syntax, wrong
+    release), the source line could disappear (the container then never sees the
+    archive), or it could stop at `apt-get update` (proving apt parsed an index
+    it never fetched a package from). The final assertion is the end-to-end one:
+    what dpkg installed must equal what the installed package reports about
+    itself, so the bytes were used and not merely downloaded.
+    """
+    workflow = _text(WORKFLOW)
+    assert 'docker run --rm --volume "$PWD/dist/apt-repo:/repo:ro" debian:trixie' in workflow, (
+        "the consumption proof must run on the pinned release (debian:trixie), "
+        "not on the Ubuntu runner's own apt")
+    assert "deb [trusted=yes] file:/repo stable main" in workflow, (
+        "the container must add the archive as a source; without it nothing is read")
+    assert "apt-get install -y --no-install-recommends astraos-system-tools" in workflow, (
+        "reading the index is not installing: a package must come out of the archive")
+    assert 'test "$installed" = "$reported"' in workflow, (
+        "the step must relate what dpkg installed to what the installed package "
+        "reports about itself, or it proves apt fetched bytes that were never used")
+
+
 def test_the_documents_describe_the_archive_and_its_state() -> None:
     building = _text(BUILDING)
     assert "build-apt-repo.sh" in building and "apt-repo" in building
     assert "no installed system has ever fetched" in building, (
         "the documentation must keep saying that no installed system has fetched "
         "updates from the archive yet; that flips only on a run record"
+    )
+    assert "deb [trusted=yes] file:/repo stable main" in building, (
+        "the documentation must describe the apt-consumption proof, not only the "
+        "assembly"
     )

@@ -385,6 +385,19 @@ no archive. The build job uploads the result as the `astraos-apt-repo` artifact;
 unsigned because no signing key lives in CI, and no installed system has ever fetched
 updates from one yet.
 
+The same job then proves the archive is apt-consumable, not merely well-formed: a fresh
+`debian:trixie` container adds the tree as
+
+    deb [trusted=yes] file:/repo stable main
+
+runs `apt-get update` against it and installs `astraos-system-tools` out of the
+archive. That package's own depends drags `astraos-base` in with it, and `astraos-base`
+ships `/etc/astraos-release`; the step ends by requiring `astraos-release-info` to
+report back the exact version dpkg recorded, so apt reading the index, the files
+arriving and the installed package describing itself are all exercised at once. What
+remains untested is an *installed* AstraOS updating from a hosted archive: the hosting
+decision is open, and nothing in CI is a long-lived installed system.
+
 ## 9. After a successful build
 
 A structurally valid ISO is **not** a working operating system. Boot it:

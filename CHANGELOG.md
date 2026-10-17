@@ -85,8 +85,9 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   shapes a real channel arrives in — plus a silent channel that must time out and a
   reply with the wrong id that must be refused.
 
-- **The APT archive the packages were missing (source; its first CI assembly is
-  pending).** An installed AstraOS got Debian packages and nothing else: no archive
+- **The APT archive the packages were missing (source; CI assembled it on 2026-10-17,
+  and the same job now carries an apt-consumption step whose first run is pending).**
+  An installed AstraOS got Debian packages and nothing else: no archive
   carried `astraos-*` updates.
   `scripts/build-apt-repo.sh` assembles the tree an installed system's apt can read:
   `pool/main/<package>/<file>.deb`, `dists/stable/main/binary-amd64/Packages` (and
@@ -101,7 +102,18 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   packages it built and uploads it as `astraos-apt-repo`. Proved locally 2026-10-16
   (WSL): a host's own apt fetched the index from the assembled archive
   (`Get: ... stable/main amd64 Packages`, no errors) and the signed variant verifies
-  (`gpg --verify InRelease` → Good signature). No CI run has assembled it yet.
+  (`gpg --verify InRelease` → Good signature). The first CI assembly is recorded
+  (2026-10-17, run 39024106426: the build job assembled the tree from the packages it
+  built and uploaded `astraos-apt-repo`, 5.9 MB). The job now also proves the archive
+  is apt-consumable, not merely well-formed: a fresh `debian:trixie` container adds
+  the tree as `deb [trusted=yes] file:/repo stable main`, `apt-get update` must
+  succeed against it, and `astraos-system-tools` is installed out of the archive —
+  its depends drags `astraos-base` in with it, and the step ends by requiring
+  `astraos-release-info` to report back the exact version dpkg recorded, so apt
+  reading the index, the files arriving and the installed package describing itself
+  are all exercised at once. That step's first run is pending, and an *installed*
+  system updating from a hosted archive remains untested: the hosting question is
+  still open.
 
 - **The machine's capability profile, measured (source; its first run is
   pending).** `astra-ai profile` reads `/proc/cpuinfo`, `/proc/meminfo`,
