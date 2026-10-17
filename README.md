@@ -16,11 +16,11 @@ Debian release, and not a website pretending to be an operating system.
 |---|---|---|
 | 1 | Source tree and static checks pass | Yes |
 | 2 | ISO builds in CI | Yes (Build ISO run 38864588609, 2026-10-16: image built in about 18 minutes, 25/25 structural checks, `structural=PASS`, ISO 2,432,696,320 bytes) |
-| 3 | ISO boots in a virtual machine | **Yes** (VirtualBox by hand, live session, 2026-10-15; QEMU in CI through the ISO's own boot menus on BIOS and UEFI, run 38919644411, 2026-10-16 — the image's own self-test reported PASS, 52 checks, and the captured screenshot carries the HUD) |
+| 3 | ISO boots in a virtual machine | **Yes** (VirtualBox by hand, live session, 2026-10-15; QEMU in CI through the ISO's own boot menus on BIOS and UEFI, run 38919644411, 2026-10-16 — the image's own self-test reported PASS, 52 checks, and the captured screenshot carries the HUD — and under OVMF's Secure Boot-enforcing firmware with the Microsoft keys enrolled, run 39028358504, 2026-10-17) |
 | 4 | Network and browser work out of the box | **Network proven in CI** (run 38919644411: NetworkManager active, an IPv4 address, a real name resolved by DNS); **no browser has been launched in a booted image yet** |
 | 5 | Installer runs and installed system boots | Not tested yet |
 | 6 | Tested on physical hardware | Not tested yet |
-| 7 | Secure Boot, signed images, stable release | Not supported |
+| 7 | Secure Boot, signed images, stable release | **Secure Boot boots** (run 39028358504, 2026-10-17: the ISO reached the login prompt under OVMF's enforcing firmware with the Microsoft keys, the firmware verifying Microsoft-signed shim and Debian-signed GRUB and kernel); signed images and a stable release are not supported |
 
 This is a learning and prototype build. Do not use it as your main system.
 
@@ -85,14 +85,18 @@ Built and proven on GitHub Actions on 2026-10-16 (Build AI engine run #1, about
   ladder's answer quality.)
 
 Not tested: the installer, installing to disk, Wi-Fi, GPUs, physical machines,
-UEFI Secure Boot, audio, printing, Bluetooth, the virtual-machine guest agents against
-real hypervisor interfaces, and the assistant's web page beyond
-the pairing arc. The installer's first CI attempt did not reach the guest — QEMU
-refused the driver's tablet for want of a USB controller (run 38919644411); the
-retry started the guest and reached a running Calamares, which then exited at
-startup on a branding key its configuration never had (`slideshow`; run
-38924527286). The key, a build-time check for it, and the USB-controller fix are in
-the tree, and the next attempt is pending.
+Secure Boot on real hardware, audio, printing, Bluetooth, the SPICE and VMware guest
+tools against those hypervisors' interfaces (the QEMU agent answers the host in CI —
+run 39028358504), and the assistant's web page beyond
+the pairing arc. The installer's CI attempts have not completed an installation:
+QEMU first refused the driver's tablet for want of a USB controller (run 38919644411);
+the retry reached a running Calamares, which exited at startup on a branding key its
+configuration never had (`slideshow`; run 38924527286); and the run after that reached
+a healthy installer whose wizard never advanced — Calamares 3.3 marks no default
+button, so the driver's Return presses did nothing (run 39024106426). All three fixes
+are in the tree — the branding key with a build-time check for it, the USB controller,
+and a walk driver that clicks the widgets' real positions — and the next attempt is in
+flight (run 39038301775).
 
 ---
 
@@ -123,8 +127,8 @@ live filesystem holds 182,962 files (2,159 MiB extracted).
 | Display manager | LightDM (GTK greeter) |
 | Display server | X11 |
 | Boot splash | Plymouth, AstraOS theme |
-| Installer | Calamares, configured and branded; the CI install exercise is pending its first run |
-| Bootloader | GRUB (UEFI) and syslinux (BIOS), hybrid ISO; Debian's signed Secure Boot chain carried (boot run pending) |
+| Installer | Calamares, configured and branded; the CI install exercise has not yet completed an installation — its run history is in `CHANGELOG.md`, and the rebuilt walk driver is under test |
+| Bootloader | GRUB (UEFI) and syslinux (BIOS), hybrid ISO; Debian's signed Secure Boot chain carried, and it boots under OVMF's enforcing firmware in CI (run 39028358504, 2026-10-17) |
 | Networking | NetworkManager with applet, wpa_supplicant |
 | Browser | Firefox ESR |
 | Office | LibreOffice |
@@ -144,19 +148,21 @@ the ISO stores the system as a compressed squashfs.
 
 ## Known issues
 
-1. **Secure Boot is not supported yet.** The image carries Debian's signed
-   shim/GRUB/kernel chain (2026-10-16) and CI boots it under Secure Boot-enforcing
-   firmware, but that run is pending; until it is green, treat a machine enforcing
-   Secure Boot as one that refuses the medium, and turn Secure Boot off to try
-   AstraOS.
+1. **Secure Boot boots under QEMU's enforcing firmware; real hardware is untested.**
+   The image carries Debian's signed shim/GRUB/kernel chain and CI boots it to the
+   live system's login prompt under OVMF's Secure Boot firmware with the Microsoft
+   keys enrolled (run 39028358504, 2026-10-17) — the firmware verified the chain
+   rather than refusing the medium. No physical machine has been tried, and if yours
+   refuses the medium, turn Secure Boot off to try AstraOS.
 2. **Copy and paste between the host and a virtual machine depends on the hypervisor's
-   guest tools.** The image ships the guest agents (see "Virtual machines" above), but
-   they have not been exercised against a real hypervisor's interface yet: in
-   QEMU/KVM with SPICE the clipboard and display resize come from `spice-vdagent`, in
-   VMware from `open-vm-tools`, and in VirtualBox you must install VirtualBox's own
-   Guest Additions from its CD image — Debian 13 does not package the VirtualBox guest
-   utilities, so AstraOS cannot ship them. Right Ctrl releases the mouse; inside the
-   terminal copy is Ctrl+Shift+C and paste is Ctrl+Shift+V.
+   guest tools.** The image ships the guest agents (see "Virtual machines" above). The
+   QEMU agent is exercised in CI — it answers the host over its virtio serial port
+   (run 39028358504) — but clipboard and display resize have not been exercised
+   against a real hypervisor's interface: in QEMU/KVM with SPICE they come from
+   `spice-vdagent`, in VMware from `open-vm-tools`, and in VirtualBox you must install
+   VirtualBox's own Guest Additions from its CD image — Debian 13 does not package the
+   VirtualBox guest utilities, so AstraOS cannot ship them. Right Ctrl releases the
+   mouse; inside the terminal copy is Ctrl+Shift+C and paste is Ctrl+Shift+V.
 3. **Physical hardware and the installer are untested.** The image boots in virtual
    machines — by hand in VirtualBox through the live menu (2026-10-15), and in CI
    under QEMU through its own boot menus on BIOS and UEFI (run 38913161772) — but
@@ -244,8 +250,9 @@ hand with `./scripts/smoke-boot.sh dist/astraos-*.iso` (see `docs/BUILDING.md`).
 An `install-boot` job goes further still: it installs the ISO onto a blank disk through
 the ISO's own Calamares UI, driven over the QEMU monitor, then boots the installed disk
 alone and requires the image's self-test in its installed mode. The exercise exists in
-the source as of 2026-10-16 (`scripts/install-boot-test.sh`) and is pending its first
-run; `docs/BUILDING.md` describes it.
+the source as of 2026-10-16 (`scripts/install-boot-test.sh`) and has not yet completed
+an installation — every failure and fix is in `CHANGELOG.md`, with the rebuilt walk
+driver under test; `docs/BUILDING.md` describes it.
 
 ---
 
@@ -302,8 +309,9 @@ of HTML, CSS and Make. The operating system itself comes from Debian packages.
    Debian 13** (nothing in main/contrib/non-free packages the guest utilities; only
    Debian's unstable suite does, and this project ships its pinned release), so
    VirtualBox users install VirtualBox's own Guest Additions ISO. The QEMU/KVM (SPICE
-   included) and VMware agents now ship in the image; the QEMU agent's first CI
-   exercise is pending (`CHANGELOG.md`).
+   included) and VMware agents now ship in the image, and the QEMU agent is exercised
+   in CI (run 39028358504: it answers the host over its virtio serial port;
+   `CHANGELOG.md`).
 6. Test on physical hardware.
 7. See the AstraOS HUD on a booted ISO's screen. It renders from the source tree
    under GTK 3 on a virtual display (2026-10-16), but no built image has shown it
@@ -313,9 +321,10 @@ of HTML, CSS and Make. The operating system itself comes from Debian packages.
    (Build AI engine, 2026-10-16, including an emulated Sandy Bridge and the 360M
    model), and the 1.7B executor is downloaded here; what remains is running the
    ladder on this machine's own CPU and reaching its web page from a phone.
-9. Exercise the ISO's own boot menu (syslinux and GRUB-EFI) in CI. The current boot
-   test extracts the kernel and initrd from the ISO, so it verifies the image; the
-   bootloader path itself is still only tested by hand in VirtualBox.
+9. ~~Exercise the ISO's own boot menu in CI~~ **Done**: the `boot-menus` job boots the
+   ISO through syslinux (BIOS), GRUB (UEFI) and GRUB under Secure Boot-enforcing
+   firmware (run 39028358504, 2026-10-17 — all three reached the login prompt; runs
+   38913161772 and 38919644411 came before it).
 
 Beyond this list, `docs/ROADMAP.md` holds the staged plan for the assistant as a
 platform — permissions and sandboxing, hardware-adaptive model selection, voice,

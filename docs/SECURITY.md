@@ -143,16 +143,18 @@ its own, and `ptrace_scope=1` can interfere with some debuggers.
 
 | Property | Status |
 |---|---|
-| Secure Boot | **Not supported and not claimed yet.** The signed chain (Microsoft-signed shim, Debian-signed GRUB and kernel) is carried, and CI boots it under enforcing firmware; that first run is pending. |
-| UEFI | Targeted; CI boots the ISO through the GRUB menu under QEMU's firmware (run 38913161772); a run under enforcing Secure Boot firmware is pending, and real machines remain untested |
+| Secure Boot | **Boots under enforcing firmware in CI** (run 39028358504, 2026-10-17: OVMF's Secure Boot firmware with the Microsoft keys enrolled verified the chain — Microsoft-signed shim, Debian-signed GRUB and kernel — and the live system reached its login prompt). Physical hardware and the installed system under Secure Boot remain untested. |
+| UEFI | Targeted; CI boots the ISO through the GRUB menu under QEMU's firmware (run 38913161772) and under enforcing Secure Boot firmware (run 39028358504); real machines remain untested |
 | Legacy BIOS | Targeted; unverified |
 | Boot integrity measurement | None |
 | Boot splash hiding failures | Mitigated: the failsafe entry drops `quiet splash` and disables modesetting and ACPI power management |
 
-`shim-signed` being installed does **not** mean Secure Boot works. The signed chain is
-carried since 2026-10-16 and CI exercises it (`scripts/boot-menu-test.sh --medium
-secure`), but that run is pending and no physical machine has verified it;
-`KNOWN_LIMITATIONS.md` §1.2 says so explicitly.
+`shim-signed` being installed does **not** by itself mean Secure Boot works — but the
+chain is no longer merely carried: CI verified it under enforcement (run 39028358504,
+2026-10-17, `scripts/boot-menu-test.sh --medium secure`), with the firmware pair and its
+checksums kept beside the serial log. No physical machine has verified it, and the
+installed system under Secure Boot is untested; `KNOWN_LIMITATIONS.md` §1.2 says exactly
+that.
 
 ---
 

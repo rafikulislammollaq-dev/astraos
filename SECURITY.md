@@ -82,9 +82,10 @@ is. Specifically:
 3. **Disk encryption is available through Calamares but has not been tested.** Never
    assume a system is encrypted unless you chose encryption during installation and can
    confirm it with `lsblk` and `cryptsetup status`.
-4. **Secure Boot is not supported yet.** The image carries Debian's signed chain and
-   CI boots it under enforcing firmware, but that run is pending and the boot path has
-   not been verified under Secure Boot on any machine.
+4. **Secure Boot boots under QEMU's enforcing firmware; physical machines are
+   untested.** The image carries Debian's signed chain and CI boots it to the login
+   prompt under OVMF's Secure Boot firmware with the Microsoft keys enrolled (run
+   39028358504, 2026-10-17). The installed system under Secure Boot remains untested.
 5. **Updates depend on Debian's security archive.** AstraOS has no independent security
    team. Realistically: AstraOS inherits Debian's response times for components it takes
    from Debian, and the AstraOS-specific packages in this repository are the project's

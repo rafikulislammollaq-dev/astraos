@@ -49,8 +49,8 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   counts; per the rule, that is a smoke result about the suite, not a quality claim
   about the model.
 
-- **The virtual machines people try first now have their guest agents (source; the
-  QEMU agent's first CI exercise is pending).** AstraOS is usually booted in a virtual
+- **The virtual machines people try first now have their guest agents (first CI
+  exercise green 2026-10-17, run 39028358504).** AstraOS is usually booted in a virtual
   machine before it is trusted with anything, and the image shipped none of the guest
   tooling: clipboard sharing, display resize and host-initiated clean shutdown depended
   on installing it by hand, and in VirtualBox they were impossible from Debian's own
@@ -75,7 +75,8 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   the one enabled unit (VMware's, self-conditioned) and notes the two udev-activated
   ones so the audit explains them.
 
-- **The boot exercise now talks to the guest agent (source; its first run is pending).**
+- **The boot exercise now talks to the guest agent (first run green 2026-10-17, run
+  39028358504).**
   The guest's own self-test can only see that the agent's unit is active; the protocol
   is what a hypervisor actually uses. `scripts/smoke-boot.sh` now attaches a virtio
   serial port named `org.qemu.guest_agent.0` (host end in a unix socket) and, while the
@@ -90,8 +91,8 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   shapes a real channel arrives in — plus a silent channel that must time out and a
   reply with the wrong id that must be refused.
 
-- **The APT archive the packages were missing (source; CI assembled it on 2026-10-17,
-  and the same job now carries an apt-consumption step whose first run is pending).**
+- **The APT archive the packages were missing (CI assembled it on 2026-10-17, and the
+  same job proves it apt-consumable — green the same day, run 39028358504).**
   An installed AstraOS got Debian packages and nothing else: no archive
   carried `astraos-*` updates.
   `scripts/build-apt-repo.sh` assembles the tree an installed system's apt can read:
@@ -116,12 +117,12 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   its depends drags `astraos-base` in with it, and the step ends by requiring
   `astraos-release-info` to report back the exact version dpkg recorded, so apt
   reading the index, the files arriving and the installed package describing itself
-  are all exercised at once. That step's first run is pending, and an *installed*
-  system updating from a hosted archive remains untested: the hosting question is
-  still open.
+  are all exercised at once. That step is green (run 39028358504: the fresh container
+  installed `astraos-system-tools` 0.2.0 out of the tree). An *installed* system
+  updating from a hosted archive remains untested: the hosting question is still open.
 
-- **The machine's capability profile, measured (source; its first run is
-  pending).** `astra-ai profile` reads `/proc/cpuinfo`, `/proc/meminfo`,
+- **The machine's capability profile, measured (first run green 2026-10-17, run
+  39028358504).** `astra-ai profile` reads `/proc/cpuinfo`, `/proc/meminfo`,
   `/proc/asound/cards`, `/sys/class/drm`, `/sys/class/accel` and free space as the
   running user — an unprivileged reading, never a privileged probe — prints the
   machine in plain words (CPU and instruction sets, RAM and swap, graphics,
@@ -132,10 +133,11 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   (AVX on; AVX2, F16C, FMA and BMI2 off), not from branding. `astra-ai status`
   makes sure the profile exists at first run and names its path. The boot
   self-test's new `ai-profile` check runs the command as the live user and
-  requires the written file; that check's first run is pending.
+  requires the written file; that check is green (`ok ai-profile`, run 39028358504:
+  measured as `astra` and written to `/home/astra/.config/astraos/machine.json`).
 
-- **The ISO carries Debian's signed Secure Boot chain (source; its first run is
-  pending).** `config/live-build/auto/config` now asks live-build for
+- **The ISO carries Debian's signed Secure Boot chain, firmware-verified (green
+  2026-10-17, run 39028358504).** `config/live-build/auto/config` now asks live-build for
   `--uefi-secure-boot enable`: the EFI system partition gets the Microsoft-signed shim
   with Debian's keys embedded, a Debian-signed GRUB, and the kernel the chroot
   installs is Debian's signed one — a complete chain for a machine with Secure Boot
@@ -147,10 +149,13 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   the key store is *required*, so a machine missing it fails the run with its own
   message rather than falling back to a blank store that would leave Secure Boot
   unenforced and the evidence worthless, and the exact firmware pair with its SHA-256
-  sums is kept beside the serial log. The README, the build manifest and the
-  limitations document keep saying Secure Boot is not supported until a run reaches
-  the login prompt with firmware verifying signatures; that run will be recorded here
-  when it happens.
+  sums is kept beside the serial log. The run reached the login prompt on 2026-10-17
+  (run 39028358504): OVMF's Secure Boot firmware with the Microsoft keys enrolled
+  verified the Microsoft-signed shim and the Debian-signed GRUB and kernel instead of
+  refusing the medium, and the same run's BIOS and plain-UEFI boots reached it too.
+  The README, the security documents and the limitations document now record it; the
+  build manifest keeps `secure_boot=UNTESTED`, because a build cannot know how its own
+  image boots.
 
 - **The self-test starts the HUD for the screenshot.** The roadmap's HUD item wants
   a capture that carries the dashboard itself, and the dashboard is a full-screen
@@ -378,8 +383,9 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   firmware; Secure Boot's variable locking stands on it), `-global
   ICH9-LPC.disable_s3=1` — and `tests/static/test_boot_menu.py` pins all three, so the
   exercise cannot silently go back to running a firmware that cannot start. The first
-  run with the fix is pending; until it is green the signed chain stays "carried, not
-  proven".
+  run with the fix is green (2026-10-17, run 39028358504): all three boot paths
+  reached the login prompt, the secure one under enforcing firmware with the Microsoft
+  keys, so the signed chain is proven rather than "carried, not proven".
 
 - **The installer's first real start found the key it was missing (branding
   `slideshow`).** The retry that got past QEMU startup (run 38924527286) reached a
@@ -394,7 +400,9 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   without the slideshow key, or naming a slideshow file that will not exist at run
   time; and two new pins keep the hook and the descriptor in agreement
   (`tests/static/test_installer_branding.py`, `tests/static/test_hook_assertions.py`).
-  The next attempt is pending.
+  The attempt after that (run 39024106426) started Calamares cleanly — the branding
+  fatal is gone — and failed later, in the walk driver; see the wizard-walk entry
+  under Fixed.
 
 - **The install driver's tablet gets a USB controller (its absence killed the
   exercise's first run at QEMU startup).** `scripts/install-boot-test.sh` clicks with
@@ -405,7 +413,7 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   stayed empty, and the job failed 1m37s in without the guest ever booting. The
   command now defines `qemu-xhci` before the tablet, and
   `tests/static/test_install_boot.py` pins both the presence and the order. The retry
-  is pending.
+  got past QEMU startup (run 38924527286) and failed on the branding fatal below.
 
 - **The firewall's port check reads the `ufw status` listing ufw actually prints (its
   first run proved the firewall and failed on its own spelling).** Run 38903678646

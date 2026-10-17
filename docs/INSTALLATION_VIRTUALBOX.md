@@ -69,9 +69,10 @@ in separate VMs:
 - **UEFI:** Settings → System → Motherboard → tick **Enable EFI**.
 - **Legacy BIOS:** leave **Enable EFI** unticked.
 
-Secure Boot is not supported. If your VirtualBox build offers it, it must be off.
-Requiring Secure Boot is expected to fail, and that is a documented limitation, not a
-defect to report.
+Secure Boot is untested in VirtualBox: if your VirtualBox build offers it, leave it
+off unless you are deliberately testing it. The image's signed chain boots under
+QEMU's enforcing firmware (run 39028358504), but no VirtualBox run has been recorded —
+if it fails there, that is a documented gap, not a defect to report.
 
 ---
 

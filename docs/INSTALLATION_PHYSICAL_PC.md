@@ -73,10 +73,14 @@ Writing an ISO to a USB drive **erases that drive entirely**.
    Choose the one matching how you intend to install.
 3. If the USB is not listed, check the firmware settings: USB boot may be disabled, or
    "Fast Boot" may be skipping external devices.
-4. **Secure Boot:** AstraOS does not support it. If Secure Boot is enforced, the machine
-   will refuse to boot the medium. Disabling Secure Boot reduces your machine's boot
-   protection, so understand what you are turning off, and re-enable it if you abandon
-   the installation. There is no other supported path in this release.
+4. **Secure Boot:** the medium carries Debian's signed chain and boots under
+   Secure Boot-enforcing firmware in CI (run 39028358504, 2026-10-17), but **no
+   physical machine has been tried**: if the machine refuses to boot the medium, turn
+   Secure Boot off. Disabling it reduces your machine's boot protection, so
+   understand what you are turning off, and re-enable it if you abandon the
+   installation. There is no other supported path in this release — key enrollment
+   is the machine's own firmware setup's business, not a procedure this project
+   documents.
 5. At the GRUB menu, choose the normal entry. Use the **failsafe** entry if the screen
    stays black.
 

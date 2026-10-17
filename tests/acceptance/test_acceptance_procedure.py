@@ -139,13 +139,17 @@ def test_physical_procedure_explains_the_secure_boot_consequence() -> None:
     doc = read(PHYSICAL_DOC)
     section = doc.lower()
     assert "secure boot" in section, "the procedure does not mention Secure Boot"
-    assert "will refuse to boot" in section or "refuse to boot" in section, (
-        "the procedure does not state that a machine enforcing Secure Boot will refuse to "
-        "boot the AstraOS medium"
+    assert re.search(r"no\s+physical machine has been tried", section), (
+        "the procedure does not state that Secure Boot is only proven under QEMU's "
+        "firmware, never on a physical machine"
+    )
+    assert "refuse" in section and re.search(r"turn\s+secure boot off", section), (
+        "the procedure does not tell the reader what to do when a machine refuses the "
+        "medium"
     )
     assert "no other supported path" in doc or "no other supported" in doc, (
-        "the procedure implies there is an alternative to disabling Secure Boot when there "
-        "is not"
+        "the procedure implies there is an alternative to disabling Secure Boot when a "
+        "machine refuses the medium"
     )
 
 
@@ -166,8 +170,10 @@ def test_manifest_marks_unverified_areas_as_untested() -> None:
             "claim a test that has not been performed."
         )
 
-    assert "secure_boot=NOT_SUPPORTED" in manifest, (
-        "the manifest does not record that Secure Boot is unsupported"
+    assert "secure_boot=UNTESTED" in manifest, (
+        "the manifest does not record Secure Boot as untested: a build cannot know how "
+        "its own image boots, even though CI booted the medium under enforcing firmware "
+        "(run 39028358504)"
     )
     assert "structural=PASS" in manifest, (
         "the manifest does not record the structural validation result"
@@ -183,7 +189,7 @@ def test_manifest_lists_no_fabricated_validation_passes() -> None:
         for field in ("boot_in_virtualbox", "boot_uefi", "boot_legacy_bios",
                       "installer_launch", "installation_completed",
                       "installed_system_boot", "installed_system_login",
-                      "physical_hardware", "networking")
+                      "physical_hardware", "networking", "secure_boot")
         if f"{field}=PASS" in manifest
     ]
     assert not fabricated, (
@@ -204,8 +210,12 @@ def test_limitations_document_lists_the_untested_areas() -> None:
         "the limitations document does not state that no image has booted on physical "
         "hardware"
     )
-    assert "Secure Boot is not supported" in doc, (
-        "the limitations document does not state that Secure Boot is unsupported"
+    assert "Secure Boot" in doc, (
+        "the limitations document no longer mentions Secure Boot"
+    )
+    assert "Secure Boot is not supported" not in doc, (
+        "the limitations document still claims Secure Boot is unsupported; run "
+        "39028358504 booted the ISO to the login prompt under enforcing firmware"
     )
     assert "base-files" in doc, (
         "the limitations document does not record the /etc/os-release overwrite hazard"
@@ -265,8 +275,9 @@ def test_readme_does_not_overclaim() -> None:
 
     # Phrases that can only be read as a claim. "stable release" is deliberately not
     # in this list: the maturity table legitimately contains the row
-    # "Secure Boot, signed images, stable release | Not supported", where the phrase
-    # names a stage that was *not* reached. Matching it would have flagged the honest
+    # "Secure Boot, signed images, stable release", whose status now names both what
+    # was proven (Secure Boot booting under QEMU's enforcing firmware) and what was
+    # not (signed images, a stable release). Matching it would have flagged the honest
     # text and left the dishonest text free.
     forbidden = (
         "fully working operating system",

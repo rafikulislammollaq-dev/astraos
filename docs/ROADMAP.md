@@ -151,7 +151,8 @@ updated. Every step proven in CI or recorded as untested.
   installs `astraos-system-tools` out of it — its dependency drags `astraos-base` in
   with it, and the step ends by requiring the installed package to report back,
   through the file it ships and the command that reads it, the exact version dpkg
-  recorded; that step's first green run is pending. Still open: an *installed*
+  recorded; that step is green (2026-10-17, run 39028358504: the fresh container
+  installed `astraos-system-tools` 0.2.0 out of the tree). Still open: an *installed*
   system has never fetched updates from it, and where the archive will be served
   from is an undecided hosting question (a GitHub Pages branch, a static host, or a
   file:// medium for airgapped fleets are the candidates).
@@ -184,15 +185,16 @@ updated. Every step proven in CI or recorded as untested.
   pairing code read from the serial console, page GET 200, unpaired health 401, pair
   POST 200, paired health 200, revoked health 401, and the blocked-port probe timed
   out. The firewall half is recorded in the firewall item above.
-- [ ] **Try Secure Boot**: live-build's `--uefi-secure-boot` path with Debian's
+- [x] **Try Secure Boot**: live-build's `--uefi-secure-boot` path with Debian's
   signed shim and GRUB (the installed live-build documents the option). The source
-  now uses it (2026-10-16) and the exercise exists: `scripts/boot-menu-test.sh
-  --medium secure` boots the ISO under OVMF's Secure Boot firmware with the
-  Microsoft keys enrolled, so a run that reaches the login prompt means the
-  Microsoft-signed shim, Debian-signed GRUB and Debian-signed kernel were verified
-  by firmware. The `boot-menus` job runs it beside the BIOS and plain-UEFI paths;
-  the checkbox flips — and the firmware configurations that boot get documented —
-  when a run is green. Until then the README keeps "Secure Boot is not supported".
+  uses it (2026-10-16), the exercise exists, and it is green: `scripts/boot-menu-test.sh
+  --medium secure` booted the ISO under OVMF's Secure Boot firmware with the
+  Microsoft keys enrolled to the live login prompt (2026-10-17, run 39028358504; the
+  same run booted BIOS and plain UEFI the same way), so firmware verified the
+  Microsoft-signed shim and Debian-signed GRUB and kernel instead of refusing the
+  medium. The firmware configurations that boot are recorded in `CHANGELOG.md` and
+  `KNOWN_LIMITATIONS.md` §1.2. Physical machines remain untested; the README records
+  both halves.
 - [x] **The HUD on a booted image's screen.** The boot self-test's screenshot is
   meant to be the first version of this evidence; the first green run's screenshot
   came back black — a QEMU stdvga blanking defect (see `CHANGELOG.md`). The source

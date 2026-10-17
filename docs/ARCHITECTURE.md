@@ -164,7 +164,7 @@ custom application that merely duplicates an existing one.
 | Live session vs installed system | The live account is removed during installation |
 | Package authenticity | APT signature verification, never disabled; repositories are authenticated Debian archives |
 | Network exposure | No listening services installed; firewall policy documented but not enabled by default |
-| Boot integrity | **No Secure Boot yet.** Not claimed; the signed chain is carried (2026-10-16) and its first CI boot under enforcing firmware is pending |
+| Boot integrity | Secure Boot is proven under QEMU's enforcing firmware (run 39028358504, 2026-10-17: the signed chain verified, live login reached); physical machines and the installed system under Secure Boot remain untested |
 | Future AI features | If ever added: normal user permissions, no privileged action without confirmation, never in the boot path (plan §13.6) |
 
 The honest summary: AstraOS has a sound *configuration* baseline and **no

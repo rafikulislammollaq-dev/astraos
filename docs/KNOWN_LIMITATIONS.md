@@ -26,7 +26,13 @@ hardware.** What has happened, with the record:
   a USB controller — and the fix is recorded in `CHANGELOG.md` (2026-10-16). The
   retry (run 38924527286) reached a running Calamares, which then exited at startup
   on a missing branding key (`slideshow`); the key and a build-time check for it are
-  in the tree, and the next attempt is pending. Evidence artifacts:
+  in the tree. The run after that (39024106426) reached a healthy installer and the
+  exercise still failed: the wizard never advanced a page — Calamares 3.3 marks no
+  default button, so the driver's Return presses did nothing, and its clicks aimed at
+  the 800x520 window the branding asked for rather than the 1024x520 minimum
+  Calamares clamps it to. The walk driver now clicks the widgets' real positions
+  inside the client area it locates in its own screendump; that fix is under test.
+  Evidence artifacts:
   `astraos-boot-self-test` (the capture is `screenshot.png`), `astraos-boot-menus`,
   `astraos-install-test` (`calamares-console.log` holds the branding fatal).
 - **2026-10-16, full CI boot self-test with the firewall, the phone arc and a real
@@ -59,30 +65,43 @@ hardware.** What has happened, with the record:
 An automated end-to-end exercise now exists in the source (2026-10-16):
 `scripts/install-boot-test.sh`, run by CI as the `install-boot` job, installs the ISO
 onto a blank disk by driving the ISO's own Calamares UI over the QEMU monitor and then
-boots that disk alone. It is **pending its first run**; until a run record exists,
-nothing in this section changes.
+boots that disk alone. It has run four times and **has not yet completed an
+installation** — startup failures first, then a wizard that never advanced because the
+driver pressed Return at a Calamares that marks no default button. The driver now
+clicks the widgets' real positions inside the client area it finds in its own
+screendump, and that rebuild is under test. Until a green run exists, nothing in this
+section changes.
 
 **Consequence:** statements about the live system booting in a virtual machine, and about
 the live session's networking, are now backed by recorded runs. Everything about
 *installing* — the installer, the installed system, disk encryption — and everything about
 *physical hardware* is still a statement of *intent backed by configuration*, not a report
-of a test. UEFI booting has crossed that line: the image's own GRUB entry has carried its
-kernel to the live system's login prompt under QEMU's own firmware (plain UEFI run, green,
-2026-10-16 and after); Secure Boot enforcement is a separate claim and is still owed a
-green run. The build manifest records them as `UNTESTED`.
+of a test. UEFI booting and Secure Boot enforcement have crossed that line: the image's
+own GRUB entry has carried its kernel to the live system's login prompt under QEMU's own
+firmware (plain UEFI since 2026-10-16), and under OVMF's Secure Boot-enforcing firmware
+with the Microsoft keys enrolled the firmware verified the signed chain and the system
+reached the same login prompt (2026-10-17, run 39028358504). The build manifest records
+runtime results as `UNTESTED` regardless — a build cannot know how its image boots.
 
-### 1.2 Secure Boot is not supported
+### 1.2 Secure Boot boots under enforcement in CI; real hardware is untested
 
 Since 2026-10-16 the source carries the signed chain — `--uefi-secure-boot enable` in
-`config/live-build/auto/config`, Debian's signed shim and GRUB — and
-`scripts/boot-menu-test.sh --medium secure` boots the ISO under OVMF's Secure Boot
-firmware with the Microsoft keys enrolled, but **its first run is pending**: the boot
-path has not been verified under Secure Boot on any machine yet, and a machine enforcing
-Secure Boot must still be treated as one that refuses the medium.
+`config/live-build/auto/config`, Debian's signed shim and GRUB with Debian's keys
+embedded — and since 2026-10-17 that chain is proven under enforcement: run 39028358504
+booted the ISO through its own GRUB menu under OVMF's Secure Boot firmware with the
+Microsoft keys enrolled, and the live system reached its login prompt. The firmware
+verified the chain — Microsoft-signed shim, Debian-signed GRUB, Debian-signed kernel —
+instead of refusing the medium. The firmware pair (code and variable store with the
+Microsoft keys) is recorded with SHA-256 sums beside the serial log, and
+`scripts/boot-menu-test.sh --medium secure` refuses to run when the key store is
+missing, so a blank-store fallback cannot produce worthless evidence.
 
-The claim flips — here, in `README.md`, in `docs/SECURITY.md` and in the build manifest —
-only when that run is green and the firmware configurations that boot are documented. Do
-not tell anyone Secure Boot works before then.
+What that does not prove: **any physical machine** (its firmware, its key store, its
+enrollment state), the **installed system** under Secure Boot (the install exercise's
+second boot does not use enforcing firmware), and Secure Boot in VirtualBox. If a
+machine refuses the medium, turning Secure Boot off remains the workaround, and the
+installation documents say so. The build manifest records `secure_boot=UNTESTED` for
+every build, because a build cannot know how its own image boots.
 
 ### 1.3 `/etc/os-release` can be overwritten by an upgrade
 
@@ -122,7 +141,8 @@ one maintainer.
 ## 2. Untested areas
 
 Rows marked **UNTESTED** have never been exercised. Rows marked **CI** were exercised
-only inside CI, under QEMU emulation (runs 38881934636 and 38913161772, 2026-10-16) —
+only inside CI, under QEMU emulation (runs 38881934636, 38913161772 and 39028358504,
+2026-10-16 and 2026-10-17) —
 never on physical hardware.
 
 | Area | Status | What testing it requires |
@@ -130,8 +150,9 @@ never on physical hardware.
 | Booting the live ISO | **CI PASS** (the ISO's kernel and initrd, the ISO as the live medium) | Physical hardware |
 | Legacy BIOS boot | **CI PASS** (the syslinux menu, run 38913161772) | Physical hardware |
 | UEFI boot | **CI PASS** (the GRUB menu, run 38913161772) | Physical hardware |
+| UEFI boot under Secure Boot enforcement | **CI PASS** (the GRUB menu under OVMF's Secure Boot firmware with the Microsoft keys enrolled; run 39028358504, 2026-10-17) | Physical hardware |
 | Live desktop startup | **CI PASS** (LightDM active, Xfce session as `astra`) | Booting the image by hand and interacting |
-| Virtual-machine guest agents (QEMU/SPICE, VMware) | UNTESTED (the packages ship in every image; the QEMU agent's first CI run is pending) | One boot per hypervisor, exercising clipboard, resize and shutdown |
+| Virtual-machine guest agents (QEMU/SPICE, VMware) | **CI PASS (QEMU)** — run 39028358504: the guest's `qemu-guest-agent` answered the host over its virtio serial port (sync echoed, ping answered) and the self-test saw it active; SPICE and VMware untested | One boot per hypervisor, exercising clipboard, resize and shutdown |
 | Mouse, keyboard and display resolution in the live session | UNTESTED | Booting the image |
 | Live session applications (browser, file manager, terminal) | UNTESTED | Booting the image |
 | Network recognition in the live session | **CI PASS** (NetworkManager active, IPv4 address, DNS resolution) | Physical hardware |

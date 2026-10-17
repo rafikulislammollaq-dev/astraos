@@ -223,7 +223,7 @@ kernel_version() {
     printf 'installed_system_login=UNTESTED\n'
     printf 'networking=UNTESTED\n'
     printf 'physical_hardware=UNTESTED\n'
-    printf 'secure_boot=NOT_SUPPORTED\n'
+    printf 'secure_boot=UNTESTED\n'
     printf '\n'
 
     printf '[astraos_packages]\n'
