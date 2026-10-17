@@ -40,20 +40,34 @@ The runtime is the `llama-server` binary, on `PATH` or in the assistant's own bi
 directory. `astra-ai setup --build llama` builds it from upstream source, and there is a
 real reason to prefer that over downloading a release binary: on this class of CPU - AVX
 but no AVX2, no F16C, no FMA, no BMI2 - a prebuilt binary dies immediately with an illegal
-instruction, and the build only takes a few minutes. The build deliberately passes
-`-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_BMI2=OFF
--DGGML_F16C=OFF -DGGML_AVX512=OFF -DGGML_BLAS=OFF -DBUILD_SHARED_LIBS=OFF`, which
-compiles for exactly the instructions the machine has. FMA and BMI2 matter as much as
-AVX2: they are Haswell features and the build enables them by default even with AVX2
-switched off, which produced a server that died with SIGILL and no output at all on the
-first model it loaded. The last flag makes the installed program one self-contained file
-instead of an executable that still needs the build tree for its libraries. The same
-applies to whisper with `astra-ai setup --build whisper` (or `--build all` for both).
+instruction, and the build only takes a few minutes.
+
+The build has one variant per CPU class, chosen with `--variant`:
+
+* `avx` (the default) turns AVX on and AVX2, F16C, FMA and BMI2 off - the Sandy Bridge
+  this release is tested on has exactly AVX. FMA and BMI2 matter as much as AVX2: they
+  are Haswell features and the build enables them by default even with AVX2 switched
+  off, which produced a server that died with SIGILL and no output at all on the first
+  model it loaded.
+* `avx2` turns AVX2, F16C, FMA and BMI2 on - most of ggml's speed on Haswell and later.
+* `auto` picks the newest variant this machine's CPU can run, read from `/proc/cpuinfo`.
+
+Both variants pass `-DGGML_NATIVE=OFF -DGGML_AVX512=OFF -DGGML_BLAS=OFF
+-DBUILD_SHARED_LIBS=OFF`: never the build machine's own instruction set, no AVX-512, and
+one self-contained installed file instead of an executable that still needs the build
+tree for its libraries. A named variant is checked against `/proc/cpuinfo` before the
+first compiler runs - `--variant avx2` on a machine without AVX2 is refused with that
+reason, because the resulting binary would die with SIGILL on the first question - and
+the choice is recorded beside the installed binaries, which `astra-ai status` checks
+against the CPU. The same applies to whisper with `astra-ai setup --build whisper` (or
+`--build all` for both).
 
 There is a third way that skips the compiler without risking the wrong CPU: AstraOS's own
-CI builds both programs with exactly these flags (the Build AI engine workflow) and
-publishes them as a workflow artifact together with `SHA256SUMS.txt` and
-`BUILD-INFO.txt`. Download the artifact, copy `llama-server` and `whisper-cli` into
+CI builds both programs for both variants (the Build AI engine workflow) and publishes
+each as a workflow artifact together with `SHA256SUMS.txt` and `BUILD-INFO.txt`:
+`astra-ai-engine-linux-x86_64-avx` runs on Sandy Bridge and later,
+`astra-ai-engine-linux-x86_64-avx2` needs Haswell or later. Download the artifact whose
+name matches the machine, copy `llama-server` and `whisper-cli` into
 `~/.local/share/astraos/ai/bin/`, and `astra-ai status` shows the path it found. A binary
 downloaded from anywhere else is still the thing to avoid: nobody there built it for this
 CPU.

@@ -19,6 +19,28 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The engine now comes in the two CPU variants the machines actually need (source; the
+  first two-variant CI run is pending).** `docs/ROADMAP.md`, Stage 2 asks for engine
+  builds selected from the machine's profile and for never installing an engine the CPU
+  cannot run. `astra-ai setup --build` now builds one of two variants: `avx` (the
+  default; AVX on, AVX2/F16C/FMA/BMI2/AVX512 off - the Sandy Bridge this release is
+  tested on has exactly AVX) and `avx2` (the four Haswell features on, for Haswell and
+  later), or `auto`, which reads `/proc/cpuinfo` and picks the newest the CPU can run.
+  A named variant is checked against that file *before* the first compiler runs -
+  `--variant avx2` on a Sandy Bridge is refused with the reason (the binary would die
+  with SIGILL on the first tensor, measured 2026-10-16) instead of being built into the
+  failure - and the choice is recorded in `ENGINE-BUILD.json` beside the installed
+  binaries, which `astra-ai status` reads back and compares with the CPU, so a copied
+  artifact built for another machine is flagged before the first question. The **Build
+  AI engine** workflow becomes a two-variant matrix building through the same command a
+  user runs (`--variant "${{ matrix.variant }}"`): the avx job keeps the static scan (no
+  FMA/BMI2/F16C) and the emulated-Sandy-Bridge run, the avx2 job proves the opposite
+  direction (the runner must list avx2; the disassembly must contain 256-bit code and no
+  AVX-512), and the artifacts are named apart -
+  `astra-ai-engine-linux-x86_64-avx` / `-avx2` - with `BUILD-INFO.txt` carrying the
+  variant, its requirements and the flag list read out of `setup.py`, never retyped.
+  Both variants stay `GGML_NATIVE=OFF` and one self-contained file.
+
 - **The evaluation suite the model ladder was missing (source; first CI run recorded
   2026-10-17).** `docs/ROADMAP.md`, Stage 2 asks for fixed tasks and a published success
   rate before a model is described with confidence, and "the assistant works" said

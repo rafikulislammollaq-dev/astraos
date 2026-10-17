@@ -1534,9 +1534,12 @@ def test_the_engine_workflow_never_retypes_the_cpu_flags() -> None:
     would drift from setup.py silently, and the drift would ship as SIGILL on
     this hardware.
 
-    The emulated-Sandy-Bridge run is pinned the same way: it is the dynamic
-    half of the SIGILL proof (the disassembly scan is the static half), and a
-    workflow without it still says "proven" in the summary.
+    The workflow builds both variants through that one command (`--variant
+    avx` and `--variant avx2`), so the avx-only proofs must stay pinned to the
+    avx job - the emulated-Sandy-Bridge run is the dynamic half of the SIGILL
+    proof and the disassembly scan is the static half - and the avx2 job must
+    keep its own positive proof, or an artifact labelled "avx2" ships with
+    nothing behind the label.
     """
     text = read(".github/workflows/build-ai-engine.yml")
     assert "setup --build all" in text, (
@@ -1546,7 +1549,168 @@ def test_the_engine_workflow_never_retypes_the_cpu_flags() -> None:
     assert "-DGGML" not in text, (
         "the workflow spells out an instruction-set flag; the flags live in "
         "setup.py, and this copy drifts from them the next time one changes")
+    assert 'setup --build all --variant "${{ matrix.variant }}"' in text, (
+        "the workflow no longer pins the variant it builds; a matrix job "
+        "without the flag builds setup.py's default and mislabels the "
+        "artifact")
+    assert "astra-ai-engine-linux-x86_64-${{ matrix.variant }}" in text, (
+        "the two variant artifacts are no longer named apart, so the avx2 "
+        "build would overwrite - or be mistaken for - the avx one")
+    assert "if: matrix.variant == 'avx'" in text, (
+        "the SIGILL scan and the emulated Sandy Bridge run are the avx "
+        "artifact's proof; unpinned, they would claim the avx2 artifact too")
+    assert "if: matrix.variant == 'avx2'" in text, (
+        "the avx2 job lost its positive proof (256-bit code, on a runner that "
+        "lists avx2), leaving the label with nothing behind it")
     assert "qemu-x86_64 -cpu SandyBridge" in text, (
         "the emulated Sandy Bridge run is the half of the SIGILL proof that "
         "executes; removing it leaves a static scan claiming more than it can "
         "show")
+
+
+def _variant_flags(variant: str) -> dict[str, str]:
+    """CPU_VARIANTS[variant] as a mapping, so a test can ask about one switch."""
+    out: dict[str, str] = {}
+    for flag in ai_setup.CPU_VARIANTS[variant]:
+        if flag.startswith("-D") and "=" in flag:
+            name, value = flag.split("=", 1)
+            out[name] = value
+    return out
+
+
+def test_the_avx2_variant_turns_on_the_haswell_features_and_requires_them() -> None:
+    """A variant's flags and its recorded requirements must say the same thing.
+
+    The requirements are what `resolve_variant` checks the CPU against and
+    what the build marker stores for `astra-ai status`. A variant that turns
+    GGML_FMA on while its requirements forget to name "fma" would build a
+    binary that dies with SIGILL on a CPU the check called compatible - the
+    measured 2026-10-16 defect, one layer down.
+    """
+    from astraos.ai import machine
+
+    assert "avx" in ai_setup.CPU_VARIANTS and "avx2" in ai_setup.CPU_VARIANTS, (
+        "the variant table lost one of its entries")
+    assert ai_setup.CPU_FLAGS is ai_setup.CPU_VARIANTS[ai_setup.DEFAULT_VARIANT], (
+        "CPU_FLAGS - the name the workflow and the older tests read - no "
+        "longer names the default variant's flag list")
+
+    flags = _variant_flags("avx2")
+    for feature in ("GGML_AVX2", "GGML_FMA", "GGML_BMI2", "GGML_F16C"):
+        assert flags.get(f"-D{feature}") == "ON", (
+            f"the avx2 variant does not turn {feature} on; it would run at "
+            "the avx speed while carrying the avx2 name")
+    assert flags.get("-DGGML_AVX") == "ON", "the avx2 variant dropped AVX itself"
+    assert flags.get("-DGGML_NATIVE") == "OFF", (
+        "GGML_NATIVE=ON compiles for the build machine instead of the target "
+        "CPU; the whole variant system exists to stop that")
+    assert flags.get("-DGGML_AVX512") == "OFF", (
+        "AVX-512 is deliberately off in both variants: no CPU this project is "
+        "tested on has it, and the variant description says so")
+    assert flags.get("-DBUILD_SHARED_LIBS") == "OFF", (
+        "the avx2 variant must stay one self-contained file like the avx one")
+
+    assert set(ai_setup.VARIANT_REQUIREMENTS["avx2"]) == {
+        "avx", "avx2", "f16c", "fma", "bmi2"}, (
+        "the avx2 requirements do not name exactly the features its flags "
+        "turn on")
+    assert set(ai_setup.VARIANT_REQUIREMENTS["avx"]) == {"avx"}, (
+        "the avx variant must require nothing newer than AVX")
+
+    for variant in ai_setup.CPU_VARIANTS:
+        assert variant in ai_setup.VARIANT_REQUIREMENTS, (
+            f"{variant} has flags but no requirements; nothing could check it")
+        for feature in ai_setup.VARIANT_REQUIREMENTS[variant]:
+            assert feature in machine.WATCHED_FLAGS, (
+                f"{variant} requires {feature!r}, which the capability "
+                "profile never reads; a check that cannot see the flag would "
+                "always fail or always pass")
+
+
+def test_the_engine_variant_is_checked_against_the_cpu() -> None:
+    """The selection and its refusals, asked directly.
+
+    best_variant is pure, so the two CPU classes this project actually talks
+    about - the Sandy Bridge reference machine and a Haswell-era machine -
+    can be put to it without owning either.
+    """
+    sandy = {"avx", "sse4_2", "sse4_1", "ssse3"}
+    haswell = sandy | {"avx2", "f16c", "fma", "bmi2", "movbe"}
+
+    assert ai_setup.best_variant(sandy) == "avx"
+    assert ai_setup.best_variant(haswell) == "avx2"
+    assert ai_setup.best_variant({"sse4_2"}) is None
+    assert ai_setup.resolve_variant("auto", haswell) == "avx2"
+    assert ai_setup.resolve_variant("avx", haswell) == "avx"
+    assert ai_setup.resolve_variant("", sandy) == "avx", (
+        "the bare default stopped being the safe build")
+
+    try:
+        ai_setup.resolve_variant("avx2", sandy)
+    except ai_setup.SetupError as exc:
+        text = str(exc)
+        assert "SIGILL" in text and "avx2" in text, (
+            "the refusal does not name the failure it prevents: " + text)
+    else:
+        raise AssertionError(
+            "an avx2 build was accepted on a CPU without AVX2; it would die "
+            "with SIGILL on the first tensor")
+
+    try:
+        ai_setup.resolve_variant("sse5", haswell)
+    except ai_setup.SetupError as exc:
+        assert "unknown engine variant" in str(exc)
+    else:
+        raise AssertionError("an unknown variant name was accepted")
+
+
+def test_the_build_marker_records_what_the_installed_engines_need() -> None:
+    """The marker round trip: write it, read it back, and be told the mismatch.
+
+    This is the check that catches an artifact built for another machine
+    before the first question does. Nothing recorded means nothing claimed -
+    a hand-copied binary carries no marker, and the answer then names nothing
+    rather than guessing.
+    """
+    original = ai_setup.marker_path
+    with tempfile.TemporaryDirectory() as tmp:
+        marker = Path(tmp) / "ENGINE-BUILD.json"
+        ai_setup.marker_path = lambda: marker
+        try:
+            assert ai_setup.engine_build({"avx"})["variant"] == "", (
+                "nothing was recorded yet, and a variant was claimed anyway")
+
+            ai_setup._write_marker("avx2", ["llama", "whisper"])
+            written = json.loads(marker.read_text(encoding="utf-8"))
+            assert written["variant"] == "avx2", written
+            assert sorted(written["targets"]) == ["llama", "whisper"], written
+            assert set(written["requirements"]) == {
+                "avx", "avx2", "f16c", "fma", "bmi2"}, written
+
+            state = ai_setup.engine_build({"avx", "sse4_2"})
+            assert state["variant"] == "avx2", state
+            assert set(state["missing"]) == {"avx2", "f16c", "fma", "bmi2"}, (
+                "the marker did not flag the features this CPU lacks: " + repr(state))
+
+            assert ai_setup.engine_build(
+                {"avx", "avx2", "f16c", "fma", "bmi2"})["missing"] == [], (
+                "a CPU with every required feature was flagged anyway")
+
+            marker.write_text("this is not json", encoding="utf-8")
+            assert ai_setup.engine_build({"avx"})["variant"] == "", (
+                "a corrupt marker produced a claim instead of silence")
+        finally:
+            ai_setup.marker_path = original
+
+
+def test_the_setup_command_exposes_and_reports_the_variant() -> None:
+    """The user-facing half: the flag exists, and `status` reports the build."""
+    cli = read("packages/astraos-ai/root/usr/bin/astra-ai")
+    assert '"--variant"' in cli, (
+        "`astra-ai setup --build` has no --variant flag, so none of the "
+        "variant machinery is reachable from the command the docs name")
+    assert "args.variant or ai_setup.DEFAULT_VARIANT" in cli, (
+        "the setup command does not pass the variant through to the build")
+    assert "ai_setup.engine_build()" in cli, (
+        "`astra-ai status` does not read the build marker, so an artifact "
+        "built for another CPU is never flagged")

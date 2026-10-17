@@ -85,7 +85,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         ai_setup.install_model(args.model)
         return 0
     if args.build:
-        ai_setup.build_tools(args.build)
+        ai_setup.build_tools(args.build, args.variant or ai_setup.DEFAULT_VARIANT)
         return 0
     if args.voice:
         _setup_voice()
@@ -147,7 +147,7 @@ def _print_overview() -> None:
     print("\nnext steps (each one is optional, and nothing is downloaded by itself):")
     if not info["llama_server"]:
         print("  astra-ai setup --build llama     build llama.cpp for this CPU "
-              "(AVX on, AVX2 off, no F16C)")
+              "(the avx build; --variant avx2 or auto for newer CPUs)")
     if not info["model_present"]:
         print("  astra-ai setup --model qwen2.5-1.5b-instruct-q4_k_m    download "
               "the recommended model")
@@ -528,6 +528,7 @@ def cmd_profile(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     info = ai_setup.describe()
+    build = ai_setup.engine_build()
     health = llm.Engine(config.load_settings()).health()
 
     # The capability profile is written at first run; `status` is the command a new
@@ -543,6 +544,15 @@ def cmd_status(args: argparse.Namespace) -> int:
     print("AstraOS assistant")
     print(f"  model          {info['model'] or 'none installed'}")
     print(f"  llama-server   {info['llama_server'] or 'not installed'}")
+    if build["variant"]:
+        if build["missing"]:
+            print(f"  engine build   {build['variant']}, and this CPU does not list "
+                  f"{', '.join(build['missing'])}:")
+            print("                 it would die with SIGILL on the first question - "
+                  "rebuild: astra-ai setup --build all --variant avx")
+        else:
+            print(f"  engine build   {build['variant']} (this CPU lists its "
+                  "requirements)")
     print(f"  speech         {info['tts_tool'] or 'not installed'}")
     print(f"  transcription  {'ready' if info['stt'] else 'not installed'}")
     print(f"  models kept in {info['models_dir']}")
@@ -786,6 +796,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model", metavar="NAME", help="download one model from the catalogue")
     p.add_argument("--build", metavar="WHAT", nargs="?", const="all",
                    help="build llama-server, whisper-cli or all, from source")
+    p.add_argument("--variant", metavar="WHICH", default=None,
+                   help="engine build to produce: avx (default; the reference "
+                        "machine and the CI artifact), avx2 (Haswell and later), "
+                        "or auto (the newest this CPU can run)")
     p.add_argument("--voice", action="store_true",
                    help="set up voice: build whisper.cpp for this CPU when it is "
                         "missing, and say what to install for speaking")

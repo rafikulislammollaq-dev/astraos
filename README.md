@@ -262,14 +262,26 @@ Compiling llama.cpp costs about twenty minutes of every core on this hardware, s
 not happen on this hardware. The **Build AI engine** workflow builds `llama-server` and
 `whisper-cli` on GitHub Actions - through the same command a user runs,
 `astra-ai setup --build all`, so the workflow cannot drift from the flag list in
-`setup.py` - proves the binaries (including actually running the engine on an emulated
-Sandy Bridge), and uploads them as the `astra-ai-engine-linux-x86_64-avx` artifact with
-`SHA256SUMS.txt` and `BUILD-INFO.txt`.
+`setup.py` - proves the binaries, and uploads them with `SHA256SUMS.txt` and
+`BUILD-INFO.txt`. It does this once per CPU variant: the `avx` build is the reference
+one, and its proof is on an *emulated Sandy Bridge* - the engine loads a real model and
+answers over HTTP with no illegal instruction in sight - while the `avx2` build (Haswell
+and later, most of ggml's speed on those machines) is proven natively on the runner,
+with a disassembly check that 256-bit code is actually there and a guard that refuses to
+run on a runner without AVX2. The artifacts are named apart:
+`astra-ai-engine-linux-x86_64-avx` and `astra-ai-engine-linux-x86_64-avx2`.
+
+`astra-ai status` reports which variant the installed binaries were built for and flags
+the mismatch when the CPU cannot run them - the build tool records it, and `--variant
+auto` picks from the machine's own profile. No variant ever compiles for the build
+machine's own instruction set (`GGML_NATIVE=OFF`).
 
 To install a completed build: open the latest run on the Actions tab, download and unzip
-the artifact, copy `llama-server` and `whisper-cli` into `~/.local/share/astraos/ai/bin/`,
-and run `astra-ai status`, which prints the path it found. Building on the machine still
-works and is still documented in `docs/AI.md`: `astra-ai setup --build all`.
+the artifact whose name matches the machine - `...-avx` for Sandy Bridge and later,
+`...-avx2` for Haswell and later - copy `llama-server` and `whisper-cli` into
+`~/.local/share/astraos/ai/bin/`, and run `astra-ai status`, which prints the path it
+found. Building on the machine still works and is still documented in `docs/AI.md`:
+`astra-ai setup --build all --variant auto`.
 
 ---
 

@@ -224,9 +224,14 @@ rung itself. The SIGILL lesson becomes a feature.
   derived AI-readiness rung below reads the same numbers. First run pending: the
   boot self-test's new `ai-profile` check runs the command as the live user and
   requires the written file.
-- [ ] **Engine builds selected from the profile.** CI already builds an AVX
-  variant; add AVX2 and a Vulkan build, record which machines need which, and never
-  install an engine the CPU cannot run.
+- [ ] **Engine builds selected from the profile.** The source has both CPU variants
+  (2026-10-17): `--variant avx` (the reference build CI ships), `--variant avx2`
+  (Haswell and later), `--variant auto` (newest this CPU can run, read from
+  `/proc/cpuinfo`); a named variant is refused before the build when the CPU lacks the
+  features, the choice is recorded beside the installed binaries, and `astra-ai status`
+  checks it against the CPU. CI builds and proves both variants; its first two-variant
+  run is pending. Still open: a Vulkan build, and downloading the right artifact
+  automatically instead of by hand.
 - [ ] **An "AI readiness" tier** derived from measurements, not branding.
 - [ ] **An evaluation suite with fixed tasks**; publish success rate and tokens per
   second per tier, with answer quality and execution quality scored separately. The

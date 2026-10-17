@@ -291,12 +291,16 @@ halves of voice. Each is an explicit command; nothing downloads on its own.
 Compiling on this hardware takes about twenty minutes of every core, so the
 distribution builds the runtime for itself: every change under
 `packages/astraos-ai/root/usr` triggers the **Build AI engine** workflow, which
-runs `astra-ai setup --build all` with the pinned flags, proves the result
-(including running the engine on an emulated Sandy Bridge with a real model),
-and publishes `astra-ai-engine-linux-x86_64-avx` as a GitHub Actions artifact.
-Download it, copy `llama-server` and `whisper-cli` into
-`~/.local/share/astraos/ai/bin/`, and `astra-ai status` shows the path it found -
-the number of compilers you had to run stays zero.
+runs `astra-ai setup --build all` once per CPU variant - `avx` for the Sandy
+Bridge class, `avx2` for Haswell and later - proves each result (the avx build
+on an emulated Sandy Bridge with a real model; the avx2 build natively, with
+its 256-bit code checked and a guard that the runner really lists AVX2), and
+publishes `astra-ai-engine-linux-x86_64-avx` and
+`astra-ai-engine-linux-x86_64-avx2` as GitHub Actions artifacts. Download the
+one whose name matches the machine, copy `llama-server` and `whisper-cli` into
+`~/.local/share/astraos/ai/bin/`, and `astra-ai status` shows the path it found
+(and complains when the recorded requirements do not match the CPU) - the
+number of compilers you had to run stays zero.
 
 After any of this, `astra ai status` reports whether the model is ready, and
 `astra ai start` serves the page. The server never needs a restart to notice a

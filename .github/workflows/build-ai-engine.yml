@@ -14,29 +14,46 @@
 #
 # WHY THE WORKFLOW RUNS `astra-ai setup --build` INSTEAD OF RAW CMAKE
 # ------------------------------------------------------------------
-# The instruction-set flags (AVX on; AVX2, F16C, FMA and BMI2 off; static
-# libraries) live in setup.py, next to the comment that explains them and the
-# measurement that produced them: on 2026-10-16 the first real end-to-end run
-# died with SIGILL (exit 132, zero output on stdout and a zero-byte log)
-# because ggml turns FMA and BMI2 on by default even when GGML_AVX2 is off, and
-# the model loader reached an FMA instruction before its first print. A
-# workflow that retyped those flags would be a second copy that drifts; one
-# that runs the user's own command cannot. `astra-ai setup --build all` is
-# literally what a user types on their own machine, so this workflow fails the
+# The instruction-set flags live in setup.py, per CPU variant, next to the
+# comment that explains them and the measurement that produced them: on
+# 2026-10-16 the first real end-to-end run died with SIGILL (exit 132, zero
+# output on stdout and a zero-byte log) because ggml turns FMA and BMI2 on by
+# default even when GGML_AVX2 is off, and the model loader reached an FMA
+# instruction before its first print. A workflow that retyped those flags
+# would be a second copy that drifts; one that runs the user's own command
+# cannot. `astra-ai setup --build all --variant avx` is literally what a user
+# types on their own machine, once per variant, so this workflow fails the
 # moment that command stops working for them.
+#
+# WHY TWO VARIANTS
+# ----------------
+# The reference machine is a Sandy Bridge: AVX and nothing newer, so its
+# artifact is the "avx" build and every static and dynamic proof below is
+# about that build on that CPU class. "avx2" is the same build with the four
+# Haswell features on - most of ggml's speed on the machines that have them -
+# and its artifact is proven natively on the runner, which does have AVX2 and
+# where the workflow refuses to pretend otherwise. The variant a machine
+# should install is decided from its own /proc/cpuinfo by `--variant auto`,
+# and `astra-ai status` checks a copied artifact's recorded requirements
+# against the CPU before anyone trusts it.
 #
 # WHAT IS PROVEN HERE, AND WHAT EACH PROOF RULES OUT
 # --------------------------------------------------
-#   * both programs compile from upstream source through the real CLI;
+#   * both programs compile from upstream source through the real CLI, once
+#     per variant;
 #   * `readelf -d` shows no RPATH/RUNPATH and `ldd` nothing missing — rules
 #     out the shared-library failure where a copied llama-server stops loading
 #     once the build tree it points into is deleted;
-#   * a disassembly scan finds no FMA / BMI2 / F16C instruction in either
-#     binary — the measured SIGILL, checked statically;
-#   * the binaries RUN on an emulated Sandy Bridge (`qemu-x86_64 -cpu
+#   * on the avx build, a disassembly scan finds no FMA / BMI2 / F16C
+#     instruction in either binary — the measured SIGILL, checked statically;
+#   * on the avx2 build, the scan finds 256-bit (ymm) code in quantity, so the
+#     variant flag took effect instead of being silently ignored — and the
+#     runner's own /proc/cpuinfo must list avx2, or the run stops;
+#   * the avx binaries RUN on an emulated Sandy Bridge (`qemu-x86_64 -cpu
 #     SandyBridge`): the engine loads a real model and answers over HTTP with
 #     no illegal instruction — the same failure, checked dynamically, against
-#     the same CPU the reference machine has;
+#     the same CPU the reference machine has; the avx2 build runs natively on
+#     the runner in every step below;
 #   * a model downloads through the same command a user runs;
 #   * `astra-ai ask` starts the server, gets an answer, and stops it;
 #   * the JSON grammar the worker depends on is actually enforced: one
@@ -60,9 +77,11 @@
 # That the artifacts behave on the physical reference machine: QEMU models the
 # instruction set, not the kernel, the scheduler or the last 30% of cpuinfo.
 # The artifact is uploaded so the final check on that machine costs one short
-# question instead of one long compile. The installer, the boot and the HUD on
-# a booted image are separate proofs and are recorded as UNTESTED until they
-# are actually performed (docs/INSTALLATION_VIRTUALBOX.md).
+# question instead of one long compile. The avx2 artifact must never be
+# installed there — a Sandy Bridge cannot run it — which is what the recorded
+# requirements and `astra-ai status` are for. The installer, the boot and the
+# HUD on a booted image are separate proofs and are recorded as UNTESTED until
+# they are actually performed (docs/INSTALLATION_VIRTUALBOX.md).
 
 name: Build AI engine
 
@@ -88,9 +107,15 @@ concurrency:
 
 jobs:
   engine:
-    name: Build and prove llama-server and whisper-cli
+    name: Build and prove llama-server and whisper-cli (${{ matrix.variant }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        # avx: the reference artifact. avx2: for Haswell and later. Both are
+        # built and proven side by side so neither can rot unseen.
+        variant: ["avx", "avx2"]
     env:
       # The checkout plays the role of /usr/share: the same override the test
       # suite uses. Everything else — the cloned sources, the build tree, the
@@ -117,11 +142,13 @@ jobs:
           g++ --version | head -1
           git --version
           echo "cores: $(nproc)"
+          echo "host features: $(grep -m1 '^flags' /proc/cpuinfo | \
+            grep -oE '\b(avx|avx2|f16c|fma|bmi2)\b' | sort -u | tr '\n' ' ')"
 
       - name: Build llama-server and whisper-cli with the pinned flags
-        run: python3 "$ASTRA_AI" setup --build all
+        run: python3 "$ASTRA_AI" setup --build all --variant "${{ matrix.variant }}"
 
-      - name: The binaries are self-contained and free of the measured SIGILL instructions
+      - name: The binaries are self-contained
         run: |
           bin_dir="$HOME/.local/share/astraos/ai/bin"
 
@@ -141,6 +168,13 @@ jobs:
             echo "ok: no build-tree libraries, no RPATH/RUNPATH"
           done
 
+          "$bin_dir/llama-server" --version
+
+      - name: The avx build carries no FMA, BMI2 or F16C instruction
+        if: matrix.variant == 'avx'
+        run: |
+          bin_dir="$HOME/.local/share/astraos/ai/bin"
+
           # The measured failure this guards against: a build with GGML_FMA and
           # GGML_BMI2 at their defaults configured, linked, and then died with
           # exit 132 and nothing printed on the Sandy Bridge reference machine.
@@ -156,7 +190,35 @@ jobs:
             echo "$name: none found ($(wc -l < "/tmp/$name.dis") disassembled lines)"
           done
 
-          "$bin_dir/llama-server" --version
+      - name: The avx2 build really asks for AVX2, on a runner that can run it
+        if: matrix.variant == 'avx2'
+        run: |
+          # The positive half of the instruction-set proof. The avx scan asserts
+          # the absence of Haswell instructions; this asserts their presence in
+          # the avx2 build, so the variant flag cannot be silently ignored and
+          # still ship an artifact labelled "avx2".
+          if ! grep -q -m1 '\bavx2\b' /proc/cpuinfo; then
+            echo "::error::this runner does not list avx2; a native avx2 proof here would be meaningless"
+            exit 1
+          fi
+
+          bin_dir="$HOME/.local/share/astraos/ai/bin"
+          objdump -d "$bin_dir/llama-server" > /tmp/llama-server.dis
+          avx512=$(grep -c '%zmm' /tmp/llama-server.dis || true)
+          if [ "$avx512" -ne 0 ]; then
+            echo "::error::the avx2 build contains AVX-512 code ($avx512 lines); the variant turns AVX-512 off on purpose"
+            exit 1
+          fi
+
+          ymm=$(grep -c '%ymm' /tmp/llama-server.dis || true)
+          echo "llama-server: $ymm disassembled lines use 256-bit (ymm) registers, no zmm"
+          # ggml's AVX (non-AVX2) code path works on 128-bit vectors, so the
+          # avx build of the same source has almost none. A collapse here means
+          # GGML_AVX2 did not take effect.
+          if [ "$ymm" -lt 100 ]; then
+            echo "::error::GGML_AVX2 did not take effect: almost no 256-bit code in the binary"
+            exit 1
+          fi
 
       - name: Install a small model through the same command a user runs
         run: |
@@ -165,7 +227,8 @@ jobs:
           python3 "$ASTRA_AI" setup --model smollm2-360m-instruct-q8_0
           python3 "$ASTRA_AI" status | tee /tmp/status.txt
 
-      - name: Run the engine on an emulated Sandy Bridge (the reference CPU)
+      - name: Run the engine on an emulated Sandy Bridge (the reference CPU; the avx artifact's dynamic proof)
+        if: matrix.variant == 'avx'
         run: |
           # QEMU with -cpu SandyBridge is the last 10% the static scan cannot
           # reach: a real model load and a real generation, on a CPU whose
@@ -293,10 +356,10 @@ jobs:
           print("(smoke model - not a quality result)")
           PY
 
-      - name: Upload the evaluation report (smoke model)
+      - name: Upload the evaluation report (smoke model, ${{ matrix.variant }})
         uses: actions/upload-artifact@v4
         with:
-          name: astra-ai-eval-smoke-model
+          name: astra-ai-eval-smoke-model-${{ matrix.variant }}
           retention-days: 30
           if-no-files-found: error
           path: /tmp/eval.json
@@ -319,27 +382,34 @@ jobs:
           print("text:", data.get("text", ""))
           PY
 
-      - name: Package the engine for the reference machine
+      - name: Package the engine (${{ matrix.variant }})
         run: |
           bin_dir="$HOME/.local/share/astraos/ai/bin"
           mkdir -p dist-engine
           cp "$bin_dir/llama-server" "$bin_dir/whisper-cli" dist-engine/
 
-          # The flag list is read from setup.py, not retyped: this artifact's
-          # documentation cannot disagree with what was actually compiled.
-          flags=$(python3 -c "from astraos.ai import setup; print(' '.join(setup.CPU_FLAGS))")
+          # The flag list and the requirements are read from setup.py, not
+          # retyped: this artifact's documentation cannot disagree with what
+          # was actually compiled, and a machine can compare the requirements
+          # with its own CPU before trusting the binaries.
+          flags=$(python3 -c "from astraos.ai import setup; print(' '.join(setup.CPU_VARIANTS['${{ matrix.variant }}']))")
+          requires=$(python3 -c "from astraos.ai import setup; print(', '.join(setup.VARIANT_REQUIREMENTS['${{ matrix.variant }}']))")
           {
             echo "AstraOS AI engine (llama-server, whisper-cli)"
             echo "commit: $(git rev-parse HEAD)"
             echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ) by workflow run ${GITHUB_RUN_ID}"
             echo "built on: $(. /etc/os-release && echo "$PRETTY_NAME"), $(nproc) cores"
-            echo "built for: x86-64 with AVX (Sandy Bridge and later); glibc 2.39+"
-            echo "            (AstraOS is Debian 13, glibc 2.41)"
+            echo "variant: ${{ matrix.variant }}"
+            echo "requires: a CPU listing $requires; glibc 2.39+"
+            echo "          (AstraOS is Debian 13, glibc 2.41)"
             echo "flags: -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF ${flags}"
             "$bin_dir/llama-server" --version 2>&1 | head -2
             echo ""
             echo "install: copy both files into ~/.local/share/astraos/ai/bin/"
-            echo "check:   astra-ai status   (shows the llama-server path it found)"
+            echo "         (avx runs on Sandy Bridge and later; avx2 needs"
+            echo "          AVX2/F16C/FMA/BMI2 - Haswell and later)"
+            echo "check:   astra-ai status   (shows the path it found, and the"
+            echo "          recorded variant when the tool wrote the marker)"
           } > dist-engine/BUILD-INFO.txt
 
           ( cd dist-engine && sha256sum llama-server whisper-cli > SHA256SUMS.txt )
@@ -349,7 +419,7 @@ jobs:
       - name: Upload the engine binaries
         uses: actions/upload-artifact@v4
         with:
-          name: astra-ai-engine-linux-x86_64-avx
+          name: astra-ai-engine-linux-x86_64-${{ matrix.variant }}
           retention-days: 30
           if-no-files-found: error
           path: dist-engine/
@@ -359,7 +429,7 @@ jobs:
         run: |
           {
             echo ""
-            echo "### AI engine"
+            echo "### AI engine (${{ matrix.variant }} variant)"
             echo ""
             echo '```'
             cat /tmp/status.txt 2>/dev/null || echo "(status not captured)"
@@ -379,9 +449,18 @@ jobs:
             echo ""
             echo "### Not tested by this workflow"
             echo ""
-            echo "The engine is proven on an *emulated* Sandy Bridge. The physical"
-            echo "reference machine still owns the final check (download the"
-            echo "artifact, run one short question), and the installer, the boot"
-            echo "and the HUD on a booted image remain untested until run in a VM"
-            echo "(docs/INSTALLATION_VIRTUALBOX.md)."
+            if [ "${{ matrix.variant }}" = "avx" ]; then
+              echo "The avx engine is proven on an *emulated* Sandy Bridge. The"
+              echo "physical reference machine still owns the final check (download"
+              echo "the artifact, run one short question), and the installer, the"
+              echo "boot and the HUD on a booted image remain untested until run in"
+              echo "a VM (docs/INSTALLATION_VIRTUALBOX.md)."
+            else
+              echo "The avx2 engine is proven natively on this runner, with its"
+              echo "256-bit code verified by disassembly and no AVX-512 in it. It"
+              echo "must NOT be installed on a machine without AVX2 - the"
+              echo "reference machine is one. When the binaries were installed by"
+              echo "the tool itself, the recorded requirements and"
+              echo "\`astra-ai status\` check the CPU for exactly that mistake."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

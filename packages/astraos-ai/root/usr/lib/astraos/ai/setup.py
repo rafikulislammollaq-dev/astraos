@@ -24,8 +24,14 @@ Why the build flags are what they are:
     AVX2, F16C, FMA and BMI2 are not. llama.cpp and whisper.cpp both compile
     for the host's features by default (-DGGML_NATIVE=ON), which produces a
     binary that dies with "Illegal instruction" on the reference machine when
-    the build happened on a newer one. The flags below pin the instruction set
-    explicitly: AVX on, AVX2 off, F16C off, FMA off, BMI2 off, AVX512 off.
+    the build happened on a newer one. The flags pin the instruction set
+    explicitly, per variant: "avx" (the default, and what CI ships) is AVX on,
+    AVX2/F16C/FMA/BMI2/AVX512 off; "avx2" is the same list with the four
+    Haswell features on, for the machines that have them; "auto" picks from
+    this machine's own /proc/cpuinfo. A named variant is checked against that
+    file before the first compiler runs, and the choice is recorded beside the
+    installed binaries so `astra-ai status` can flag a build this CPU cannot
+    run.
 
     FMA and BMI2 are not optional extras of the AVX2 switch. With only
     GGML_AVX2=OFF, CMake still turns GGML_FMA and GGML_BMI2 on by default -
@@ -45,10 +51,12 @@ Why the build flags are what they are:
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -62,31 +70,68 @@ SOURCES = {
     "whisper": "https://github.com/ggerganov/whisper.cpp",
 }
 
-# The instruction-set flags explained in the module docstring. Applied to both
-# projects: whisper.cpp builds on the same ggml library and fails the same way.
-# GGML_BLAS stays off so that the build needs no BLAS development package; on
-# this hardware the difference for a 1B-3B Q4 model is small, and a build that
-# fails for a missing -dev package would be worse than one that is 10% slower.
-CPU_FLAGS = [
-    "-DGGML_NATIVE=OFF",
-    "-DGGML_AVX=ON",
-    "-DGGML_AVX2=OFF",
-    # FMA and BMI2 arrived with Haswell, the same generation as AVX2, and ggml
-    # turns both on by default even when GGML_AVX2 is off. Leaving them out is
-    # not a theoretical mistake: on the Sandy Bridge reference machine the
-    # server configured, built, and then died with SIGILL and zero output on
-    # the first tensor it loaded, because the log is empty until the model is
-    # in memory. Measured 2026-10-16.
-    "-DGGML_FMA=OFF",
-    "-DGGML_BMI2=OFF",
-    "-DGGML_F16C=OFF",
-    "-DGGML_AVX512=OFF",
-    "-DGGML_BLAS=OFF",
-    # One self-contained file: see the module docstring. A shared build copied
-    # out of the build tree keeps an RPATH into it and stops working as soon as
-    # the tree is gone.
-    "-DBUILD_SHARED_LIBS=OFF",
-]
+# The instruction-set flags explained in the module docstring, per CPU
+# variant. Applied to both projects: whisper.cpp builds on the same ggml
+# library and fails the same way. GGML_BLAS stays off so that the build needs
+# no BLAS development package; on this hardware the difference for a 1B-3B Q4
+# model is small, and a build that fails for a missing -dev package would be
+# worse than one that is 10% slower.
+CPU_VARIANTS: dict[str, list[str]] = {
+    "avx": [
+        "-DGGML_NATIVE=OFF",
+        "-DGGML_AVX=ON",
+        "-DGGML_AVX2=OFF",
+        # FMA and BMI2 arrived with Haswell, the same generation as AVX2, and
+        # ggml turns both on by default even when GGML_AVX2 is off. Leaving
+        # them out is not a theoretical mistake: on the Sandy Bridge reference
+        # machine the server configured, built, and then died with SIGILL and
+        # zero output on the first tensor it loaded, because the log is empty
+        # until the model is in memory. Measured 2026-10-16.
+        "-DGGML_FMA=OFF",
+        "-DGGML_BMI2=OFF",
+        "-DGGML_F16C=OFF",
+        "-DGGML_AVX512=OFF",
+        "-DGGML_BLAS=OFF",
+        # One self-contained file: see the module docstring. A shared build
+        # copied out of the build tree keeps an RPATH into it and stops
+        # working as soon as the tree is gone.
+        "-DBUILD_SHARED_LIBS=OFF",
+    ],
+    # Haswell (2013) and later: the same build with the four features those
+    # CPUs added. AVX-512 stays off in both variants: it is not needed for a
+    # 1B-3B Q4 model, it is absent from every CPU this project is tested on,
+    # and on some CPUs that have it, using it costs clocks for everyone.
+    "avx2": [
+        "-DGGML_NATIVE=OFF",
+        "-DGGML_AVX=ON",
+        "-DGGML_AVX2=ON",
+        "-DGGML_FMA=ON",
+        "-DGGML_BMI2=ON",
+        "-DGGML_F16C=ON",
+        "-DGGML_AVX512=OFF",
+        "-DGGML_BLAS=OFF",
+        "-DBUILD_SHARED_LIBS=OFF",
+    ],
+}
+
+# What a binary built for a variant may execute, by /proc/cpuinfo flag name.
+# Checked against this machine before a build starts, and against the build
+# marker of the installed binaries before they are trusted - the second check
+# is what catches an artifact built for another machine, which would fail the
+# way the measured SIGILL failed.
+VARIANT_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "avx": ("avx",),
+    "avx2": ("avx", "avx2", "f16c", "fma", "bmi2"),
+}
+
+# What a bare `--build` builds. The reference machine and the artifact CI
+# ships are both "avx"; "auto" is the explicit word for "the newest variant
+# this CPU can run", and any named variant is checked against the local CPU
+# before the first compiler runs.
+DEFAULT_VARIANT = "avx"
+
+# The default variant's flags, under the name the workflow and the tests read.
+CPU_FLAGS = CPU_VARIANTS[DEFAULT_VARIANT]
 
 # The models that may be installed, as a three-tier ladder rather than one
 # list. Every entry names the tier it is for, because a user "installing a
@@ -340,6 +385,139 @@ def _found_binary(name: str) -> str:
     return str(candidate) if candidate.is_file() else ""
 
 
+def local_cpu_flags() -> set[str]:
+    """The feature words this machine's /proc/cpuinfo lists.
+
+    An unprivileged read, like every other measurement this package takes, and
+    an empty set when the file cannot be read (another operating system).
+    """
+    try:
+        text = Path("/proc/cpuinfo").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return set()
+    for line in text.splitlines():
+        key, sep, value = line.partition(":")
+        if sep and key.strip() == "flags":
+            return set(value.split())
+    return set()
+
+
+def best_variant(cpu_flags) -> str | None:
+    """The newest variant a CPU with these features can run, or None.
+
+    Pure and parameterised - the tests ask it about a Sandy Bridge and a
+    Haswell without owning either - and the single place the "newest" order
+    lives: last entry first in CPU_VARIANTS.
+    """
+    available = set(cpu_flags)
+    for variant in reversed(list(CPU_VARIANTS)):
+        if set(VARIANT_REQUIREMENTS[variant]) <= available:
+            return variant
+    return None
+
+
+def resolve_variant(name: str, cpu_flags=None) -> str:
+    """Turn a --variant word into a variant, checked against the CPU.
+
+    "auto" picks the newest variant this CPU lists. A named variant is checked
+    too: building an "avx2" engine on a machine without AVX2 compiles cleanly
+    and then dies with SIGILL on the first tensor it loads, which is the
+    measured defect this module exists to prevent. Building the oldest variant
+    on a newer machine is always allowed - the requirements are a subset -
+    which is exactly what CI does for the reference artifact.
+    """
+    flags = local_cpu_flags() if cpu_flags is None else set(cpu_flags)
+    requested = (name or "").strip().lower()
+    if requested in ("", "default"):
+        requested = DEFAULT_VARIANT
+    if requested == "auto":
+        picked = best_variant(flags)
+        if picked is None:
+            raise SetupError(
+                "this CPU lists no AVX, and every engine build from this project "
+                "uses it - `astra-ai profile` shows what the CPU does list"
+            )
+        return picked
+    if requested not in CPU_VARIANTS:
+        raise SetupError(
+            f"unknown engine variant: {name} - use {', '.join(CPU_VARIANTS)}, or auto"
+        )
+    missing = [f for f in VARIANT_REQUIREMENTS[requested] if f not in flags]
+    if missing:
+        runnable = best_variant(flags)
+        if runnable is None:
+            raise SetupError(
+                f"this CPU does not list {', '.join(missing)}, nor AVX itself: no "
+                "engine build from this project can run on it"
+            )
+        raise SetupError(
+            f"this CPU does not list {', '.join(missing)}: an \"--variant {requested}\" "
+            f"build would die with SIGILL on the first tensor it loads (the measured "
+            f"2026-10-16 failure). Build for \"{runnable}\" instead, or use --variant auto"
+        )
+    return requested
+
+
+def marker_path() -> Path:
+    """Where the record of what the installed engines were built for lives."""
+    return _config.PATHS.bin_dir / "ENGINE-BUILD.json"
+
+
+def _write_marker(variant: str, targets: list[str]) -> Path:
+    """Record the variant the engines now in bin_dir were built for.
+
+    Written after a successful install, beside the binaries it describes, so
+    `astra-ai status` can compare their requirements with this machine without
+    parsing a binary. A `--build whisper` after a `--build llama` updates the
+    marker to the newer build; a machine that wants the two halves to agree
+    builds both in one command, which is also what CI and the docs say.
+    """
+    path = marker_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "variant": variant,
+                "requirements": list(VARIANT_REQUIREMENTS[variant]),
+                "targets": sorted(targets),
+                "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def engine_build(cpu_flags=None) -> dict:
+    """What the installed engines were built for, and whether this CPU can run it.
+
+    Keys:
+
+        variant      the recorded variant, or "" when nothing is recorded
+        missing      requirements this CPU does not list (empty means runnable)
+        built        the recorded build time, or ""
+
+    Nothing recorded is the state for a machine that installed the binaries by
+    hand; the answer then names nothing, because a claim about a binary that
+    carries no record would be a guess.
+    """
+    try:
+        data = json.loads(marker_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"variant": "", "missing": [], "built": ""}
+    if not isinstance(data, dict):
+        return {"variant": "", "missing": [], "built": ""}
+    variant = str(data.get("variant") or "")
+    requirements = data.get("requirements")
+    if not isinstance(requirements, list):
+        requirements = list(VARIANT_REQUIREMENTS.get(variant, ()))
+    flags = local_cpu_flags() if cpu_flags is None else set(cpu_flags)
+    missing = [str(f) for f in requirements if str(f) not in flags]
+    return {"variant": variant, "missing": missing, "built": str(data.get("built") or "")}
+
+
 def _progress(done: int, total: int) -> None:
     """One line, rewritten in place: a build log wants the final state only."""
     if total > 0:
@@ -495,14 +673,22 @@ def _run(argv: list[str], cwd: Path | None = None) -> None:
         )
 
 
-def build_tools(which: str) -> None:
+def build_tools(which: str, variant: str = DEFAULT_VARIANT) -> None:
     """Build llama-server, whisper-cli, or both, from upstream source.
+
+    `variant` is "avx" (the default), "avx2", or "auto" for the newest this
+    CPU can run. resolve_variant() checks it against this machine's
+    /proc/cpuinfo before anything is cloned, and the choice is recorded beside
+    the installed binaries afterwards for `astra-ai status` to check.
 
     Sources are cloned into bin_dir/src, built there, and the finished
     binaries are copied into bin_dir. The build tree is left in place: a
     second run reuses it, and someone who wants to debug a failure needs the
     files that failed.
     """
+    chosen = resolve_variant(variant)
+    flags = CPU_VARIANTS[chosen]
+
     requested = (which or "").strip().lower()
     if requested in ("", "llama-server", "llama.cpp"):
         requested = "llama"
@@ -526,7 +712,8 @@ def build_tools(which: str) -> None:
         build = _config.PATHS.bin_dir / "src" / (target + "-build")
 
         print(
-            f"building {target} (AVX on; AVX2, F16C, FMA and BMI2 off; static binary)"
+            f"building {target} for variant {chosen} "
+            f"(requires {', '.join(VARIANT_REQUIREMENTS[chosen])}; static binary)"
         )
         if (source / ".git").is_dir():
             print(f"  source already at {source}; updating it")
@@ -539,7 +726,7 @@ def build_tools(which: str) -> None:
         configure = [
             "cmake", "-S", str(source), "-B", str(build),
             "-DCMAKE_BUILD_TYPE=Release",
-            *CPU_FLAGS,
+            *flags,
         ]
         if target == "llama":
             # The server is a C++ program with no Python and no curl in it;
@@ -570,6 +757,13 @@ def build_tools(which: str) -> None:
         installed = _install_binaries(build, target)
         for path in installed:
             print(f"installed: {path}")
+
+    marker = _write_marker(chosen, targets)
+    print(
+        f"recorded: {marker} - the engines require "
+        f"{', '.join(VARIANT_REQUIREMENTS[chosen])}, and `astra-ai status` checks "
+        "this machine against that"
+    )
 
 
 def _install_binaries(build: Path, target: str) -> list[Path]:
