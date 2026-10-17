@@ -5,7 +5,7 @@ Maintainer: @@VENDOR@@ <maintainers@astraos.invalid>
 Section: utils
 Priority: optional
 Homepage: https://astraos.invalid
-Depends: astraos-base (>= @@VERSION@@), bash (>= 5.0), coreutils, util-linux, procps, psmisc, iproute2, iputils-ping, net-tools, sed, gawk, grep
+Depends: astraos-base (>= @@VERSION@@), bash (>= 5.0), coreutils, util-linux, procps, psmisc, iproute2, iputils-ping, net-tools, sed, gawk, grep, libglib2.0-bin
 Recommends: fastfetch, xfce4-taskmanager, traceroute, gvfs, mesa-utils
 Description: AstraOS Windows command bridge
  The bridge for people arriving from Windows. It puts a set of familiar Windows

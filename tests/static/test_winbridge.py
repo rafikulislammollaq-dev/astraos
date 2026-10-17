@@ -254,10 +254,18 @@ def test_an_existing_absolute_path_is_not_a_switch() -> None:
 
 
 def test_every_switch_matcher_consults_the_guard() -> None:
-    """A new matcher that forgets looks_like_windows_switch reintroduces the /home bug."""
+    """A new matcher that forgets looks_like_windows_switch reintroduces the /home bug.
+
+    The whole body is searched, not only the definition line. Reading one line meant
+    a matcher written across several lines was judged by its signature alone - it
+    failed while consulting the guard in its body - and a matcher that only named
+    the guard in a comment passed. The body runs to the next top-level definition,
+    so one-line and multi-line matchers are both judged by everything they contain.
+    """
+    pattern = r"^([a-z_]+_switch)\(\)\s*\{(.*?)(?=^[A-Za-z0-9_]+\(\)\s*\{|\Z)"
     matchers = [
         (name, body)
-        for name, body in re.findall(r"^([a-z_]+_switch)\(\)\s*\{(.*)$", _bridge_code(), re.M)
+        for name, body in re.findall(pattern, _bridge_code(), re.M | re.S)
         # The guard itself is named ..._switch and does not consult anything.
         if name != "looks_like_windows_switch"
     ]

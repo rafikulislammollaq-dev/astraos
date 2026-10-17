@@ -51,7 +51,7 @@ Out of scope (report these upstream):
 - Debian package security, which the Debian Security Team tracks and which AstraOS
   receives through `trixie-security`.
 
-## Security properties AstraOS 0.1.0 actually provides
+## Security properties AstraOS actually provides
 
 These are implemented and asserted at build time. They are modest, and that is the
 point: it is better to state six things that are true than twenty that are aspirational.
@@ -70,7 +70,7 @@ point: it is better to state six things that are true than twenty that are aspir
 
 ## Security limitations — read these
 
-AstraOS 0.1.0 Alpha is **not** a hardened system, and the project makes no claim that it
+AstraOS Alpha is **not** a hardened system, and the project makes no claim that it
 is. Specifically:
 
 1. **No security audit has been performed.** Not by an external party, not internally.

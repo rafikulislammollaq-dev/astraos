@@ -66,10 +66,10 @@ exists; the scripts check exit statuses and inspect the artifacts (plan §16.2).
 
 ```
 dist/
-├── astraos-0.1.0-alpha-amd64.iso             the bootable image
-├── astraos-0.1.0-alpha-amd64.iso.sha256      its SHA-256, already verified
-├── astraos-0.1.0-alpha-amd64.iso.manifest    what was built, and what was NOT tested
-└── apt-repo/                                 the APT archive the packages were assembled into
+├── astraos-<version>-<stage>-<arch>.iso           the bootable image
+├── astraos-<version>-<stage>-<arch>.iso.sha256    its SHA-256, already verified
+├── astraos-<version>-<stage>-<arch>.iso.manifest  what was built, and what was NOT tested
+└── apt-repo/                                      the APT archive the packages were assembled into
 
 logs/
 └── build-20261012T213000Z.log                the full build log
@@ -78,6 +78,11 @@ build/                                        ignored by git
 ├── packages/                                 the built .deb files and their manifest
 └── live-build/                               the live-build working tree
 ```
+
+The image name carries the release: `astraos-<version>-<stage>-<arch>.iso`, with
+`<version>` and `<arch>` from `VERSION` and `config/distribution.env` and `<stage>`
+lowercased — for 0.2.0 Alpha that is `astraos-0.2.0-alpha-amd64.iso`. The names change
+with the release, so they are shown as a pattern here; `ls dist/` shows the exact ones.
 
 The manifest is the honest record. Read the `[validation]` section: it distinguishes
 `structural=PASS` from `boot_in_virtualbox=UNTESTED`.

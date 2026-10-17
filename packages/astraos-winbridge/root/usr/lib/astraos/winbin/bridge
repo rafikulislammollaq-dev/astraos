@@ -60,8 +60,26 @@ else
     C_DIM=""; C_OK=""; C_WARN=""; C_ERR=""; C_END=""
 fi
 
+# The rule this file follows, and the reason the two groups are split: data on stdout,
+# commentary on stderr (tests/static/test_scripts.py states the same rule for the build
+# scripts).
+#
+#   say  - the command's own output, and its usage text. `dir` prints a header and a
+#          listing; `systeminfo`, `diskpart` and `reg` answer with prose. This is what a
+#          pipeline reads, so it stays on stdout.
+#   ok   - a status line the Windows command itself prints on stdout ("Files compare OK",
+#   warn   "Successfully flushed the DNS resolver cache"), so these stay on stdout too:
+#          moving them would make `comp file1 file2` print nothing at all when the files
+#          match.
+#   hint - the bridge's own commentary: which Linux tool is underneath, and how the two
+#          differ. It is never the answer to anything, and the `[astraos]` prefix on a
+#          line of a piped listing is exactly what corrupts one:
+#              dir | grep report      matched nothing, because every line began with the
+#                                     hint and the header
+#          The hint goes to stderr, where the user still sees it on a terminal.
+#   fail - diagnostics. Already stderr.
 say()  { printf '%s\n' "$*"; }
-hint() { printf '%s[astraos]%s %s\n' "$C_DIM" "$C_END" "$*"; }
+hint() { printf '%s[astraos]%s %s\n' "$C_DIM" "$C_END" "$*" >&2; }
 ok()   { printf '%s%s%s\n' "$C_OK" "$*" "$C_END"; }
 warn() { printf '%s%s%s\n' "$C_WARN" "$*" "$C_END"; }
 fail() { printf '%s%s%s\n' "$C_ERR" "$*" "$C_END" >&2; }
@@ -161,6 +179,24 @@ collect_paths() {
             *'
 '*) fail "refusing to handle an argument containing a newline"; return 2 ;;
         esac
+        # A leading dash is never a Windows-style path, and forwarding one to the
+        # Linux tool underneath lets it be read as an OPTION. That is not cosmetic:
+        # `del /f --no-preserve-root /` used to reach `rm -f --no-preserve-root /`
+        # and unlink the entire root filesystem, and `del /f -r ~/Documents` reached
+        # `rm -f -r ~/Documents`, deleting a directory tree that Windows' `del /f`
+        # would have refused because it is not a file. Neither /f nor the dash
+        # argument was a switch, so both survived as paths and became flags.
+        # Refusing here closes it for every command at once; the `--` added before
+        # "$@" at the exec sites is the second line of defence.
+        case "$_a" in
+            -*)
+                fail "refusing '$_a': a leading '-' is read as an option by the Linux"
+                fail "tool underneath, and Windows paths never start with one. If you"
+                fail "meant a file whose name begins with '-', rename it, or use the"
+                fail "Linux tool directly: /usr/bin/<tool> -- '$_a'"
+                return 2
+                ;;
+        esac
         winpath "$_a"
     done
 }
@@ -223,6 +259,13 @@ tree_switch()     { looks_like_windows_switch "$1" || return 1; case "$1" in /[F
 comp_switch()     { looks_like_windows_switch "$1" || return 1; case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
 explorer_switch() { looks_like_windows_switch "$1" || return 1; case "$1" in /[A-Za-z,]*) return 0 ;; esac; return 1; }
 simple_path_switch() { looks_like_windows_switch "$1" || return 1; case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
+
+# md takes the Windows /p and the Unix -p/--parents. The two Unix spellings never look
+# like Windows switches (looks_like_windows_switch() wants a leading slash), so they are
+# recognised before the guard - without this, `mkdir -p` collected "-p" as a path and
+# created a directory called "-p", and now that collect_paths() refuses a leading dash it
+# would be an error instead.
+md_switch()       { case "$1" in -p|--parents) return 0 ;; esac; looks_like_windows_switch "$1" || return 1; case "$1" in /[A-Za-z]*) return 0 ;; esac; return 1; }
 
 # --------------------------------------------------------------------------
 # Command implementations
@@ -289,7 +332,7 @@ cmd_copy() {
     IFS=$_ifs_old; set +f
     [ $# -lt 2 ] && { say "copy SRC [SRC...] DEST"; return 2; }
     # shellcheck disable=SC2086
-    exec cp -p $_cp "$@"
+    exec cp -p $_cp -- "$@"
 }
 
 cmd_xcopy() {
@@ -308,7 +351,7 @@ cmd_xcopy() {
     [ $# -lt 2 ] && { say "xcopy SRC DEST  (copies directories recursively)"; return 2; }
     hint "xcopy -> cp -r"
     # shellcheck disable=SC2086
-    exec cp -p $_cp "$@"
+    exec cp -p $_cp -- "$@"
 }
 
 cmd_robocopy() {
@@ -345,7 +388,7 @@ cmd_move() {
     IFS=$_ifs_old; set +f
     [ $# -lt 2 ] && { say "move SRC DEST"; return 2; }
     # shellcheck disable=SC2086
-    exec mv $_mv "$@"
+    exec mv $_mv -- "$@"
 }
 
 cmd_ren() {
@@ -369,10 +412,10 @@ cmd_ren() {
             hint "install it with:  astra install util-linux"
             return 127
         }
-        run_real rename "$@"
+        run_real rename -- "$@"
     fi
     [ $# -eq 2 ] || { say "ren OLDNAME NEWNAME"; return 2; }
-    exec mv "$@"
+    exec mv -- "$@"
 }
 
 cmd_md() {
@@ -381,18 +424,26 @@ cmd_md() {
     # command into an error is worse than no wrapper. -p is what Windows does
     # anyway, so it is redundant here, not contradictory: drop it and do not
     # print the explanatory hint for a user who already knows.
+    #
+    # The operands go through collect_paths() like every other handler's, through
+    # md_switch() below. This used to be a private two-step: join the arguments into a
+    # space-separated string, then `set -- $_args` to split them again. That split used
+    # the default IFS and left pathname expansion on, so
+    #
+    #     md "My Documents"     created two sibling directories, My and Documents
+    #     md Notes              created Notes.txt when a file of that name was present
+    #
+    # — a usage message would have been better than either. Spaces in directory names
+    # are the normal case on the desktop this bridge is for, and the shared helper is
+    # what flattens newlines and refuses a leading dash, so it is used here too.
     _quiet=""
-    _args=""
     for _a in "$@"; do
         case "$_a" in
             -p|--parents) _quiet=1 ;;
-            *) _args="${_args:+$_args }$_a" ;;
         esac
     done
-    # shellcheck disable=SC2086
-    set -- $_args
 
-    _PATHS="$(collect_paths simple_path_switch "$@")" || return $?
+    _PATHS="$(collect_paths md_switch "$@")" || return $?
     set -f; _ifs_old=$IFS; IFS="
 "
     set -- $_PATHS
@@ -401,7 +452,7 @@ cmd_md() {
     [ -n "$_quiet" ] || hint "md -> mkdir -p (parent directories are created too)"
     # run_real, not `mkdir`: the wrapper of that name is on PATH ahead of the real
     # one, so delegating by name would call this function again forever.
-    run_real mkdir -p "$@"
+    run_real mkdir -p -- "$@"
 }
 
 cmd_rd() {
@@ -421,9 +472,9 @@ cmd_rd() {
     if [ -n "$_r" ]; then
         [ -n "$_f" ] || warn "rd /s removes directories permanently (the Recycle Bin does not apply)."
         # shellcheck disable=SC2086
-        exec rm -r ${_f:+-f} "$@"
+        exec rm -r ${_f:+-f} -- "$@"
     fi
-    exec rmdir "$@"
+    exec rmdir -- "$@"
 }
 
 cmd_del() {
@@ -440,17 +491,25 @@ cmd_del() {
     set -- $_PATHS
     IFS=$_ifs_old; set +f
     [ $# -eq 0 ] && { say "del FILE [FILE...]   (/f = permanent, otherwise moved to trash)"; return 2; }
-    if [ -z "$_force" ] && command -v gio >/dev/null 2>&1; then
-        # Recycle-Bin behaviour: trash, do not unlink. If the trash refuses
-        # (unusual mount), fall through to rm with a note.
-        if gio trash "$@" 2>/dev/null; then
-            hint "moved to trash (empty it from the Files app to free space)"
-            return 0
+    if [ -z "$_force" ]; then
+        if command -v gio >/dev/null 2>&1; then
+            # Recycle-Bin behaviour: trash, do not unlink. If the trash refuses
+            # (unusual mount), fall through to rm with a note.
+            if gio trash "$@" 2>/dev/null; then
+                hint "moved to trash (empty it from the Files app to free space)"
+                return 0
+            fi
+            hint "trash unavailable; deleting permanently"
+        else
+            # Windows `del` puts the file in the Recycle Bin, and the usage line above
+            # promises the same here ("otherwise moved to trash"). Without gio that
+            # promise cannot be kept, and deleting in silence is the one outcome a user
+            # cannot tell apart from the behaviour they were promised.
+            hint "gio is not installed, so this is a permanent delete, not the Recycle Bin"
         fi
-        hint "trash unavailable; deleting permanently"
     fi
     # shellcheck disable=SC2086
-    exec rm ${_ask:+-i} ${_force:+-f} "$@"
+    exec rm ${_ask:+-i} ${_force:+-f} -- "$@"
 }
 
 cmd_type() {
@@ -460,7 +519,7 @@ cmd_type() {
     set -- $_PATHS
     IFS=$_ifs_old; set +f
     [ $# -eq 0 ] && { say "type FILE"; return 2; }
-    exec cat "$@"
+    exec cat -- "$@"
 }
 
 cmd_edit() {
@@ -470,10 +529,10 @@ cmd_edit() {
 "
         set -- $_PATHS
         IFS=$_ifs_old; set +f
-        exec mousepad "$@"
+        exec mousepad -- "$@"
     fi
     hint "edit -> nano (arrows to move, Ctrl+O saves, Ctrl+X exits)"
-    exec nano "$@"
+    exec nano -- "$@"
 }
 
 cmd_where() {
@@ -534,10 +593,10 @@ $(winpath "$_a")"
     if [ -n "$_rec" ]; then
         [ $# -eq 0 ] && set -- .
         # shellcheck disable=SC2086
-        exec grep -r $_g -e "$_pat" "$@"
+        exec grep -r $_g -e "$_pat" -- "$@"
     fi
     # shellcheck disable=SC2086
-    exec grep $_g -e "$_pat" "$@"
+    exec grep $_g -e "$_pat" -- "$@"
 }
 
 cmd_attrib() {
@@ -558,7 +617,7 @@ $(winpath "$_a")" ;;
     if [ -n "$_mode" ] && [ $# -gt 0 ]; then
         hint "attrib -> chmod (Linux permission bits replace the R/S/H attributes)"
         # shellcheck disable=SC2086
-        exec chmod $_mode "$@"
+        exec chmod $_mode -- "$@"
     fi
     [ $# -gt 0 ] && ls -ld -- "$@"
     hint "read-only = no 'w' bit. Examples:  chmod +w FILE   chmod a-w FILE"
@@ -598,10 +657,10 @@ $(winpath "$_a")"
     # for one level, and adding -d would silently drop every file from the answer.
     if [ -z "$_files" ] && [ -z "$_quiet" ]; then
         # shellcheck disable=SC2086
-        run_real tree -d ${_ascii:+--charset ascii} "$@"
+        run_real tree -d ${_ascii:+--charset ascii} -- "$@"
     fi
     # shellcheck disable=SC2086
-    run_real tree ${_ascii:+--charset ascii} "$@"
+    run_real tree ${_ascii:+--charset ascii} -- "$@"
 }
 
 cmd_comp() {
@@ -611,9 +670,40 @@ cmd_comp() {
     set -- $_PATHS
     IFS=$_ifs_old; set +f
     [ $# -eq 2 ] || { say "comp FILE1 FILE2"; return 2; }
-    hint "comp -> cmp (prints the first differing bytes)"
-    cmp -l "$1" "$2" 2>&1 | head -20
-    return 0
+    # cmp is probed, and its exit status is reported instead of being discarded.
+    #
+    # This used to be `cmp -l "$1" "$2" 2>&1 | head -20` followed by an unconditional
+    # `return 0`, which made the command report success in every case: two files that
+    # differ gave exit 0 (Windows `comp` gives 1), and a file that does not exist printed
+    # cmp's "No such file or directory" under the "comp -> cmp" success framing and also
+    # gave exit 0. A verification script gated on `if comp ...` therefore always took the
+    # "identical" branch. cmp's diagnostics belong on stderr, where they are a diagnostic
+    # rather than part of the answer, and -- separates the operands from its options.
+    [ -n "$(real_tool cmp)" ] || { fail "cmp is not installed (diffutils)"; return 127; }
+    hint "comp -> cmp (prints the first differing byte of a binary comparison)"
+    # The exit status is taken from cmp, not from the pipeline.
+    #
+    # `cmp -l ... | head -20` reports head's status, which is 0 whenever head exits
+    # normally - so the "identical" answer was printed for files that differ AND for
+    # files that do not exist, and the function returned 0 in every case. The bridge is
+    # POSIX sh, so there is no PIPESTATUS to consult. The status comes from a silent
+    # comparison, and the listing (truncated to 20 differing bytes) is produced only
+    # when cmp has said the files differ.
+    cmp -s -- "$1" "$2"
+    _comp_status=$?
+    case "$_comp_status" in
+        0)
+            ok "${1} and ${2} are identical"
+            return 0
+            ;;
+        1)
+            # cmp's own diagnostic and its listing: -l prints the first differing bytes.
+            cmp -l -- "$1" "$2" 2>&1 | head -20
+            return 1
+            ;;
+    esac
+    # 2: a file could not be read. cmp -s has already said why, on stderr.
+    return "$_comp_status"
 }
 
 cmd_tasklist() {
@@ -1121,7 +1211,7 @@ cmd_explorer() {
             _target="$(winpath "$_a")"
         fi
     done
-    exec thunar "$_target"
+    exec thunar -- "$_target"
 }
 
 cmd_notepad() {
@@ -1130,7 +1220,7 @@ cmd_notepad() {
 "
     set -- $_PATHS
     IFS=$_ifs_old; set +f
-    exec mousepad "$@"
+    exec mousepad -- "$@"
 }
 
 cmd_calc() {
@@ -1228,7 +1318,7 @@ cmd_shutdown() {
         return 2
     fi
     if [ "$_action" = "logoff" ]; then
-        exec xfce4-session-logout --logout --fast
+        bridge_logout
     fi
     case "$_delay" in
         ''|*[!0-9]*) _delay=0 ;;
@@ -1245,7 +1335,32 @@ cmd_shutdown() {
 }
 
 cmd_logoff() {
-    exec xfce4-session-logout --logout --fast
+    bridge_logout
+}
+
+# The logout used by both `logoff` and `shutdown /l`.
+#
+# --fast was passed here for a long time and it does not exist: xfce4-session-logout's
+# options are --logout/--reboot/--shutdown/--suspend/--halt/--hibernate/--dialog/--force.
+# g_option_context_parse() rejects an unknown option, so the command printed
+# "Unknown option --fast" and returned 1 without logging out — and because the old code
+# `exec`d it, the bridge exited 1 with the session intact. A Windows user typing
+# `logoff` got an error and stayed logged in. The project's own AI action list uses the
+# real flag names (see packages/astraos-ai/.../actions.py, _power()), which is where the
+# vocabulary came from.
+#
+# The command is also probed first, and falls back to systemctl, for the same reason
+# _power() does: on a session without Xfce's logout helper, `exec` would have failed
+# with "not found" instead of logging the user out.
+bridge_logout() {
+    if [ -n "$(real_tool xfce4-session-logout)" ]; then
+        exec xfce4-session-logout --logout
+    fi
+    if [ -n "$(real_tool systemctl)" ]; then
+        exec systemctl --user exit
+    fi
+    fail "logoff: neither xfce4-session-logout nor systemctl is installed"
+    return 127
 }
 
 cmd_runas() {

@@ -29,15 +29,8 @@ else
 fi
 
 # --- Field collection ---------------------------------------------------------
-# Every function returns a single line, or "unknown".
-read_file_first_line() {
-    if [ -r "$1" ]; then
-        head -n1 "$1" 2>/dev/null || printf 'unknown'
-    else
-        printf 'unknown'
-    fi
-}
-
+# Every function below returns one line, and never an empty one: a field that cannot be
+# determined prints "unknown" (see the note above memory_total).
 os_name() {
     if [ -r /etc/os-release ]; then
         # shellcheck source=/dev/null
@@ -120,24 +113,40 @@ cpu_cores() {
     [ -n "$count" ] && printf '%s' "$count" || printf 'unknown'
 }
 
+# The netmem/df fields below all test their result instead of relying on `|| printf
+# 'unknown'`. awk exits 0 when it reads the file and simply finds no matching line, so a
+# /proc/meminfo without MemAvailable - a kernel built without it, a container with a
+# restricted procfs, MSYS's own /proc - produced an EMPTY value rather than "unknown",
+# and `astraos-info --json` emitted "memory_available": "", which reads as a measurement
+# of zero. The rule this file states is that an undeterminable field prints "unknown".
 memory_total() {
-    awk '/^MemTotal:/{printf "%.1f GiB", $2/1048576}' /proc/meminfo 2>/dev/null || printf 'unknown'
+    local value
+    value="$(awk '/^MemTotal:/{printf "%.1f GiB", $2/1048576}' /proc/meminfo 2>/dev/null)"
+    [ -n "$value" ] && printf '%s' "$value" || printf 'unknown'
 }
 
 memory_available() {
-    awk '/^MemAvailable:/{printf "%.1f GiB", $2/1048576}' /proc/meminfo 2>/dev/null || printf 'unknown'
+    local value
+    value="$(awk '/^MemAvailable:/{printf "%.1f GiB", $2/1048576}' /proc/meminfo 2>/dev/null)"
+    [ -n "$value" ] && printf '%s' "$value" || printf 'unknown'
 }
 
 swap_total() {
-    awk '/^SwapTotal:/{ if ($2 == 0) printf "none"; else printf "%.1f GiB", $2/1048576 }' /proc/meminfo 2>/dev/null || printf 'unknown'
+    local value
+    value="$(awk '/^SwapTotal:/{ if ($2 == 0) printf "none"; else printf "%.1f GiB", $2/1048576 }' /proc/meminfo 2>/dev/null)"
+    [ -n "$value" ] && printf '%s' "$value" || printf 'unknown'
 }
 
 root_usage() {
-    df -h / 2>/dev/null | awk 'NR==2{printf "%s used of %s (%s)", $3, $2, $5}' || printf 'unknown'
+    local value
+    value="$(df -h / 2>/dev/null | awk 'NR==2{printf "%s used of %s (%s)", $3, $2, $5}')"
+    [ -n "$value" ] && printf '%s' "$value" || printf 'unknown'
 }
 
 root_filesystem() {
-    df -T / 2>/dev/null | awk 'NR==2{print $2}' || printf 'unknown'
+    local value
+    value="$(df -T / 2>/dev/null | awk 'NR==2{print $2}')"
+    [ -n "$value" ] && printf '%s' "$value" || printf 'unknown'
 }
 
 boot_mode() {
@@ -232,7 +241,7 @@ firewall_state() {
     fi
 }
 
-uptime_human() {
+uptime() {
     local seconds
     seconds="$(awk '{printf "%d", $1}' /proc/uptime 2>/dev/null)"
     if [ -z "$seconds" ]; then printf 'unknown'; return; fi
@@ -240,7 +249,28 @@ uptime_human() {
 }
 
 # --- Output -------------------------------------------------------------------
-# FIELDS is the single source of truth for both output modes.
+# field_value FIELD - call the collection function FIELD names, and never let a name
+# without a function produce a value.
+#
+# FIELDS below is the single source of truth for both machine-readable modes, and the
+# name in it used to be executed directly, as  value="$( "$field" )". A field whose
+# function was called something else therefore ran as a COMMAND: `uptime` was listed
+# while the function was uptime_human(), so `astraos-info --json` wrote
+# "uptime: command not found" to stderr - an interface for parsers must not write
+# anything to stderr - and emitted "uptime": "", which reads as a measured empty value
+# rather than as a field that could not be determined. (`--short` printed `uptime=`.)
+# With a program of that name on the PATH, its output would have been recorded as the
+# field; command -v would accept exactly that, so the test is type -t: the value must
+# come from this script. "unknown" is what this command prints when it cannot determine
+# a field, and a field nobody implemented is precisely that.
+field_value() {
+    if [ "$(type -t "$1" 2>/dev/null)" = "function" ]; then
+        "$1"
+    else
+        printf 'unknown'
+    fi
+}
+
 FIELDS=(
     "astraos_version"
     "astraos_codename"
@@ -291,7 +321,7 @@ print_human() {
     printf '  %-20s %s\n' "kernel package" "$(kernel_package)"
     printf '  %-20s %s\n' "boot mode"     "$(boot_mode)"
     printf '  %-20s %s\n' "secure boot"   "$(secure_boot_state)"
-    printf '  %-20s %s\n' "uptime"        "$(uptime_human)"
+    printf '  %-20s %s\n' "uptime"        "$(uptime)"
     printf '\n'
     printf '  %-20s %s\n' "cpu"           "$(cpu_model)"
     printf '  %-20s %s\n' "cpu threads"   "$(cpu_cores)"
@@ -320,7 +350,7 @@ print_json() {
     for field in "${FIELDS[@]}"; do
         index=$((index + 1))
         local value
-        value="$( "$field" )"
+        value="$( field_value "$field" )"
         printf '  "%s": "%s"' "$field" "$(json_escape "$value")"
         [ "$index" -lt "$total" ] && printf ','
         printf '\n'
@@ -330,7 +360,7 @@ print_json() {
 
 print_short() {
     for field in "${FIELDS[@]}"; do
-        printf '%s=%s\n' "$field" "$( "$field" )"
+        printf '%s=%s\n' "$field" "$( field_value "$field" )"
     done
 }
 

@@ -9,6 +9,33 @@ set -uo pipefail
 
 topic="${1:-}"
 
+# The release this system is running, read from /etc/astraos-release like the rest of the
+# system reports it, or nothing at all when that file is not readable (the guide is also
+# shipped as documentation, and an invented version would be worse than none).
+#
+# Two literal "0.1.0" strings used to sit in the text below, so the guide told the user of
+# a 0.2.0 image that they were running 0.1.0 - in the two places where a reader is most
+# likely to compare it with something else (the overview, and the sentence about hardware
+# support). It is also the file a person reads when nothing works, and a version that
+# cannot be matched against `astraos-info` or the release notes undermines it exactly
+# where trust matters. Reading the value means the next version bump cannot repeat this;
+# the file is now covered by tests/static/test_config.py's shipped-identity list.
+release_version() {
+    local fields version="" stage=""
+    if [ -r /etc/astraos-release ]; then
+        # shellcheck source=/dev/null
+        fields="$( . /etc/astraos-release; printf '%s|%s' "${VERSION:-}" "${RELEASE_STAGE:-}" )"
+        version="${fields%%|*}"
+        stage="${fields#*|}"
+    fi
+    [ -n "$version" ] || return 0
+    if [ -n "$stage" ]; then
+        printf '%s %s' "$version" "$stage"
+    else
+        printf '%s' "$version"
+    fi
+}
+
 usage() {
     printf '\n  astraos-recovery-guide [topic]\n\n'
     printf '  Topics:\n'
@@ -40,7 +67,11 @@ steps() {
 overview() {
     printf '\n  ASTRA OS  recovery guide\n'
     printf '  ============================================================\n'
-    printf '\n  AstraOS 0.1.0 Alpha is an early release. Some failures cannot be fixed\n'
+    if [ -n "$(release_version)" ]; then
+        printf '\n  AstraOS %s is an early release. Some failures cannot be fixed\n' "$(release_version)"
+    else
+        printf '\n  This is an early release. Some failures cannot be fixed\n'
+    fi
     printf '  from inside the running system. This guide tells you what to try and, where\n'
     printf '  recovery is not possible, says so plainly instead of pretending otherwise.\n'
     printf '\n  Always start here:\n\n'
@@ -162,7 +193,11 @@ A missing firmware file is reported in the kernel log: sudo dmesg | grep -i firm
 Then confirm NetworkManager itself is healthy: systemctl status NetworkManager
 EOF
     printf '\n  If firmware is missing, the Wi-Fi chipset may not be supported by\n'
-    printf '  AstraOS 0.1.0. See the Hardware Compatibility document before assuming a bug.\n'
+    if [ -n "$(release_version)" ]; then
+        printf '  AstraOS %s. See the Hardware Compatibility document before assuming a bug.\n' "$(release_version)"
+    else
+        printf '  AstraOS. See the Hardware Compatibility document before assuming a bug.\n'
+    fi
 }
 
 diagnostics() {

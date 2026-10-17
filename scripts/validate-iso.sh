@@ -249,7 +249,20 @@ if command -v unsquashfs >/dev/null 2>&1 && command -v xorriso >/dev/null 2>&1; 
         fi
     fi
 else
-    warn "unsquashfs or xorriso is missing; the live filesystem contents were NOT inspected"
+    # This branch used to warn and carry on, which left the strongest check in the
+    # script skippable and the skip invisible. unsquashfs is declared OPTIONAL by
+    # validate-environment.sh, so a host provisioned without squashfs-tools (a failed
+    # package install during bootstrap, a container image built from a partial apt
+    # run) still built, packaged and "validated" an image with 0 failures - while
+    # nothing had looked inside the live filesystem. Everything above only inspects
+    # the ISO surface and the boot records, so an image whose squashfs was a stock
+    # Debian root, with no AstraOS package unpacked at all, passed cleanly and the
+    # manifest recorded structural=PASS. The tools are tiny, and this stage exists to
+    # look inside the image, so their absence fails the validation here where the
+    # reason is visible - not later, in a bug report.
+    bad "unsquashfs or xorriso is missing, so the live filesystem contents were NOT inspected"
+    bad "install squashfs-tools (unsquashfs) and xorriso; the checks above only cover the"
+    bad "ISO surface, so the image cannot be called validated without this stage"
 fi
 
 # ---------------------------------------------------------------------------
@@ -269,6 +282,33 @@ if command -v sha256sum >/dev/null 2>&1; then
     fi
 else
     bad "sha256sum is not available"
+fi
+
+# ---------------------------------------------------------------------------
+# A record of this run, next to the image.
+#
+# The manifest is the provenance record for a release, and it has to be able to say
+# that a check did NOT run. It could not: generate-manifest.sh is reachable without
+# any validation having happened (package-release.sh calls it for an image with no
+# manifest, and `make manifest` regenerates one for anything in dist/), so it printed
+# structural=PASS unconditionally. A half-built image, or one whose validation stage
+# was never reached, shipped a provenance record claiming a check that never ran, and
+# RELEASE-NOTES.md inlines that section. This file is the missing link: it is written
+# only when the checks above have actually produced a verdict, and the manifest copies
+# it rather than assuming. It is deliberately not part of the ISO's own checksum.
+VALIDATION_FILE="${ISO}.validation"
+if {
+    printf 'structural=%s\n' "$([ "$FAIL" -gt 0 ] && printf 'FAIL' || printf 'PASS')"
+    printf 'checked_image=%s\n' "$(basename "$ISO")"
+    printf 'checked_size_bytes=%s\n' "$SIZE"
+    printf 'passes=%s\n' "$PASS"
+    printf 'warnings=%s\n' "$WARN"
+    printf 'failures=%s\n' "$FAIL"
+    printf 'timestamp_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf unknown)"
+} > "$VALIDATION_FILE" 2>/dev/null; then
+    printf '  recorded: %s\n' "$VALIDATION_FILE" >&2
+else
+    warn "could not write ${VALIDATION_FILE}; the manifest will record this run as UNTESTED"
 fi
 
 # ---------------------------------------------------------------------------

@@ -590,6 +590,92 @@ def test_bad_requests_get_json_errors(app) -> None:
 
 
 @needs_a_server
+def test_a_json_body_has_to_declare_itself_as_json(app) -> None:
+    """The CSRF check, and it is not about tidiness.
+
+    A page on another origin can POST a body with Content-Type text/plain or
+    application/x-www-form-urlencoded without asking the browser first (a
+    "simple request"), so a server that parses whatever arrives as JSON lets any
+    page the user merely has open run actions through /api/confirm. A real
+    browser cannot declare application/json cross-origin without a preflight,
+    and this server answers no preflight, so requiring the declaration is what
+    stops the request before it is executed.
+    """
+    plan = {"action": "open_app", "args": {"app": "firefox"}}
+    body = json.dumps({"plan": plan}).encode("utf-8")
+    for content_type in ("text/plain", "application/x-www-form-urlencoded",
+                         "text/plain;charset=UTF-8"):
+        status, _content_type, raw = app.post_raw("/api/confirm", body, content_type)
+        assert status == 415, (
+            f"a body declared {content_type!r} was accepted as JSON; a page on "
+            "another origin can send that type without a preflight"
+        )
+        assert json.loads(raw.decode("utf-8"))["ok"] is False
+    status, _content_type, raw = app.request("POST", "/api/confirm", body=body)
+    assert status == 415, "a body with no Content-Type at all is not declared JSON either"
+    assert app.actions.executed == [], (
+        "a body that does not declare application/json reached execute()"
+    )
+
+    # The check is a check, not a refusal to work: the declared-JSON path still
+    # runs, which every other test in this file relies on.
+    status, payload = app.post_json("/api/confirm", {"plan": plan})
+    assert status == 200 and payload["ok"] is True
+    assert app.actions.executed == [{"plan": plan, "confirmed": True}]
+
+
+@needs_a_server
+def test_a_request_from_another_page_or_name_is_refused(app) -> None:
+    """The loopback gate trusts the machine; these headers say which page asked.
+
+    A browser on this machine is not the person at the keyboard - that person
+    already has a shell, but a page the user merely visited does not, and
+    /api/confirm executes a plan when one is sent to it. Both checks are
+    identity, not reachability:
+
+      * Host: a domain that resolves to 127.0.0.1 (DNS rebinding) must not make
+        the attacker's page same-origin with this server.
+      * Origin: a page on any other origin is refused even from loopback.
+    """
+    plan = {"action": "open_app", "args": {"app": "firefox"}}
+    body = json.dumps({"plan": plan}).encode("utf-8")
+    json_header = {"Content-Type": "application/json"}
+
+    status, _content_type, raw = app.request(
+        "POST", "/api/confirm", body=body,
+        headers={**json_header, "Origin": f"http://127.0.0.1:{app.port}"})
+    assert status == 200, (
+        "the server's own page must still be able to confirm: "
+        f"{raw.decode('utf-8', 'replace')}"
+    )
+    assert len(app.actions.executed) == 1
+
+    for origin in ("http://evil.example", "http://evil.example:8765",
+                   "http://127.0.0.1.evil.example"):
+        status, _content_type, raw = app.request(
+            "POST", "/api/confirm", body=body,
+            headers={**json_header, "Origin": origin})
+        assert status == 403, f"an Origin of {origin!r} was accepted"
+        assert "page" in json.loads(raw.decode("utf-8"))["detail"]
+    assert len(app.actions.executed) == 1, (
+        "a page on another origin reached execute(): " + repr(app.actions.executed)
+    )
+
+    status, _content_type, _raw = app.request(
+        "POST", "/api/confirm", body=body,
+        headers={**json_header, "Host": "evil.example"})
+    assert status == 403, "a request addressed to another domain was accepted"
+    status, _content_type, _raw = app.request(
+        "GET", "/api/journal", headers={"Host": "evil.example"})
+    assert status == 403, "the Host check must run on reads, not only on actions"
+
+    # No Origin at all is a native client (curl, the CLI), not a page.
+    status, payload = app.post_json("/api/confirm", {"plan": plan})
+    assert status == 200 and payload["ok"] is True
+    assert len(app.actions.executed) == 2
+
+
+@needs_a_server
 def test_actions_endpoint_lists_the_repertoire(app) -> None:
     status, payload = app.get_json("/api/actions")
     assert status == 200

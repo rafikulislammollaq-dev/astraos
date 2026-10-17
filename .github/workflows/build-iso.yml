@@ -64,6 +64,19 @@ jobs:
       BUILD_CONTAINER: astraos-build-container
 
     steps:
+      # The three boot jobs get their ISO from the astraos-iso artifact, so the two
+      # settings cannot be combined. With upload_artifact off and a boot job on, that job
+      # fails at "Download the ISO" with "artifact not found" - which says nothing about
+      # the real cause - and it does so only after this job has spent its whole budget
+      # assembling an image that then cannot be booted. This runs before anything
+      # expensive. (Dispatch inputs are independent checkboxes in the UI, so the two can
+      # always be combined by accident.)
+      - name: Check that the requested jobs can run
+        if: ${{ inputs.upload_artifact == false && (inputs.smoke_boot || inputs.install_boot) }}
+        run: |
+          echo "::error title=upload_artifact is off but a boot job is on::The boot jobs download the ISO from the 'astraos-iso' artifact, which this run is configured not to upload. Enable upload_artifact, or turn off smoke_boot and install_boot."
+          exit 1
+
       - name: Check out the repository
         uses: actions/checkout@v4
         with:

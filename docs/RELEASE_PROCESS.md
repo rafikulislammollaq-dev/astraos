@@ -107,7 +107,7 @@ AstraOS.
 
 ## 6. Signing
 
-Not implemented. AstraOS 0.1.0 does not sign ISOs or packages. Anyone downloading an image
+Not implemented. AstraOS does not sign ISOs or packages. Anyone downloading an image
 should verify the published SHA-256 and understand that a checksum verified over an
 untrusted channel proves only that the transfer was intact, not that the file is
 authentic.

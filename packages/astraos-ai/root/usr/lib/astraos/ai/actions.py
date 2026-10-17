@@ -26,10 +26,12 @@ Why run_command gets three extra guards:
        does, and a command that looks like it deletes something must not be
        silently reinterpreted.
     2. It refuses anything that names /etc, /boot, /usr or /var, sudo, doas,
-       pkexec or su, and refuses a shell interpreter as the command itself.
-       The rule is that the assistant never runs anything as root and never
-       edits the system's own files; the guard is what makes that true even
-       when the model suggests otherwise.
+       pkexec or su, and anything that would start a shell - not only a shell
+       as the first word: `env sh -c "..."`, `nice sh -c "..."` and
+       `xargs -0 sh -c "..."` reach a shell through a wrapper that looks
+       harmless where argv[0] is tested. The rule is that the assistant never
+       runs anything as root and never edits the system's own files; the guard
+       is what makes that true even when the model suggests otherwise.
     3. It echoes the exact command line it is about to run, and the result
        keeps that string, so the user sees what happened rather than a
        summary of it.
@@ -91,8 +93,15 @@ PRIVILEGE_TOOLS = {"sudo", "doas", "pkexec", "su", "sudoedit"}
 # literal arguments and do something other than what it looks like.
 SHELL_SYNTAX = (";", "&&", "||", "|", "`", "$(", ">", "<", "&", "\n", "\r")
 
-# Shells as the command itself. `bash -c "..."` is a script, not a command,
-# and running one would make every guard above optional.
+# Shells, refused anywhere in a run_command line. `bash -c "..."` is a script,
+# not a command, and running one would make every guard above optional - and
+# argv[0] is not the only way to start one: `env sh -c ...`, `nice sh -c ...`,
+# `nohup sh -c ...`, `busybox sh -c ...` and `xargs -0 sh -c ...` all reach a
+# shell through a wrapper that looks harmless where the command itself is read.
+# Refusing any word that names a shell is the same choice PRIVILEGE_TOOLS above
+# already makes for the same reason; a word that merely mentions one (a search
+# for the string "sh") is refused too, and the refusal says so and can be run
+# by the user instead.
 SHELLS = {"sh", "bash", "dash", "zsh", "ksh", "csh", "tcsh", "fish", "ash"}
 
 # Keys press_key() may send. A whitelist rather than a passthrough: xdotool
@@ -1132,9 +1141,10 @@ def run_command(command: str = "") -> str:
                 f"refused: '{raw}' asks for {tool}, and the assistant never runs "
                 "anything as root"
             )
-    if lowered[0] in SHELLS:
+    if any(word in SHELLS for word in lowered):
         raise ActionError(
-            f"refused: '{raw}' is a shell script, not a command"
+            f"refused: '{raw}' would start a shell, and this assistant runs one "
+            "command and no shell - run it yourself if you meant it"
         )
 
     for word in argv:

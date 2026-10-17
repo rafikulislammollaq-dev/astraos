@@ -540,7 +540,15 @@ class Worker:
 
         for attempt in range(1, MAX_ATTEMPTS + 1):
             evidence["attempts"] = attempt
-            result = _actions.execute({"action": action, **args}, confirmed=True)
+            # The arguments belong under "args". actions.execute() reads plan["args"]
+            # (actions.py, `raw_args = plan.get("args")`) and resolves each key against
+            # the action's declared argument table; splatting them at the top level
+            # instead left that table empty, so every action with a required argument
+            # failed with "the plan is missing the argument", and every action whose
+            # arguments all have defaults silently ran with the DEFAULTS - asked for
+            # 20% volume, set_volume applied 50% and reported ok=True. Both paths
+            # (/api/work and `astra-ai work`) go through here.
+            result = _actions.execute({"action": action, "args": args}, confirmed=True)
             evidence["ok"] = bool(result.get("ok"))
             evidence["output"] = str(result.get("output", "")).strip()
             evidence["error"] = str(result.get("error") or "")

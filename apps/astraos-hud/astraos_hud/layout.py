@@ -356,6 +356,21 @@ class TerminalPane(Gtk.Box):
         argv = [self.shell]
         cwd = self.working_directory if os.path.isdir(self.working_directory) else None
         try:
+            # Argument order matters more than it looks. The Python binding for
+            # Vte.Terminal.spawn_async() is:
+            #
+            #   (pty_flags, working_directory, argv, envv, spawn_flags,
+            #    child_setup, timeout: int, cancellable, callback, user_data)
+            #
+            # `timeout` is an int and is NOT optional (-1 means the library
+            # default; G_MAXINT waits indefinitely), and the old pre-0.60 shape
+            # that put user_data before cancellable is gone. This call used to
+            # pass None for the timeout and -1 for the cancellable, which raised
+            # TypeError on the first conversion - swallowed by the handler below
+            # and reported as "the shell could not be started", so the embedded
+            # terminal silently stayed black on every machine that had Vte.
+            # The callback was also landing in user_data, so _on_spawned never
+            # ran even when the spawn would otherwise have succeeded.
             self.terminal.spawn_async(
                 Vte.PtyFlags.DEFAULT,
                 cwd,
@@ -363,10 +378,10 @@ class TerminalPane(Gtk.Box):
                 self._child_environment(),
                 GLib.SpawnFlags.SEARCH_PATH_FROM_ENVP,
                 None,
-                None,
                 -1,
                 None,
                 self._on_spawned,
+                None,
             )
         except (GLib.Error, TypeError) as error:
             self._on_spawned(self.terminal, None, error)
@@ -469,6 +484,15 @@ class TerminalPane(Gtk.Box):
             return "VTE UNAVAILABLE"
         if self.running:
             return f"RUNNING PID {self.pid}"
+        if self.status_note:
+            # The reason the spawn failed used to be written to status_note and
+            # then never read by anything, so a machine with Vte installed that
+            # could not start a shell showed a black panel and the bare words
+            # SHELL NOT RUNNING. With Vte present there is no fallback TextView
+            # to write into either (see _append_fallback), which left the
+            # failure with no channel to the screen at all. The header is the
+            # one surface that always exists, so it carries the reason.
+            return f"SHELL NOT RUNNING - {self.status_note.upper()}"
         return "SHELL EXITED" if self.pid is not None else "SHELL NOT RUNNING"
 
 

@@ -156,6 +156,7 @@ SHIPPED_IDENTITY_FILES = [
     "installer/branding/astraos/branding.desc",
     "packages/astraos-base/root/etc/ufw/astraos-policy.conf",
     "packages/astraos-base/root/usr/bin/astraos-info",
+    "packages/astraos-system-tools/root/usr/bin/astraos-recovery-guide",
     "packages/astraos-system-tools/root/usr/bin/astraos-welcome",
     "system/issue.in",
     "system/issue.net.in",
@@ -192,9 +193,10 @@ def test_no_shipped_file_names_a_different_release() -> None:
     itself as 0.1.0 from the first screen after the firmware and reported 0.2.0 in
     /etc/os-release, which is the version bug reports are filed against.
 
-    A file may name the current release, and it may read the release at run time (the two
-    tools do), but it may not name any other version. That rule is what makes this test
-    catch the next bump as well as this one.
+    A file may name the current release, and it may read the release at run time (three of
+    the tools do - astraos-info, astraos-recovery-guide and astraos-welcome), but it may not
+    name any other version. That rule is what makes this test catch the next bump as well as
+    this one.
     """
     version = astraos_env.distribution()["ASTRAOS_VERSION"]
     pattern = re.compile(r"\b\d+\.\d+\.\d+\b")

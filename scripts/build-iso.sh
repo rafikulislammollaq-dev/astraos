@@ -13,8 +13,11 @@
 #
 # Usage:
 #   ./scripts/build-iso.sh                 full build
-#   ./scripts/build-iso.sh --skip-validate reuse an existing ISO, validate only
-#   ./scripts/build-iso.sh --no-cache      do not reuse live-build caches
+#   ./scripts/build-iso.sh --skip-validate skip the build-host check (the build may then
+#                                          fail later in live-build, where the cause is
+#                                          much harder to see; use it only when the host
+#                                          check itself is the thing that is wrong)
+#   ./scripts/build-iso.sh --no-cache      do not reuse the live-build download cache
 
 set -euo pipefail
 
@@ -104,6 +107,43 @@ printf '  log       : %s\n\n' "$BUILD_LOG"
 # ---------------------------------------------------------------------------
 # 2. Configuration and packages
 # ---------------------------------------------------------------------------
+# One build per working tree. The guard lives here rather than in
+# configure-live-build.sh because this script is the only entry point (the Makefile and
+# CI both call it) and it is the process that lives for the whole build.
+#
+# It used to live in configure-live-build.sh, inside a branch that `--force` skipped -
+# and the call below passed `--force` unconditionally, so from the only path that
+# exists the check was dead code. Two builds then shared one tree: the second deleted
+# the first's chroot mid-debootstrap, and the first failed with a missing-directory
+# error that pointed at nothing, or continued against a half-deleted tree.
+#
+# The marker records the PID, so a marker left behind by a killed build is stale rather
+# than a lock: only a build whose process is still running blocks a new one. Refusing
+# on the file's existence alone would mean a human had to delete it after every crash.
+IN_PROGRESS_MARKER="${BUILD_DIR}/.astraos-build-in-progress"
+if [ -f "$IN_PROGRESS_MARKER" ]; then
+    OTHER_PID="$(awk -F= '$1 == "pid" { print $2; exit }' "$IN_PROGRESS_MARKER" 2>/dev/null || true)"
+    case "$OTHER_PID" in
+        ''|*[!0-9]*) OTHER_PID="" ;;
+    esac
+    if [ -n "$OTHER_PID" ] && kill -0 "$OTHER_PID" 2>/dev/null; then
+        fail "another build is running in ${BUILD_DIR} (pid ${OTHER_PID}).
+       Two builds sharing one working directory corrupt each other, so this one stops
+       before touching the tree. Wait for that build to finish, or stop it and re-run."
+    fi
+    say "clearing a stale in-progress marker (pid ${OTHER_PID:-unknown} is not running)"
+    rm -f "$IN_PROGRESS_MARKER"
+fi
+mkdir -p "$BUILD_DIR"
+{
+    printf 'started=%s\n' "$STAMP"
+    printf 'pid=%s\n'     "$$"
+    printf 'log=%s\n'     "$BUILD_LOG"
+} > "$IN_PROGRESS_MARKER"
+# Cleared on every exit path. This is tidiness rather than the lock: if this script dies
+# without running the trap, the next run sees a dead PID and clears the marker itself.
+trap 'rm -f "$IN_PROGRESS_MARKER" 2>/dev/null || true' EXIT INT TERM
+
 run_stage "configure live-build" "${SCRIPT_DIR}/configure-live-build.sh" --force
 
 # ---------------------------------------------------------------------------

@@ -73,6 +73,7 @@ command -v dpkg-deb >/dev/null 2>&1 \
     || die "dpkg-deb is not installed. Run scripts/bootstrap-build-environment.sh"
 command -v sha256sum >/dev/null 2>&1 || die "sha256sum is not installed"
 command -v gzip >/dev/null 2>&1 || die "gzip is not installed"
+command -v realpath >/dev/null 2>&1 || die "realpath is not installed (coreutils)"
 
 [ -d "$DEBS" ] || die "no package directory: $DEBS (build the packages first: scripts/build-packages.sh)"
 debs=()
@@ -82,13 +83,33 @@ for deb in "$DEBS"/*.deb; do
 done
 [ "${#debs[@]}" -gt 0 ] || die "no .deb files in $DEBS"
 
-case "$OUT" in
-    ""|/|"$HOME"|"$REPO_ROOT") die "refusing to wipe suspicious --out: '$OUT'" ;;
-esac
-
 # The repository is rebuilt from scratch every time: a stale index is how an archive
-# serves a version that no longer exists. The wipe is bounded to $OUT, which was
-# checked above, and it is announced before it happens.
+# serves a version that no longer exists. The wipe is bounded to $OUT, and $OUT is
+# checked first - as a resolved path, because string equality cannot see that
+# "$HOME/.." is $HOME's parent, that "dist/../.." is the repository's parent, or that
+# "/tmp/.." is "/". A file written here is deleted here, so:
+#   * the root of the filesystem and the system directories an archive never belongs
+#     in are refused outright;
+#   * a path with fewer than two components (/tmp, /srv) is too close to the root to
+#     be a place someone meant;
+#   * a path that contains $HOME or the repository (the repository root itself,
+#     $HOME/.., ...) would take the checkout or the user's files with it.
+OUT_RESOLVED="$(realpath -m -- "$OUT")" || die "cannot resolve --out: '$OUT'"
+case "$OUT_RESOLVED" in
+    /|/etc|/etc/*|/boot|/boot/*|/usr|/usr/*|/var|/var/*|/bin|/bin/*|/sbin|/sbin/*|/lib|/lib/*|/lib64|/lib64/*)
+        die "refusing to wipe suspicious --out: '$OUT' resolves to '$OUT_RESOLVED'" ;;
+    /*/*) : ;;
+    *)
+        die "refusing to wipe suspicious --out: '$OUT' resolves to '$OUT_RESOLVED', which is not a directory an archive belongs in" ;;
+esac
+for protected in "$HOME" "$REPO_ROOT"; do
+    case "$protected" in
+        "$OUT_RESOLVED"|"$OUT_RESOLVED"/*)
+            die "refusing to wipe suspicious --out: '$OUT' resolves to '$OUT_RESOLVED', which contains $protected" ;;
+    esac
+done
+
+# The wipe is announced before it happens.
 say "assembling an APT repository from ${#debs[@]} package(s) in $DEBS"
 say "output: $OUT (rebuilt from scratch)"
 rm -rf "$OUT"

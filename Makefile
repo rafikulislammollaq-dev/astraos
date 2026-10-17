@@ -12,7 +12,14 @@ SHELL := /bin/bash
 
 REPO_ROOT := $(shell cd "$(dir $(lastword $(MAKEFILE_LIST)))" && pwd)
 SCRIPTS   := $(REPO_ROOT)/scripts
-VERSION   := $(shell sed -n 's/^ASTRAOS_VERSION="\(.*\)"/\1/p' $(REPO_ROOT)/VERSION)
+VERSION   := $(shell sed -n 's/^ASTRAOS_VERSION="\(.*\)"/\1/p' "$(REPO_ROOT)/VERSION")
+
+# Every expansion of REPO_ROOT and SCRIPTS below is quoted. This Makefile lives in a
+# directory whose name contains a space (…/ASTRA OS/astraos), and make does not quote
+# what it expands: an unquoted $(REPO_ROOT)/scripts/build-iso.sh became two words
+# ("/…/ASTRA" and "OS/astraos/scripts/build-iso.sh"), so `make build` ran a directory as
+# a program, and `newest-iso` listed a sibling directory instead of the images. The
+# quoted forms on lines 136-152 were already right; the rest were not.
 
 .PHONY: help check test lint packages build iso validate checksums manifest release clean distclean verify-packages assets
 
@@ -46,7 +53,7 @@ help:
 # ---------------------------------------------------------------------------
 check test:
 	@echo "==> static test suite"
-	@python3 $(REPO_ROOT)/tests/run.py
+	@python3 "$(REPO_ROOT)/tests/run.py"
 
 # Two generators, because they draw different things: render_assets.py renders the
 # large scene art (wallpapers, splash, greeter backdrop, the ring mark) and
@@ -54,15 +61,18 @@ check test:
 # Xcursor pointer set). Both read the same config/branding.env palette.
 assets:
 	@echo "==> regenerating branding assets"
-	@python3 $(REPO_ROOT)/branding/tools/render_assets.py
-	@python3 $(REPO_ROOT)/branding/tools/render_theme_assets.py
+	@python3 "$(REPO_ROOT)/branding/tools/render_assets.py"
+	@python3 "$(REPO_ROOT)/branding/tools/render_theme_assets.py"
 
 lint:
 	@echo "==> shell syntax check"
 	@fail=0; \
-	for script in $(SCRIPTS)/*.sh \
-	              $(REPO_ROOT)/config/live-build/auto/config \
-	              $(REPO_ROOT)/config/live-build/config/hooks/live/*.hook.chroot; do \
+	for script in "$(SCRIPTS)"/*.sh \
+	              "$(REPO_ROOT)/config/live-build/auto/config" \
+	              "$(REPO_ROOT)"/config/live-build/config/hooks/live/*.hook.chroot \
+	              "$(REPO_ROOT)"/config/live-build/config/hooks/live/*.hook.binary \
+	              "$(REPO_ROOT)/config/live-build/config/includes.chroot/usr/local/sbin/astraos-install" \
+	              "$(REPO_ROOT)/config/live-build/config/includes.chroot/usr/local/sbin/astraos-smoke"; do \
 	    if [ -f "$$script" ]; then \
 	        if bash -n "$$script" 2>/dev/null; then \
 	            printf '  ok    %s\n' "$${script#$(REPO_ROOT)/}"; \
@@ -75,7 +85,7 @@ lint:
 	done; \
 	if command -v shellcheck >/dev/null 2>&1; then \
 	    echo "==> shellcheck"; \
-	    shellcheck -S warning $(SCRIPTS)/*.sh || fail=1; \
+	    shellcheck -S warning "$(SCRIPTS)"/*.sh || fail=1; \
 	else \
 	    echo "==> shellcheck not installed; skipped"; \
 	fi; \
@@ -83,48 +93,53 @@ lint:
 
 verify-packages:
 	@echo "==> verifying the package selection against the Debian archive"
-	@python3 $(SCRIPTS)/verify-package-availability.py
+	@python3 "$(SCRIPTS)/verify-package-availability.py"
 
 # ---------------------------------------------------------------------------
 # Build host and packages
 # ---------------------------------------------------------------------------
 validate:
-	@$(SCRIPTS)/validate-environment.sh
+	@echo "==> validating this build host"
+	@"$(SCRIPTS)/validate-environment.sh"
 
 bootstrap:
-	@$(SCRIPTS)/bootstrap-build-environment.sh
+	@"$(SCRIPTS)/bootstrap-build-environment.sh"
 
 packages:
-	@$(SCRIPTS)/build-packages.sh
+	@"$(SCRIPTS)/build-packages.sh"
 
 # ---------------------------------------------------------------------------
 # Image
 # ---------------------------------------------------------------------------
 build iso:
-	@$(SCRIPTS)/build-iso.sh
+	@"$(SCRIPTS)/build-iso.sh"
 
-NEWEST_ISO := $(shell ls -1t $(REPO_ROOT)/dist/*.iso 2>/dev/null | head -n1)
+# ls is given a quoted directory and an unquoted glob, so the glob still expands while
+# the directory is not word-split. Before this, `ls -1t /…/ASTRA OS/astraos/dist/*.iso`
+# listed the sibling directory /…/ASTRA, and every target below printed
+# "no ISO found in dist/" for an ISO that was sitting right there.
+NEWEST_ISO := $(shell ls -1t "$(REPO_ROOT)/dist"/*.iso 2>/dev/null | head -n1)
 
 validate-iso:
 	@if [ -z "$(NEWEST_ISO)" ]; then \
 	    echo "no ISO found in dist/. Build one first: make build" >&2; exit 1; \
 	fi
-	@$(SCRIPTS)/validate-iso.sh "$(NEWEST_ISO)"
+	@"$(SCRIPTS)/validate-iso.sh" "$(NEWEST_ISO)"
 
 checksums:
 	@if [ -z "$(NEWEST_ISO)" ]; then \
 	    echo "no ISO found in dist/. Build one first: make build" >&2; exit 1; \
 	fi
-	@$(SCRIPTS)/generate-checksums.sh "$(NEWEST_ISO)"
+	@"$(SCRIPTS)/generate-checksums.sh" "$(NEWEST_ISO)"
 
 manifest:
 	@if [ -z "$(NEWEST_ISO)" ]; then \
 	    echo "no ISO found in dist/. Build one first: make build" >&2; exit 1; \
 	fi
-	@$(SCRIPTS)/generate-manifest.sh "$(NEWEST_ISO)"
+	@"$(SCRIPTS)/generate-manifest.sh" "$(NEWEST_ISO)"
 
 release:
-	@$(SCRIPTS)/package-release.sh
+	@"$(SCRIPTS)/package-release.sh"
 
 # ---------------------------------------------------------------------------
 # Cleanup

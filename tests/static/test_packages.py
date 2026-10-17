@@ -446,7 +446,7 @@ def test_no_passwordless_or_diagnostic_leaks_in_package_selection() -> None:
     packages = astraos_env.all_packages()
     for forbidden in ("openssh-server", "ssh", "dropbear", "x11vnc", "vino", "tigervnc-standalone-server"):
         assert forbidden not in packages, (
-            f"{forbidden} is selected. AstraOS 0.1.0 ships no remote administration "
+            f"{forbidden} is selected. AstraOS ships no remote administration "
             "daemon and docs/SECURITY.md documents that as a security property"
         )
 

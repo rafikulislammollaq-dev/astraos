@@ -37,6 +37,7 @@ import hashlib
 import os
 import re
 import sqlite3
+import threading
 import time
 from pathlib import Path
 
@@ -74,7 +75,21 @@ class Index:
 
     def __init__(self, path: Path | None = None):
         self.path = Path(path or DB_PATH)
-        self._connection: sqlite3.Connection | None = None
+        # One connection per thread; see the longer note in journal.py. The
+        # Knowledge index is read from request threads and rebuilt from the
+        # worker thread, so a single cached connection raised
+        # "SQLite objects created in a thread can only be used in that same
+        # thread" on whichever of the two did not create it. The property keeps
+        # every existing self._connection use in this file working unchanged.
+        self._local = threading.local()
+
+    @property
+    def _connection(self) -> sqlite3.Connection | None:
+        return getattr(self._local, "connection", None)
+
+    @_connection.setter
+    def _connection(self, value: sqlite3.Connection | None) -> None:
+        self._local.connection = value
 
     # ------------------------------------------------------------------
     # Connection

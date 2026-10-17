@@ -26,6 +26,15 @@ Why this exists and why it is written this way:
 
 The safety model, in the order the checks run:
 
+  0. Every request is checked before it is routed, whatever the endpoint: a JSON
+     body must declare Content-Type: application/json, and the Host header (and
+     the Origin header, when a browser sends one) must be a name this server
+     answers to. The gate at step 3 trusts the loopback address because the
+     person at the keyboard already has a shell - but a browser the user merely
+     pointed at some other page is not that person, and it will POST to
+     127.0.0.1 on that page's behalf. /api/confirm executes a plan with
+     confirmed=True, so "which page is asking" belongs in the check and not only
+     "which address". See RequestHandler._foreign_request().
   1. /api/chat streams the model's text and, when the model proposed one, a "plan"
      event carrying the action catalogue. Nothing has run yet.
   2. The page renders an action card and waits. A plan is not executed because it
@@ -513,6 +522,23 @@ class RequestHandler(BaseHTTPRequestHandler):
         if error is not None:
             self._json(error[0], {"ok": False, "detail": error[1]})
             return None
+        # A JSON body has to say it is one, and this is not tidiness: a page on
+        # another origin can POST a body with Content-Type text/plain or
+        # application/x-www-form-urlencoded without asking the browser first (a
+        # "simple request"), so a server that parses whatever arrives as JSON
+        # lets any open page run actions through /api/confirm. application/json
+        # is not a simple type and this server answers no preflight, so a
+        # cross-origin request that declares it is stopped by the browser. The
+        # body is read before the check so that a refused request does not leave
+        # unread bytes on a keep-alive connection.
+        if self.headers.get_content_type() != "application/json":
+            declared = self.headers.get("Content-Type", "(none)")
+            self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {
+                "ok": False,
+                "detail": (f"Expected Content-Type: application/json; the request "
+                           f"declared {declared!r}."),
+            })
+            return None
         try:
             payload = json.loads(data.decode("utf-8")) if data else {}
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -611,10 +637,67 @@ class RequestHandler(BaseHTTPRequestHandler):
         })
         return False
 
+    def _foreign_request(self) -> str | None:
+        """A reason this request is not this page's, or None when it is.
+
+        This runs before routing, on every request, because of what /api/confirm
+        does: it takes a plan from the body and executes it with confirmed=True.
+        The pairing gate trusts anything from the loopback address - the person
+        at the keyboard already has a shell - but a browser the user merely
+        pointed at another page is not that person, and it will POST to
+        127.0.0.1 on that page's behalf. Two headers give the page's own
+        identity away, and neither is sent by a native client such as curl:
+
+          * Host: the name the request asked for. Without this check, a domain
+            that resolves to 127.0.0.1 (DNS rebinding) would leave the
+            attacker's page same-origin with this server.
+          * Origin: sent by browsers on POSTs. A request without one is left to
+            the gate; a request with a foreign one is refused even when it
+            comes from this machine.
+        """
+        host = self.headers.get("Host", "")
+        if host:
+            if host.startswith("["):
+                name = host[1:host.find("]")] if "]" in host else ""
+            else:
+                name = host.split(":")[0]
+            if not name:
+                return f"the Host header {host!r} is malformed"
+            if name.lower() not in self.server.allowed_names:
+                return (f"the request was addressed to {host!r}, which is not a "
+                        "name this assistant answers to")
+        origin = self.headers.get("Origin", "")
+        if origin:
+            foreign = True
+            try:
+                parsed = urlsplit(origin)
+                foreign = (parsed.scheme != "http" or
+                           (parsed.hostname or "").lower() not in self.server.allowed_names)
+            except ValueError:
+                foreign = True
+            if foreign:
+                return (f"the request came from the page {origin!r}, not from "
+                        "this assistant's own page")
+        return None
+
+    def _check_request(self) -> bool:
+        """False when the request is not this page's; a 403 has gone out then."""
+        reason = self._foreign_request()
+        if reason is None:
+            return True
+        print(f"refused: {reason} (from={self.client_address[0]})", flush=True)
+        self._json(HTTPStatus.FORBIDDEN, {
+            "ok": False,
+            "detail": f"Refused: {reason}.",
+        })
+        return False
+
     # -- routing ------------------------------------------------------------
 
     def do_GET(self) -> None:  # noqa: N802 - name fixed by BaseHTTPRequestHandler
         try:
+            if not self._check_request():
+                return
             path = urlsplit(self.path).path
             if path in ("/", "/index.html"):
                 # Served to anyone, paired or not: it is the page that tells a
@@ -655,6 +738,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - name fixed by BaseHTTPRequestHandler
         try:
+            if not self._check_request():
+                return
             path = urlsplit(self.path).path
             if path == "/api/pair":
                 # Reachable from the whole network on purpose: the phone is the
@@ -900,6 +985,26 @@ class AIServer(ThreadingHTTPServer):
         # One switch exists for the tests: they flip it to meet the gate the way
         # a phone does, from a loopback socket. A real server trusts loopback.
         self.trust_loopback = trust_loopback
+        # The names this server answers to, lowercased; the port is deliberately
+        # not part of a name. Every request's Host and Origin headers are checked
+        # against this set by RequestHandler._foreign_request(), because a domain
+        # that resolves to 127.0.0.1 would otherwise leave an attacker's page
+        # same-origin with this server. The boot tests reach the page through a
+        # forwarded port, so the Host header there carries a port that is not
+        # this socket's - which is why only the name is compared.
+        self.allowed_names = {"127.0.0.1", "localhost", "::1"}
+        bound = str(address[0] or "")
+        if bound and bound not in ("0.0.0.0", "::"):
+            self.allowed_names.add(bound.strip("[]").lower())
+        try:
+            own_name = socket.gethostname().lower()
+        except OSError:
+            own_name = ""
+        if own_name:
+            self.allowed_names.add(own_name)
+            self.allowed_names.add(own_name + ".local")
+        for name in lan_addresses():
+            self.allowed_names.add(name.lower())
 
 
 def local_ip() -> str | None:

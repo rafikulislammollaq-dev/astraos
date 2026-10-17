@@ -7,7 +7,7 @@
 # (plan §28 Rule 4).
 #
 # This script does NOT sign anything and does NOT upload anything. Release signing is not
-# implemented in 0.1.0 (see docs/RELEASE_PROCESS.md §6).
+# implemented (see docs/RELEASE_PROCESS.md §6).
 
 # `set -e` is correct here: assembling a release directory either completes or it does
 # not, and a half-populated release directory is worse than no release directory.

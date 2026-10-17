@@ -1,6 +1,6 @@
 # AstraOS security configuration
 
-This document describes the security configuration that ships with AstraOS 0.1.0 and
+This document describes the security configuration that ships with AstraOS and
 where it is enforced. The reporting policy and the summary of claims live in
 [`../SECURITY.md`](../SECURITY.md); this file is the implementation detail.
 

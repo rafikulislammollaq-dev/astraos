@@ -2,7 +2,7 @@
 
 > ## Do not do this yet
 >
-> AstraOS 0.1.0 Alpha has **never been booted on physical hardware**, the installer has **never been run**, and
+> AstraOS 0.2.0 Alpha has **never been booted on physical hardware**, the installer has **never been run**, and
 > **no hardware has been tested** (`KNOWN_LIMITATIONS.md` §2). Physical installation is a
 > later milestone and is gated on the VirtualBox acceptance procedure in
 > [`INSTALLATION_VIRTUALBOX.md`](INSTALLATION_VIRTUALBOX.md) passing first (plan §20).
@@ -21,8 +21,8 @@ Work through every item. If you cannot answer one, stop and answer it.
 
 | # | Check | Why it matters |
 |---|---|---|
-| 1 | Verify the ISO checksum: `sha256sum -c astraos-0.1.0-alpha-amd64.iso.sha256` | A corrupt image can fail in confusing ways, and a CDN error should not be your problem |
-| 2 | The machine supports x86_64 | AstraOS 0.1.0 ships amd64 only |
+| 1 | Verify the ISO checksum: `sha256sum -c astraos-0.2.0-alpha-amd64.iso.sha256` | A corrupt image can fail in confusing ways, and a CDN error should not be your problem |
+| 2 | The machine supports x86_64 | This release ships amd64 only |
 | 3 | **Back up everything you cannot lose** to a device that will not be attached during installation | This is the only step that protects you |
 | 4 | List the disks and partitions (`sudo parted -l`, `lsblk`) and write down what you see | You must be able to recognise the target disk in the installer |
 | 5 | Confirm enough free space (8 GB minimum, 20 GB realistic) | The installer refuses below 8 GB |
@@ -52,7 +52,7 @@ Writing an ISO to a USB drive **erases that drive entirely**.
 
    ```bash
    # /dev/sdX must be the USB drive you identified above. NOT a partition: no trailing "1".
-   sudo dd if=astraos-0.1.0-alpha-amd64.iso of=/dev/sdX bs=4M status=progress oflag=sync
+   sudo dd if=astraos-0.2.0-alpha-amd64.iso of=/dev/sdX bs=4M status=progress oflag=sync
    sync
    ```
 
@@ -76,7 +76,7 @@ Writing an ISO to a USB drive **erases that drive entirely**.
 4. **Secure Boot:** AstraOS does not support it. If Secure Boot is enforced, the machine
    will refuse to boot the medium. Disabling Secure Boot reduces your machine's boot
    protection, so understand what you are turning off, and re-enable it if you abandon
-   the installation. There is no other supported path in 0.1.0.
+   the installation. There is no other supported path in this release.
 5. At the GRUB menu, choose the normal entry. Use the **failsafe** entry if the screen
    stays black.
 

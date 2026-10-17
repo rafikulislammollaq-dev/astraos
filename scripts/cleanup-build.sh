@@ -34,6 +34,22 @@ BUILD_DIR="${REPO_ROOT}/${ASTRAOS_BUILD_DIR}"
 LOG_DIR="${REPO_ROOT}/${ASTRAOS_LOG_DIR}"
 DIST_DIR="${REPO_ROOT}/${ASTRAOS_DIST_DIR}"
 
+# The three directories above are assembled from configuration, and this script deletes
+# what they name. A value that is empty, absolute, or ascends would collapse one of
+# them onto the repository root or onto "/" - and because the paths are built by string
+# concatenation, "$REPO_ROOT/$value" with a value like "x/../../etc" would leave the
+# repository entirely. The names are checked where they are read.
+for name in ASTRAOS_BUILD_DIR ASTRAOS_LOG_DIR ASTRAOS_DIST_DIR; do
+    value="${!name:-}"
+    case "$value" in
+        ""|/*|*..*)
+            printf '[astraos:cleanup] ERROR: %s is %s in config/distribution.env; it must be a relative path inside the repository\n' \
+                "$name" "${value:-<empty>}" >&2
+            exit 1
+            ;;
+    esac
+done
+
 DRY_RUN=0
 DO_PACKAGES=0
 DO_ALL=0
@@ -55,6 +71,17 @@ say() { printf '[astraos:cleanup] %s\n' "$*"; }
 # Report a path's size before removing it, so the user can see what is at stake.
 remove() {
     local path="$1"
+    # The last check before the rm: a path that does not sit under the repository is
+    # refused, and the repository root itself is not a target. The configuration
+    # names above are checked so that no call site can arrive here with ".." in it.
+    case "$path" in
+        "${REPO_ROOT}/"?*) ;;
+        *)
+            printf '[astraos:cleanup] refusing to remove outside the repository: %s\n' "$path" >&2
+            ERRORS=$((ERRORS + 1))
+            return
+            ;;
+    esac
     if [ ! -e "$path" ]; then
         say "absent:  ${path#${REPO_ROOT}/}"
         return
@@ -80,7 +107,16 @@ fi
 # --- Level 1: always safe ----------------------------------------------------
 say "--- level 1: logs and the live-build working tree ---"
 remove "$LOG_DIR"
-remove "${BUILD_DIR}/live-build"
+# live-build runs with ${BUILD_DIR} as its working directory (scripts/configure-live-build.sh
+# stages auto/ and config/ straight into it, and build-iso.sh cd's there before `lb build`),
+# so its tree is ${BUILD_DIR}/chroot and ${BUILD_DIR}/binary. This used to remove
+# "${BUILD_DIR}/live-build", a path nothing ever creates: the line reported "absent",
+# exited 0 and quietly removed nothing, so the whole "always safe" level was a no-op while
+# the tree it names - hundreds of MB of chroot, mounts and a half-assembled binary/ - was
+# left in place. The AstraOS staging directories next to them (packages/, package-stage/)
+# are level 2's business, and cache/ is level 3's.
+remove "${BUILD_DIR}/chroot"
+remove "${BUILD_DIR}/binary"
 say "kept: ${ASTRAOS_DIST_DIR}/ and the package build output"
 
 # --- Level 2: the built packages ---------------------------------------------
@@ -125,9 +161,28 @@ fi
 
 # --- Leftovers ---------------------------------------------------------------
 say "---"
-if [ -f "${BUILD_DIR}/live-build/.astraos-build-in-progress" ] && [ "$DRY_RUN" -eq 0 ]; then
-    say "removing a stale build-in-progress marker"
-    rm -f "${BUILD_DIR}/live-build/.astraos-build-in-progress"
+# The marker is written by build-iso.sh (and, for a direct invocation, by
+# configure-live-build.sh) at ${BUILD_DIR}/.astraos-build-in-progress. This used to look
+# for it under ${BUILD_DIR}/live-build - a path that does not exist - so the check could
+# never fire and the marker survived every cleanup.
+MARKER="${BUILD_DIR}/.astraos-build-in-progress"
+if [ -f "$MARKER" ]; then
+    MARKER_PID="$(awk -F= '$1 == "pid" { print $2; exit }' "$MARKER" 2>/dev/null || true)"
+    case "$MARKER_PID" in
+        ''|*[!0-9]*) MARKER_PID="" ;;
+    esac
+    if [ -n "$MARKER_PID" ] && kill -0 "$MARKER_PID" 2>/dev/null; then
+        # Not a leftover: a build is running right now, and the tree it was using was
+        # just taken apart above. Report that instead of reporting a clean cleanup.
+        printf '[astraos:cleanup] a build is STILL RUNNING in %s (pid %s).\n' \
+            "$BUILD_DIR" "$MARKER_PID" >&2
+        printf '[astraos:cleanup] the working tree it was using has been removed, so that\n' >&2
+        printf '[astraos:cleanup] build will fail. The marker names it and is left in place.\n' >&2
+        ERRORS=$((ERRORS + 1))
+    elif [ "$DRY_RUN" -eq 0 ]; then
+        say "removing a stale build-in-progress marker (pid ${MARKER_PID:-unknown} is not running)"
+        rm -f "$MARKER" || ERRORS=$((ERRORS + 1))
+    fi
 fi
 
 if [ "$DRY_RUN" -eq 0 ]; then

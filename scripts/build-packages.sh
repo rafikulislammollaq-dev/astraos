@@ -57,6 +57,14 @@ die() { printf '[astraos:packages] ERROR: %s\n' "$*" >&2; exit 1; }
 command -v dpkg-deb >/dev/null 2>&1 || die "dpkg-deb is not installed. Run scripts/bootstrap-build-environment.sh"
 command -v dpkg >/dev/null 2>&1 || die "dpkg is not installed."
 
+# OUT_DIR and STAGE_ROOT are assembled from configuration, and --clean deletes both.
+# With ASTRAOS_BUILD_DIR empty they would be ${REPO_ROOT}/packages - this repository's
+# own package source tree - and ${REPO_ROOT}/package-stage; with a value containing
+# ".." they would leave the repository. Checked where the name is read.
+case "${ASTRAOS_BUILD_DIR:-}" in
+    ""|/*|*..*) die "ASTRAOS_BUILD_DIR is '${ASTRAOS_BUILD_DIR:-<empty>}' in config/distribution.env; it must be a relative path inside the repository" ;;
+esac
+
 CLEAN=0
 for arg in "$@"; do
     case "$arg" in

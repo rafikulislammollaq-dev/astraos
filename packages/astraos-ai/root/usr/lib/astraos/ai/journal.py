@@ -44,6 +44,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -113,7 +114,35 @@ class Journal:
     def __init__(self, path: Path | None = None):
         self.path = Path(path or DB_PATH)
         self.run_id = ""
-        self._connection: sqlite3.Connection | None = None
+        # One connection per THREAD, not one per process.
+        #
+        # The server is a ThreadingHTTPServer: a request handler reads the
+        # journal while the worker thread is writing to it, and sqlite3 refuses
+        # any use of a connection from a thread other than the one that made it
+        # ("ProgrammingError: SQLite objects created in a thread can only be
+        # used in that same thread"). A single cached connection therefore
+        # failed on whichever thread touched it second, reproducibly, for every
+        # /api/work run and every poll of /api/journal from another connection.
+        #
+        # check_same_thread=False is not the fix either: two threads
+        # interleaving execute()/commit() on one handle do not get two
+        # transactions, they get one mixed transaction, and a rollback by
+        # either undoes the other's committed work.
+        #
+        # _connection stays a property, so every existing self._connection use
+        # in this file keeps working unchanged while each thread transparently
+        # gets its own handle. The schema is CREATE TABLE IF NOT EXISTS, so
+        # creating it once per thread is a no-op after the first. A thread's
+        # connection is released when the thread's locals are.
+        self._local = threading.local()
+
+    @property
+    def _connection(self) -> sqlite3.Connection | None:
+        return getattr(self._local, "connection", None)
+
+    @_connection.setter
+    def _connection(self, value: sqlite3.Connection | None) -> None:
+        self._local.connection = value
 
     # ------------------------------------------------------------------
     # Connection

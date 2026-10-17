@@ -1,6 +1,6 @@
 # Testing AstraOS in VirtualBox
 
-This is the acceptance procedure for AstraOS 0.1.0 Alpha. Its purpose is to establish
+This is the acceptance procedure for AstraOS 0.2.0 Alpha. Its purpose is to establish
 whether the release is usable **before** anyone considers installing it on a real
 computer (plan §19).
 
@@ -12,7 +12,7 @@ Nothing in this document has been performed yet. See `KNOWN_LIMITATIONS.md` §2.
 
 You need:
 
-- the `astraos-0.1.0-alpha-amd64.iso` file and its `.sha256` file;
+- the `astraos-0.2.0-alpha-amd64.iso` file and its `.sha256` file;
 - Oracle VirtualBox 7.x;
 - roughly 35 GB of free disk space;
 - 4 GB of RAM you can give the virtual machine.
@@ -25,10 +25,13 @@ uses a virtual disk, and the installer cannot see your real drives.
 ## 1. Verify the download
 
 ```bash
-sha256sum -c astraos-0.1.0-alpha-amd64.iso.sha256
+sha256sum -c astraos-0.2.0-alpha-amd64.iso.sha256
 ```
 
-Expected: `astraos-0.1.0-alpha-amd64.iso: OK`
+Expected: `astraos-0.2.0-alpha-amd64.iso: OK`
+
+(The file name carries the release it is: for a later release, `sha256sum -c
+astraos-*.iso.sha256` verifies whichever image you downloaded.)
 
 If it does not say OK, **stop**. Do not boot an image that failed its checksum. Download
 it again; if it fails twice, report it, because the published checksum may be wrong.
@@ -41,7 +44,7 @@ it again; if it fails twice, report it, because the published checksum may be wr
 
 | Setting | Value | Why |
 |---|---|---|
-| Name | `AstraOS 0.1.0 Alpha` | — |
+| Name | `AstraOS 0.2.0 Alpha` | — |
 | ISO Image | the `.iso` you verified | VirtualBox may offer unattended installation. **Decline it** — you must run the AstraOS installer, not VirtualBox's. |
 | Type | Linux | — |
 | Version | Debian (64-bit) | AstraOS is Debian-based |

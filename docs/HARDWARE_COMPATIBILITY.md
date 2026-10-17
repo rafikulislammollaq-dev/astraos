@@ -93,8 +93,8 @@ does not appear.
 | Broadcom Wi-Fi (newer chipsets) | Depends on the specific chipset | `firmware-brcm80211` covers many, not all |
 | Broadcom Wi-Fi with the older `b43` driver | Adapter not detected | Install `firmware-b43-installer` on the installed system, with a network connection. AstraOS cannot ship it: it downloads the firmware rather than containing it. See section 1. |
 | NVIDIA GPUs on newer chips | May fall back to software rendering, or fail to start the session | Boot the failsafe GRUB entry; consider installing the proprietary driver after installation |
-| Very new AMD or Intel GPUs | May need a newer kernel than Debian's stable kernel | Not solvable in AstraOS 0.1.0; the kernel is the base release's kernel |
-| Fingerprint readers | Almost certainly not supported | Out of scope for 0.1.0 |
+| Very new AMD or Intel GPUs | May need a newer kernel than Debian's stable kernel | Not solvable in this release; the kernel is the base release's kernel |
+| Fingerprint readers | Almost certainly not supported | Out of scope for this release |
 | Printers and scanners | CUPS plus the gutenprint and Epson (escpr) driver sets are installed | Test with a specific model; some need another `printer-driver-*` from Debian |
 | Docking stations, Thunderbolt | Untested | Expect partial functionality |
 | Touchscreens and pens | Untested; `xserver-xorg-input-wacom` and `libinput` are present | Report results |

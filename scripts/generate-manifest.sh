@@ -29,13 +29,14 @@ MANIFEST="${DIR}/${NAME}.manifest"
 unknown() { printf 'unknown'; }
 
 # --- Helpers ------------------------------------------------------------------
-# Report a value only if it can actually be determined.
-kernel_version() {
-    local value
-    value="$(dpkg-query -W -f='${Version}' linux-image-amd64 2>/dev/null || true)"
-    [ -n "$value" ] && printf '%s' "$value" || unknown
-}
-
+# Report a value only if it can actually be determined. Note there is deliberately no
+# kernel lookup here: it used to be `dpkg-query -W -f='${Version}' linux-image-amd64`,
+# which reads the BUILD HOST's dpkg database, and the result was printed in the [base]
+# section next to distribution=/release=/suite= - properties of the image. A build run
+# on Debian 12 while assembling trixie recorded the host's 6.1 kernel as the image's,
+# and package-release.sh inlines that section into RELEASE-NOTES.md, so a bug report
+# was triaged against a kernel the image does not contain. The image's own kernel is
+# read further down, from the image's package list.
 git_commit() {
     if command -v git >/dev/null 2>&1 && git -C "$REPO_ROOT" rev-parse HEAD >/dev/null 2>&1; then
         git -C "$REPO_ROOT" rev-parse HEAD
@@ -58,18 +59,51 @@ SHA256="$(sha256sum "$ARTIFACT" 2>/dev/null | cut -d' ' -f1)"
 
 # The package manifest is produced by build-packages.sh; it lists the AstraOS packages
 # and their checksums. The live system's full package list is recorded separately by
-# live-build as binary.packages.
+# live-build - see LB_PACKAGES below.
 PKG_MANIFEST="${REPO_ROOT}/${ASTRAOS_BUILD_DIR}/packages/astraos-packages.txt"
 ASTRAOS_PKG_COUNT=0
 if [ -f "$PKG_MANIFEST" ]; then
     ASTRAOS_PKG_COUNT="$(grep -c . "$PKG_MANIFEST" 2>/dev/null || echo 0)"
 fi
 
-LB_PACKAGES="${REPO_ROOT}/${ASTRAOS_BUILD_DIR}/live-build/binary.packages"
-INSTALLED_PKG_COUNT="unknown"
-[ -f "$LB_PACKAGES" ] && INSTALLED_PKG_COUNT="$(grep -c . "$LB_PACKAGES" 2>/dev/null || unknown)"
+# Where live-build leaves its record of the build, and why these are searched.
+#
+# live-build runs with ASTRAOS_BUILD_DIR ("build/live-build") as its working directory:
+# scripts/build-iso.sh cd's there before `lb build`, and scripts/configure-live-build.sh
+# stages auto/ and config/ straight into it. Everything live-build writes - chroot/,
+# binary/, the finished .iso, and both files below - is therefore directly inside that
+# directory. The lookups used to carry a second "live-build" segment
+# ("build/live-build/live-build/..."), a path nothing creates, so
+# installed_package_count and kernel_package_version were always "unknown" and
+# [live_build_options] always said "not recorded" - three permanent holes in the
+# document whose whole job is to say what was built. The file names are accepted in both
+# spellings that live-build has used (binary.packages in current releases,
+# <image-name>-<arch>.packages in older ones) rather than pinning one.
+BUILD_TREE="${REPO_ROOT}/${ASTRAOS_BUILD_DIR}"
+first_existing() {
+    local candidate
+    for candidate in "$@"; do
+        [ -f "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+    done
+    return 0
+}
 
-LB_OPTIONS="${REPO_ROOT}/${ASTRAOS_BUILD_DIR}/live-build/.astraos-config-options"
+LB_PACKAGES="$(first_existing \
+    "${BUILD_TREE}/binary.packages" \
+    "${BUILD_TREE}"/*.packages)"
+INSTALLED_PKG_COUNT="unknown"
+[ -n "$LB_PACKAGES" ] && INSTALLED_PKG_COUNT="$(grep -c . "$LB_PACKAGES" 2>/dev/null || unknown)"
+
+LB_OPTIONS="$(first_existing "${BUILD_TREE}/.astraos-config-options")"
+
+# The image's kernel, read from the image's package list (dpkg-query -W output from the
+# live system: "name<TAB>version"). Never from the host - see the note above git_commit().
+kernel_version() {
+    local value
+    [ -n "$LB_PACKAGES" ] || { unknown; return; }
+    value="$(awk -F'\t' '$1 == "linux-image-amd64" { print $2; exit }' "$LB_PACKAGES" 2>/dev/null || true)"
+    [ -n "$value" ] && printf '%s' "$value" || unknown
+}
 
 {
     printf '# AstraOS build manifest\n'
@@ -129,10 +163,54 @@ LB_OPTIONS="${REPO_ROOT}/${ASTRAOS_BUILD_DIR}/live-build/.astraos-config-options
     printf '\n'
 
     printf '[validation]\n'
-    # Structural validation ran as part of the build (scripts/validate-iso.sh).
-    printf 'structural=PASS\n'
-    printf 'structural_status=the image was inspected for bootloaders, kernel,\n'
-    printf ' structural_status+=initramfs, live filesystem and AstraOS contents\n'
+    # A test that did not run is never recorded as one that passed (plan §28 Rule 4).
+    # This used to print `structural=PASS` unconditionally, and this script is reachable
+    # without any validation having run at all: package-release.sh calls it for an image
+    # that has no manifest, and `make manifest` regenerates one for whatever is in dist/.
+    # An image from a half-finished `lb build`, or one whose validation stage was never
+    # reached, therefore shipped a provenance record asserting an inspection that never
+    # happened - and package-release.sh inlines this section into RELEASE-NOTES.md.
+    #
+    # scripts/validate-iso.sh writes <image>.validation when it has actually produced a
+    # verdict; that file is the only thing that can make this section say PASS.
+    VALIDATION_FILE="${ARTIFACT}.validation"
+    validation_field() {
+        awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' \
+            "$VALIDATION_FILE" 2>/dev/null
+    }
+    if [ -r "$VALIDATION_FILE" ]; then
+        V_STRUCTURAL="$(validation_field structural)"
+        V_PASSES="$(validation_field passes)"
+        V_WARNINGS="$(validation_field warnings)"
+        V_FAILURES="$(validation_field failures)"
+        V_WHEN="$(validation_field timestamp_utc)"
+    else
+        V_STRUCTURAL=""
+    fi
+    case "${V_STRUCTURAL:-}" in
+        PASS)
+            printf 'structural=PASS\n'
+            printf 'structural_status=the image was inspected for bootloaders, kernel,\n'
+            printf ' structural_status+=initramfs, live filesystem and AstraOS contents\n'
+            printf 'structural_checked_utc=%s\n' "${V_WHEN:-unknown}"
+            printf 'structural_checks=passed %s, warnings %s, failures %s\n' \
+                "${V_PASSES:-unknown}" "${V_WARNINGS:-unknown}" "${V_FAILURES:-unknown}"
+            ;;
+        FAIL)
+            printf 'structural=FAIL\n'
+            printf 'structural_status=the recorded validation run FAILED: %s failure(s).\n' \
+                "${V_FAILURES:-unknown}"
+            printf ' structural_status+=The image must not be published.\n'
+            printf 'structural_checked_utc=%s\n' "${V_WHEN:-unknown}"
+            ;;
+        *)
+            printf 'structural=UNTESTED\n'
+            printf 'structural_status=no validation record (scripts/validate-iso.sh output)\n'
+            printf ' structural_status+=was found next to this image, so it was NOT inspected\n'
+            printf ' structural_status+=for bootloaders, kernel, initramfs or AstraOS contents\n'
+            ;;
+    esac
+    printf 'structural_record=%s\n' "$(basename "$VALIDATION_FILE")"
     printf '# The checks below have NOT been performed. They require a virtual machine or\n'
     printf '# physical hardware and are recorded as UNTESTED until they are actually run.\n'
     printf 'boot_in_virtualbox=UNTESTED\n'

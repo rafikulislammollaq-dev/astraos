@@ -213,7 +213,17 @@ class Engine:
                     return
                 time.sleep(0.5)
 
-            self.stop()
+            # NOTE: this must NOT call self.stop(). stop() acquires self._lock, and
+            # self._lock is a plain (non-reentrant) threading.Lock that this very
+            # `with` block already holds - so the call deadlocked the thread that
+            # was waiting for the model, permanently: no EngineUnavailable was ever
+            # raised (so no message and no exit), the llama-server child was leaked
+            # (it is started in its own session), and Assistant._ask_lock in
+            # server.py was never released, which froze every later /api/chat
+            # request rather than just this one. Reachable whenever the model takes
+            # longer than START_TIMEOUT_SECONDS to load, which is exactly the
+            # documented failure mode (see setup.py on the SIGILL-era run).
+            self._terminate_locked()
             raise EngineUnavailable(
                 f"the model did not load within {START_TIMEOUT_SECONDS}s - see {log_path}"
             )
@@ -227,16 +237,24 @@ class Engine:
         running by hand.
         """
         with self._lock:
-            process = self._process
-            self._process = None
-            if process is not None and process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
-            self._close_logfile()
+            self._terminate_locked()
+
+    def _terminate_locked(self) -> None:
+        """Terminate the child. The caller MUST already hold self._lock.
+
+        Split out of stop() so start()'s timeout path can clean up without
+        re-entering the non-reentrant lock it is holding (see the note there).
+        """
+        process = self._process
+        self._process = None
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+        self._close_logfile()
 
     def _close_logfile(self) -> None:
         if self._logfile not in (None, subprocess.DEVNULL):

@@ -167,7 +167,7 @@ custom application that merely duplicates an existing one.
 | Boot integrity | **No Secure Boot yet.** Not claimed; the signed chain is carried (2026-10-16) and its first CI boot under enforcing firmware is pending |
 | Future AI features | If ever added: normal user permissions, no privileged action without confirmation, never in the boot path (plan §13.6) |
 
-The honest summary: AstraOS 0.1.0 has a sound *configuration* baseline and **no
+The honest summary: AstraOS has a sound *configuration* baseline and **no
 independent security review**. `SECURITY.md` lists exactly what is and is not claimed.
 
 ## 7. Reproducibility

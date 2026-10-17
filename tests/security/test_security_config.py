@@ -92,7 +92,7 @@ def test_no_package_list_selects_a_remote_access_daemon() -> None:
     for forbidden in ("openssh-server", "openssh-sftp-server", "dropbear", "dropbear-initramfs",
                       "tigervnc-standalone-server", "x11vnc", "vino", "xrdp"):
         assert forbidden not in packages, (
-            f"{forbidden} is selected. docs/SECURITY.md states that AstraOS 0.1.0 installs "
+            f"{forbidden} is selected. docs/SECURITY.md states that AstraOS installs "
             "no listening remote-access service; adding one contradicts that claim."
         )
 

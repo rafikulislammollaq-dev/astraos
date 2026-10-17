@@ -30,6 +30,14 @@ LOG_DIR="${REPO_ROOT}/${ASTRAOS_LOG_DIR}"
 say() { printf '[astraos:configure] %s\n' "$*"; }
 die() { printf '[astraos:configure] ERROR: %s\n' "$*" >&2; exit 1; }
 
+# BUILD_DIR is assembled from configuration and the clean-tree step below empties it
+# with a find -exec rm -rf. A value that is empty, absolute, or ascends would make it
+# the repository itself or "/" - the wipe would then delete the checkout, or the
+# machine - so the name is checked where it is read, before any path is built from it.
+case "${ASTRAOS_BUILD_DIR:-}" in
+    ""|/*|*..*) die "ASTRAOS_BUILD_DIR is '${ASTRAOS_BUILD_DIR:-<empty>}' in config/distribution.env; it must be a relative path inside the repository" ;;
+esac
+
 FORCE=0
 [ "${1:-}" = "--force" ] && FORCE=1
 
@@ -47,20 +55,44 @@ if ! "${SCRIPT_DIR}/validate-environment.sh" --quiet; then
 fi
 
 # --- 2. Working tree ---------------------------------------------------------
+# The marker is owned by the process that runs the whole build: build-iso.sh writes it
+# with its own PID before calling this script, and removes it on exit. This script only
+# creates one when it is invoked directly, so a tree it configures is never left
+# unmarked.
+MARKER="${BUILD_DIR}/.astraos-build-in-progress"
+
 if [ -d "$BUILD_DIR" ] && [ "$FORCE" -eq 0 ]; then
     # Two builds sharing one working directory corrupt each other. Refuse rather than
     # silently reuse a tree that may be half-built (plan §16.4).
-    if [ -f "${BUILD_DIR}/.astraos-build-in-progress" ]; then
-        die "another build appears to be in progress (${BUILD_DIR}/.astraos-build-in-progress exists).
+    if [ -f "$MARKER" ]; then
+        die "another build appears to be in progress (${MARKER} exists).
        Wait for it to finish, or remove that file if the build was killed."
     fi
     say "reusing the existing build tree (pass --force to start clean)"
 else
     say "creating a clean build tree at ${BUILD_DIR}"
-    rm -rf "$BUILD_DIR"
+    # Keep the download cache and the marker.
+    #
+    # auto/config enables --cache true and --cache-packages true so live-build keeps the
+    # fetched .deb files and the package indices under ${BUILD_DIR}/cache. A plain
+    # `rm -rf "$BUILD_DIR"` took that cache with it on every run, so every build
+    # re-downloaded the whole ~2 GB package set and paid the full window in which the
+    # apt retry problem documented in auto/config is live. The tree around the cache is
+    # still removed; ASTRAOS_NO_CACHE=1 (--no-cache) drops the cache deliberately.
+    #
+    # The marker is preserved too, so the build that is running is not made to look
+    # stale to a second invocation while this script has the tree in flux.
+    if [ -d "$BUILD_DIR" ]; then
+        find "$BUILD_DIR" -mindepth 1 -maxdepth 1 \
+            ! -name 'cache' ! -name '.astraos-build-in-progress' \
+            -exec rm -rf {} +
+    fi
 fi
 mkdir -p "$BUILD_DIR"
-printf '%s\n' "started $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${BUILD_DIR}/.astraos-build-in-progress"
+if [ ! -f "$MARKER" ]; then
+    printf 'started=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MARKER"
+    printf 'pid=%s\n'     "$$" >> "$MARKER"
+fi
 
 # --- 3. live-build configuration ---------------------------------------------
 say "staging the live-build configuration"

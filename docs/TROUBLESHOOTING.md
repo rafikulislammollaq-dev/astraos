@@ -54,7 +54,7 @@ Per-user wallpaper wins over the system default. Set it in Settings → Desktop 
 Background, and point it at `/usr/share/astraos/wallpapers/`.
 
 **Window decorations look different from the screenshots.**
-Correct and documented. AstraOS 0.1.0 ships a colour-only GTK theme and no xfwm4 titlebar
+Correct and documented. AstraOS ships a colour-only GTK theme and no xfwm4 titlebar
 theme. See `KNOWN_LIMITATIONS.md` §1.4.
 
 **The clock is wrong.**

@@ -3,7 +3,7 @@
 `astraos-recovery-guide` prints this guidance on a running system. This document is the
 fuller version, including the parts that require the installation medium.
 
-**AstraOS 0.1.0 Alpha makes no claim that every failure is recoverable automatically.**
+**AstraOS makes no claim that every failure is recoverable automatically.**
 Some are not, and the sections below say so.
 
 ## 0. Start here
@@ -179,7 +179,7 @@ sudo dmesg | grep -i firmware      # is firmware missing?
 systemctl status NetworkManager
 ```
 
-If firmware is missing, the adapter may not be supported by AstraOS 0.1.0. See
+If firmware is missing, the adapter may not be supported by AstraOS. See
 `HARDWARE_COMPATIBILITY.md`. Installing firmware needs a network connection, so use a
 wired connection or download it on another machine.
 
