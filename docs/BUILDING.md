@@ -344,10 +344,16 @@ with a 25-minute wait; the EFI run needs the OVMF firmware (`ovmf` package). Sin
 2026-10-16 there is a third: `--medium secure` boots the UEFI path under OVMF's Secure
 Boot firmware with the Microsoft keys enrolled, so only the ISO's signed chain —
 Microsoft-signed shim, Debian-signed GRUB, Debian-signed kernel — reaches the login
-prompt (source state; its first run failed — run 38924527286 produced no serial output
-at all, so nothing past the firmware can be asserted about it yet; the script now keeps
-a capture of the guest's screen, `screen.ppm`, so a failure like that carries what the
-firmware drew). The ISO's menu entries do not carry
+prompt (source state; the first two runs — 38924527286 and 39024106426 — produced no
+serial output at all: the secure branch had let QEMU pick its default machine, and
+OVMF's secboot build requires SMM — it stops before it draws or prints anything where
+SMM is missing. The branch now uses the documented invocation: `-machine q35,smm=on`,
+the SMM-protected pflash global (`driver=cfi.pflash01,property=secure,value=on`, the
+same one libvirt adds for that firmware), and S3 disabled. The screen capture added
+after the first failure is what identified the cause: after the whole wait the guest
+screen was still "not initialized", so the firmware had never started. First run with
+the fix pending; until it is green, nothing past the firmware can be asserted about
+the secure path). The ISO's menu entries do not carry
 `astraos.ci=1`, so the guest runs no self-test and does not power off: it stops at the
 login prompt and the script stops the machine. Evidence (`serial.log`, `qemu.out`, and
 on the secure run `firmware.txt` with the firmware hashes) is uploaded as the

@@ -21,7 +21,12 @@ The pins here are the ones that make the exercise mean something:
   * the workflow runs every firmware path and keeps every log, and the Secure Boot run
     must actually enforce signatures - OVMF's secboot firmware plus the Microsoft-key
     variable store - or fail loudly: a blank key store would leave the run proving
-    nothing while looking green.
+    nothing while looking green;
+  * the secure run must also be able to start at all: OVMF's secboot build is
+    SMM_REQUIRE and stops without a byte of output on a machine that has no SMM, so
+    its QEMU command line carries the Q35 machine, the SMM-protected pflash global
+    and S3 disabled - the first two secure attempts each burned their whole wait on
+    a screen that was never initialized, which reads like a slow boot and is not one.
 
 Comment lines are stripped before the script's executable text is checked, following
 the repository's rule that a script's comments may explain a trap in prose while its
@@ -166,6 +171,20 @@ def test_the_secure_run_enforces_signatures_or_fails() -> None:
     assert "firmware.txt" in code and "sha256sum" in code, (
         "the exact firmware pair and its hashes must be kept with the evidence, so the "
         "run can be audited"
+    )
+    assert "-machine" in code and "q35,smm=on" in code, (
+        "OVMF's secboot firmware is built with SMM_REQUIRE: on a machine without SMM it "
+        "stops before it draws or prints anything, which reads as a hang (both earlier "
+        "secure attempts died exactly that way: an empty serial log and a screen that "
+        "was never initialized)"
+    )
+    assert "driver=cfi.pflash01,property=secure,value=on" in code, (
+        "the pflash must be the SMM-protected one; that global is what libvirt adds "
+        "for the same firmware, because Secure Boot's variable locking depends on it"
+    )
+    assert "ICH9-LPC.disable_s3=1" in code, (
+        "S3 resume is the one path OVMF's SMM code does not come back from under "
+        "emulation; every documented Secure Boot invocation disables it"
     )
 
 

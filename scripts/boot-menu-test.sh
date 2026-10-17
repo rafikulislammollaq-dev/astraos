@@ -257,9 +257,26 @@ if [ "$MEDIUM" = secure ]; then
     cp "$VARS" "$WORK/OVMF_VARS.fd"
     say "Secure Boot firmware: $CODE (variables with Microsoft keys: $VARS)"
     sha256sum "$CODE" "$VARS" > "$WORK/firmware.txt"
+
+    # SMM is part of this medium's contract, not tuning. OVMF's secboot build is
+    # compiled with SMM_REQUIRE - Debian's README.Debian says it "requires SMM support
+    # in QEMU" - and on a machine without SMM the firmware stops before it draws or
+    # prints anything. That is the signature both earlier secure attempts left (runs
+    # 38924527286 and 39024106426): a zero-byte serial log and a screen still "not
+    # initialized" after the whole wait, which reads like a slow boot and is in fact
+    # the firmware never running. The default machine (pc-i440fx) has no SMM; Q35
+    # does. The secure pflash global is what makes the flash the SMM-protected one
+    # Secure Boot's variable locking stands on - the same global libvirt adds when a
+    # domain asks for Secure Boot - and S3 resume is disabled because it is the one
+    # path OVMF's SMM code does not come back from under emulation (the classic
+    # silent hang in every QEMU Secure Boot recipe). The two pflash units are named
+    # explicitly here because this medium's invocation is the documented one.
     QEMU_ARGS+=(
-        -drive "if=pflash,format=raw,readonly=on,file=$CODE"
-        -drive "if=pflash,format=raw,file=$WORK/OVMF_VARS.fd"
+        -machine "q35,smm=on"
+        -global "driver=cfi.pflash01,property=secure,value=on"
+        -global "ICH9-LPC.disable_s3=1"
+        -drive "if=pflash,format=raw,readonly=on,unit=0,file=$CODE"
+        -drive "if=pflash,format=raw,unit=1,file=$WORK/OVMF_VARS.fd"
     )
 fi
 

@@ -342,6 +342,23 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- **The Secure Boot exercise never ran the firmware (the machine it tried has no SMM,
+  and OVMF's secboot build requires it).** `scripts/boot-menu-test.sh --medium secure`
+  picked OVMF's secboot code and the Microsoft-key variable store — the right pair —
+  then let QEMU choose its default machine, pc-i440fx. OVMF's secboot build is compiled
+  with `SMM_REQUIRE` (Debian's own README.Debian says it "requires SMM support in
+  QEMU"), and without SMM the firmware stops before it draws or prints anything. Both
+  attempts (runs 38924527286 and 39024106426) timed out with a zero-byte serial log and
+  a guest screen that QEMU still reported as "not initialized" — a signature that reads
+  like a slow boot and is the firmware never running. The secure branch now carries the
+  documented invocation — `-machine q35,smm=on`, `-global
+  driver=cfi.pflash01,property=secure,value=on` (the global libvirt adds for the same
+  firmware; Secure Boot's variable locking stands on it), `-global
+  ICH9-LPC.disable_s3=1` — and `tests/static/test_boot_menu.py` pins all three, so the
+  exercise cannot silently go back to running a firmware that cannot start. The first
+  run with the fix is pending; until it is green the signed chain stays "carried, not
+  proven".
+
 - **The installer's first real start found the key it was missing (branding
   `slideshow`).** The retry that got past QEMU startup (run 38924527286) reached a
   running Calamares — and Calamares exited immediately: 3.3's branding constructor
