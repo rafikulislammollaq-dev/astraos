@@ -236,7 +236,12 @@ rung itself. The SIGILL lesson becomes a feature.
   was not reported), and writes a JSON report beside the models under the
   assistant's data directory. The engine workflow runs the suite on the 360M smoke
   model, asserts the report is well formed, and uploads it as a smoke result. First
-  run pending: the report from a green **Build AI engine** run.
+  run recorded 2026-10-17, run 39026539476 (commit 1a309cb): the smoke model scored
+  4/5 answer and 3/3 execution on a 4-vCPU runner at 18.3 tokens/s, and the one
+  failure is the suite doing its job — it put the three colours on one line, and the
+  check said so instead of waving it through. Those numbers are the 360M smoke
+  model's, not answer quality; the per-tier numbers still need a run on real
+  hardware with a real model.
 - [ ] **Run the full ladder on the project's target machine** (the 1.7B executor is
   already downloaded) and record the numbers: that is what turns "runs on old PCs"
   from a design goal into a measurement.

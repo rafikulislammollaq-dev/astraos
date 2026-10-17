@@ -19,8 +19,8 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
-- **The evaluation suite the model ladder was missing (source; its first CI run is
-  pending).** `docs/ROADMAP.md`, Stage 2 asks for fixed tasks and a published success
+- **The evaluation suite the model ladder was missing (source; first CI run recorded
+  2026-10-17).** `docs/ROADMAP.md`, Stage 2 asks for fixed tasks and a published success
   rate before a model is described with confidence, and "the assistant works" said
   after one friendly question was the habit that had to go. `astra-ai eval` runs eight
   fixed tasks with deterministic checks — five through the same call a question uses
@@ -42,7 +42,12 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   through the real CLI, asserts the report is well formed and scored both halves,
   uploads it as a smoke result, and states the distinction in its summary;
   `astra ai eval` passes through the `astra` dispatcher like the other sub-commands,
-  and `docs/AI.md` section 4.1 explains what the numbers are and are not.
+  and `docs/AI.md` section 4.1 explains what the numbers are and are not. The first
+  run (run 39026539476, commit 1a309cb) recorded the smoke model at 4/5 answer and
+  3/3 execution — including a failure the check named instead of waving through (it
+  put the three colours on one line) — and 18.3 tokens/s from the engine's own
+  counts; per the rule, that is a smoke result about the suite, not a quality claim
+  about the model.
 
 - **The virtual machines people try first now have their guest agents (source; the
   QEMU agent's first CI exercise is pending).** AstraOS is usually booted in a virtual
