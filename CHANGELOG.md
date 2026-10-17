@@ -179,12 +179,13 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   matches a condition without `=` against the beginning of a command line word — the
   shared prefix would have let each run during the other's boot, and a self-test that
   screenshots the desktop and powers the machine off mid-install would eat the disk.
-  The wizard is driven from outside: Return advances the pages whose defaults are
-  correct (the one blank disk arrives selected with Erase pre-selected, through
-  CI-only presets appended to copies of the shipped module configs — never edited
-  into them, never duplicated), a per-run password generated on the host is typed
-  into the users page's two password fields, and a screendump precedes every step so
-  a wrong coordinate is visible in the evidence instead of guessed about. The
+  The wizard is driven from outside: the Next button is clicked through the pages
+  whose defaults are correct (the one blank disk arrives selected with Erase
+  pre-selected, through CI-only presets appended to copies of the shipped module
+  configs — never edited into them, never duplicated), a per-run password generated
+  on the host is typed into the users page's two password fields, and a screendump
+  precedes every step so a wrong coordinate is visible in the evidence instead of
+  guessed about. The
   installed half runs the self-test's new installed-mode branch — a login greeter
   instead of a live session, no autologin, no live account, and the installer's
   lock-down file verified from outside the installer — and the host additionally
@@ -341,6 +342,27 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   `libdvdnav4` pulls the read library at the soname the release actually ships.
 
 ### Fixed
+
+- **The install exercise's wizard walk never pressed anything: Return does nothing in
+  Calamares, and its clicks aimed at a window that never existed.** Run 39024106426
+  drove the whole walk — every page, the users-page typing and all — and its
+  screendumps show the wizard still on its first page at the deadline. Three
+  measurements on that evidence and a local Calamares 3.3.14 on the same Qt (under
+  Xvfb, with the live font environment reproduced from `desktop/skel`) explain it:
+  Calamares 3.3's `ViewManager` never sets a default button, so every `sendkey ret`
+  was a no-op; the branding's `windowSize: 800px,520px` is clamped up to Calamares'
+  own 1024x520 minimum, so the old screen-centre arithmetic missed the real buttons
+  (the window was never 800x520 — and `CalamaresWindow::ensureSize` only ever grows
+  height, never width); and the users page's two password fields sit side by side in
+  one HBox (upstream's `page_usersetup.ui`), not stacked at +45px as the old driver
+  typed into. The driver now clicks the Next button and locates the window's client
+  area in its own first screendump before aiming — every target is an offset from
+  that area's real edges, so wherever the window manager places the window the same
+  clicks land — and the walk was reproduced end to end against a local Calamares:
+  welcome → locale → keyboard → users (both fields typed, the module's "Password is
+  too short" error clearing to its green check, Next enabling) → summary. The pins in
+  `tests/static/test_install_boot.py` no longer let the driver press Return, and
+  require the client-area detection and the measured click constants.
 
 - **The Secure Boot exercise never ran the firmware (the machine it tried has no SMM,
   and OVMF's secboot build requires it).** `scripts/boot-menu-test.sh --medium secure`

@@ -280,16 +280,19 @@ exercise:
    screenshots the desktop and powers the machine off in the middle of an install is
    not a self-test;
 2. `astraos-install` (the guest half, shipped in every ISO) mounts the CI 9p share,
-   copies the presets the host put there over its module configuration, pins the
-   Calamares window to 800x520 in the centre of the screen, starts the real
-   Calamares, and reports the exit code into the share when it ends;
-3. the host drives the wizard over the QEMU monitor: Return advances the pages whose
-   defaults are already correct (locale, keyboard, the partition page — the one
-   blank disk arrives selected with Erase pre-selected — and the summary, whose Next
-   is unconditionally enabled in the pinned Calamares), and the users page gets a
-   per-run generated password typed into its two fields. A screendump precedes every
-   step, so a coordinate that is wrong is visible in the evidence instead of being
-   guessed about;
+   copies the presets the host put there over its module configuration, fixes the
+   Calamares window to a predictable geometry (no maximise, centred — its real size is
+   always Calamares' own 1024x520 minimum, whatever the branding asks for), starts the
+   real Calamares, and reports the exit code into the share when it ends;
+3. the host drives the wizard over the QEMU monitor. It finds the client area in the
+   first screendump and clicks the Next button through the pages whose defaults are
+   already correct (locale, keyboard, the partition page — the one blank disk arrives
+   selected with Erase pre-selected — and the summary, whose Next is unconditionally
+   enabled in the pinned Calamares), and the users page gets a per-run generated
+   password typed into its two fields. (Return is not an option: Calamares never marks
+   a default button, measured in run 39024106426, and the two password fields sit side
+   by side on one row.) A screendump precedes every step, so a coordinate that is
+   wrong is visible in the evidence instead of being guessed about;
 4. the host converts the installed disk, loop-mounts it, appends the serial console
    and the installed-mode switches (`astraos.ci=1 astraos.ci.installed=1
    username=<live user>`) to every kernel line of the installed GRUB configuration,

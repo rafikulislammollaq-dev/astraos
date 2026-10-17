@@ -5,13 +5,18 @@
 #   Phase 1 - install. The ISO's live kernel boots with "astraos.ci.install=1" on its
 #   command line (the exact switch the image's install driver, astraos-install,
 #   conditions on - deliberately not the self-test's "astraos.ci=1"). The driver
-#   copies CI-only module presets out of a 9p share this script fills, pins the
-#   Calamares window so a remote pointer can aim at it, and starts the real
-#   Calamares UI. This script drives that UI over the QEMU monitor: Return presses
-#   the wizard's default button through the pages whose defaults are already correct
+#   copies CI-only module presets out of a 9p share this script fills, asks for a
+#   fixed window geometry (Calamares clamps it to its own 1024x520 minimum), and
+#   starts the real Calamares UI. This script drives that UI over the QEMU monitor:
+#   the Next button is clicked through the pages whose defaults are already correct
 #   (locale, keyboard, the partition page - the one blank disk arrives selected with
 #   Erase pre-selected - and the summary, whose Next is unconditionally enabled), and
 #   the users page gets the generated password typed into its two password fields.
+#   Return cannot do this: Calamares 3.3's ViewManager never designates a default
+#   button, so a Return press reaches nothing, and run 39024106426 measured a whole
+#   walk of Return presses that left the wizard on its first page. That run's other
+#   two lessons are in the driver now too: the window is never 800x520 (the minimum
+#   wins), and the users page's two password fields sit side by side, not stacked.
 #   Every step starts with a screendump, so a coordinate that is wrong is visible in
 #   the evidence instead of being guessed about. The pass condition is not the
 #   pictures: the driver reports into the share ("done": rc=<n>) and the structural
@@ -51,10 +56,10 @@ usage() {
 Usage: scripts/install-boot-test.sh [--timeout MINUTES] [--out DIR] ISO
 
 Boots a built AstraOS ISO in QEMU and installs it onto a blank disk through the
-ISO's own Calamares UI, driven over the QEMU monitor: Return advances the pages whose
-defaults are already correct, and the generated password is typed into the users
-page. The installed disk is then booted alone and its self-test must pass in its
-installed mode. Exits 0 only when both halves proved what they claim.
+ISO's own Calamares UI, driven over the QEMU monitor: the Next button is clicked
+through the pages whose defaults are already correct, and the generated password is
+typed into the users page. The installed disk is then booted alone and its self-test
+must pass in its installed mode. Exits 0 only when both halves proved what they claim.
 
   --timeout MINUTES  how long each half may take (default 40)
   --out DIR          copy the evidence there (serial logs, UI screendumps, the
@@ -309,10 +314,13 @@ QEMU_PID=$!
 # One screendump before every action; the pass condition stays the guest's own report.
 mkdir -p "$WORK/shots"
 cat > "$WORK/drive-ui.py" <<'PY'
-# Drives the live installer's Calamares window over QEMU's monitor: Return advances
-# every page whose defaults are already correct, and the users page gets the generated
-# password typed into its two fields. Every step starts with a screendump, so a wrong
-# coordinate is visible in the evidence instead of being guessed about.
+# Drives the live installer's Calamares window over QEMU's monitor. The Next button is
+# clicked through every page whose defaults are already correct (Calamares never marks
+# a default button, so Return does nothing), and the users page gets the generated
+# password typed into its two password fields. Every step starts with a screendump, so
+# a wrong coordinate is visible in the evidence instead of being guessed about; the
+# client area is located in the first one, because the window's position is the window
+# manager's to decide.
 import os
 import socket
 import sys
@@ -377,8 +385,12 @@ def wait_for(needle, timeout_s, what):
 size = {"w": 1280, "h": 800}
 
 
+def shot_path(name):
+    return os.path.join(shots_dir, name + ".ppm")
+
+
 def shot(name):
-    path = os.path.join(shots_dir, name + ".ppm")
+    path = shot_path(name)
     hmp("screendump %s" % path, pause=2.5)
     for _ in range(10):
         if os.path.exists(path):
@@ -393,6 +405,62 @@ def shot(name):
     say("screendump %s (%dx%d)" % (name, size["w"], size["h"]))
 
 
+def client_rect(path):
+    """Locate the Calamares client area in a screendump (a P6 PPM).
+
+    The window's content is the only large light region on the screen: the desktop,
+    the title bar and the installer's sidebar are all dark. The longest run of light
+    pixels is measured per row; the first and last rows whose run exceeds 500 pixels
+    bound the client area vertically, and the largest run's end is its right edge (the
+    sidebar covers the left part of every row, so the run never reaches the client's
+    left edge). Returns {"top", "bottom", "right"} with bottom/right one pixel past
+    the edge, or None when nothing qualifies.
+    """
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError:
+        return None
+    fields = []
+    pos = 0
+    while len(fields) < 4 and pos < len(data):
+        while pos < len(data) and data[pos:pos + 1].isspace():
+            pos += 1
+        start = pos
+        while pos < len(data) and not data[pos:pos + 1].isspace():
+            pos += 1
+        fields.append(data[start:pos])
+    try:
+        width, height = int(fields[1]), int(fields[2])
+    except (IndexError, ValueError):
+        return None
+    pos += 1  # the single whitespace byte that follows maxval
+    stride = width * 3
+    top = bottom = right = None
+    for y in range(height):
+        row = data[pos + y * stride:pos + (y + 1) * stride]
+        best = run = 0
+        end = 0
+        for x in range(width):
+            i = x * 3
+            if (row[i] + row[i + 1] + row[i + 2]) // 3 > 200:
+                run += 1
+                if run > best:
+                    best = run
+                    end = x
+            else:
+                run = 0
+        if best > 500:
+            if top is None:
+                top = y
+            bottom = y + 1
+            if right is None or end + 1 > right:
+                right = end + 1
+    if top is None:
+        return None
+    return {"top": top, "bottom": bottom, "right": right}
+
+
 def click(x, y):
     hmp("mouse_move %d %d" % (x, y), pause=0.4)
     hmp("mouse_button 1", pause=0.2)
@@ -402,10 +470,6 @@ def click(x, y):
 def type_text(text):
     for char in text:
         hmp("sendkey %s" % char, pause=0.08)
-
-
-def enter(delay):
-    hmp("sendkey ret", pause=delay)
 
 
 say("waiting for the install driver to start Calamares")
@@ -418,50 +482,74 @@ if not wait_for("ASTRAOS-INSTALL: starting calamares", 1500, "the driver's start
 time.sleep(60)
 shot("01-welcome")
 
-# Pages whose defaults are already correct: Return presses the wizard's default button
-# (Next). The partition page arrives with the one blank disk already selected and Erase
-# pre-selected (initialPartitioningChoice in the CI seed), and the summary page has no
-# confirmation prompt to tick (SummaryViewStep::isNextEnabled is unconditionally true
-# in the pinned Calamares).
-enter(10.0)
-shot("02-locale")
-enter(10.0)
-shot("03-keyboard")
-enter(12.0)
-shot("04-partition")
-enter(12.0)
-shot("05-users")
+# The client area carries every click target. Locate it in the welcome screendump
+# rather than assuming a screen position: the window manager decides where the window
+# goes. Calamares itself fixes the size - its own minimum is 1024x520 and the branding
+# pin (windowExpanding: noexpand, windowSize: 800px,520px) is clamped up to it - so
+# only the origin has to be found. The 1153/170/690 fallback values are the ones
+# measured on run 39024106426's screenshots, used only if the detection finds nothing
+# plausible.
+client = client_rect(shot_path("01-welcome"))
+if client is None or abs(client["right"] - 1153) > 40 or abs(client["top"] - 170) > 40:
+    say("client-area detection implausible (%s); using the recorded values" % client)
+    client = {"top": 170, "bottom": 690, "right": 1153}
+else:
+    say("client area: top %(top)d bottom %(bottom)d right %(right)d" % client)
+
+# The wizard's buttons are anchored to the client area's bottom-right corner: Next
+# spans its 59x23 there, and (right-151, bottom-20) is its centre. Every offset below
+# was measured on run 39024106426's screenshots and reproduced against a local
+# Calamares 3.3.14 on the same Qt (under Xvfb) to within two pixels.
+next_at = (client["right"] - 151, client["bottom"] - 20)
+say("Next button target: %d,%d" % next_at)
+
+# Pages whose defaults are already correct are simply clicked through. The partition
+# page arrives with the one blank disk already selected and Erase pre-selected
+# (initialPartitioningChoice in the CI seed), and the summary page has no confirmation
+# prompt to tick (SummaryViewStep::isNextEnabled is unconditionally true in the pinned
+# Calamares).
+for name, settle in (("02-locale", 10.0), ("03-keyboard", 10.0),
+                     ("04-partition", 12.0), ("05-users", 12.0)):
+    click(*next_at)
+    time.sleep(settle)
+    shot(name)
 
 # The users page: identity fields are preset and protected; the password fields are the
-# only thing that needs typing. The window is pinned to 800x520 in the centre of the
-# screen (the driver appends windowExpanding: noexpand and a fixed windowSize to the
-# branding), so the fields sit at fixed offsets from the screen centre; the dumps above
-# re-measure the screen for the offsets. A move-only dump before each click shows where
-# the pointer is going, which is the calibration record if a click lands wrong.
-x0 = (size["w"] - 800) // 2
-y0 = (size["h"] - 520) // 2
+# only thing that needs typing. Both sit on one row, side by side (upstream's
+# page_usersetup.ui puts them in one HBox - the vertical stacking the old driver
+# assumed never existed). Their centres are fixed offsets from the client area's top
+# and right edges, measured the same way as the button. A move-only dump before each
+# click shows where the pointer is going, which is the calibration record if a click
+# lands wrong.
+password_at = (client["right"] - 726, client["top"] + 224)
+confirm_at = (client["right"] - 521, client["top"] + 224)
 
-hmp("mouse_move %d %d" % (x0 + 520, y0 + 300), pause=0.4)
+hmp("mouse_move %d %d" % password_at, pause=0.4)
 shot("05a-pointer-password")
-click(x0 + 520, y0 + 300)
+click(*password_at)
 type_text(password)
 shot("06-password-typed")
 
-hmp("mouse_move %d %d" % (x0 + 520, y0 + 345), pause=0.4)
+hmp("mouse_move %d %d" % confirm_at, pause=0.4)
 shot("06a-pointer-confirm")
-click(x0 + 520, y0 + 345)
+click(*confirm_at)
 type_text(password)
 shot("07-confirm-typed")
 
-enter(12.0)
+click(*next_at)
+time.sleep(12.0)
 shot("08-summary")
-enter(15.0)
+
+# The summary page's Next is relabelled Install; the button grows leftwards from its
+# fixed right edge, so the same target still lands inside it.
+click(*next_at)
+time.sleep(15.0)
 shot("09-install")
 
 # The installation itself (unpacking the image onto an emulated disk) is the long part.
 # One screendump per minute until the guest writes its report; the report, not the
-# pictures, is the pass condition. No extra Return is sent while the exec page is up:
-# the default button there is not Next.
+# pictures, is the pass condition. No clicks are sent while the exec page is up: there
+# is nothing there to press, and a stray click could cancel the install.
 number = 10
 deadline = time.time() + 55 * 60
 while time.time() < deadline:
@@ -496,8 +584,8 @@ while : ; do
         break
     fi
     # An installer that cannot initialize never draws a page: Calamares opens on
-    # "Calamares Initialization Failed" and sits there, and the driver presses Return
-    # at its pages' coordinates until the deadline. The installer streams its console
+    # "Calamares Initialization Failed" and sits there, and the driver clicks its
+    # pages' coordinates until the deadline. The installer streams its console
     # log into the seed share while it runs, so this failure is caught in seconds.
     # Run 38940011841 measured the 45-minute version: a settings.conf without
     # modules-search, which 0300-installer.hook.chroot now refuses to build.

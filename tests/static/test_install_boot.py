@@ -16,6 +16,12 @@ half-hour QEMU run:
     one of the two values and the loser is invisible;
   * the password the wizard is given must be generated per run and written nowhere:
     not into the seed, not into a log, not into this repository;
+  * the wizard is advanced by clicks, never by Return: Calamares 3.3 marks no default
+    button, and run 39024106426 spent a whole walk finding that out;
+  * every click target is an offset from the client area the driver finds in its own
+    screendump - the window is always Calamares' 1024x520 minimum (a smaller branding
+    size is clamped up to it), and the users page's two password fields sit side by
+    side on one row;
   * every destructive step belongs to Calamares, through its own UI - the guest driver
     must never partition or format anything itself;
   * the installed-mode switches must reach the installed system's kernel command line,
@@ -184,6 +190,38 @@ def test_the_password_is_generated_per_run_and_written_nowhere() -> None:
     )
 
 
+def test_the_wizard_is_advanced_by_clicks_and_the_targets_are_found_on_screen() -> None:
+    """Calamares marks no default button, and the window is never 800x520.
+
+    Run 39024106426 drove the whole walk and the wizard was still on its first page at
+    the deadline: Return presses reach no button in Calamares 3.3 (ViewManager never
+    marks a default), every click aimed at the centre of an 800x520 window that the
+    branding size asked for but Calamares clamps up to its 1024x520 minimum, and the
+    users page's password fields are side by side on one row rather than the stacked
+    pair the driver typed into. The driver now clicks Next and locates the client area
+    in its own screendump first; these pins keep all three facts from slipping back.
+    """
+    code = _code(HOST_SCRIPT)
+    assert "sendkey ret" not in code, (
+        "Return cannot advance a Calamares page; the wizard must be clicked through"
+    )
+    assert "def client_rect(" in code, (
+        "the driver must locate the client area in a screendump instead of trusting a "
+        "screen position the window manager picked"
+    )
+    for offset in (
+        'client["right"] - 151',
+        'client["right"] - 726',
+        'client["right"] - 521',
+        'client["top"] + 224',
+    ):
+        assert offset in code, (
+            "the click targets are offsets from the located client area, measured on "
+            "run 39024106426's screenshots and reproduced against a local Calamares "
+            "3.3.14; %s left the driver" % offset
+        )
+
+
 def test_the_guest_driver_never_partitions_or_formats_anything() -> None:
     """Every destructive step belongs to Calamares, through its own UI."""
     code = _code(DRIVER)
@@ -206,7 +244,8 @@ def test_the_guest_driver_keeps_the_output_contract() -> None:
         "CI cannot click the finished page; the driver has to make it quit"
     )
     assert "windowExpanding" in driver, (
-        "the window must be pinned so the remote pointer's coordinates mean something"
+        "the window must stay noexpand and centred: a maximised window moves every "
+        "click target away from the offsets the exercise was measured at"
     )
     assert "systemctl poweroff" in driver, (
         "the power-off is the caller's signal that the guest is finished"

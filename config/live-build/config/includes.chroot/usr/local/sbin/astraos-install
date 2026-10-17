@@ -26,12 +26,17 @@
 #   out: settings-installed.conf, configs.sha256     - what the installer actually saw
 #   out: done                                        - "rc=<n>" (the phase-1 verdict)
 #
-# WHY THE WINDOW IS PINNED
-#   The host drives the UI with clicks at fixed coordinates (QEMU's monitor). Calamares
-#   sizes its window from the branding file and may grow it per page; the CI-only
-#   "noexpand" + fixed size appended below remove that freedom, so the coordinates are
-#   stable across runs. The shipped branding is untouched on disk; this happens in the
-#   live session's overlay and dies with the boot.
+# WHY THE WINDOW IS FIXED
+#   The host drives the UI with clicks over QEMU's monitor (the Next button through
+#   every page whose defaults are correct; the users page's two password fields typed
+#   into), and it locates the window's client area in its own screendump before aiming,
+#   so what the branding pins here is stability, not coordinates: noexpand keeps the
+#   window manager from maximising it, and centring keeps its position predictable.
+#   The size it actually gets is always Calamares' own 1024x520 minimum - a smaller
+#   windowSize in the branding is clamped up to it (measured in run 39024106426, whose
+#   screenshots show the client area at exactly 1024x520 under the 800x520 pin). The
+#   shipped branding is untouched on disk; this happens in the live session's overlay
+#   and dies with the boot.
 
 export LC_ALL=C
 
@@ -91,8 +96,11 @@ cp "$SEED/modules/partition.conf" "$SEED/modules/users.conf" "$MODULES/" || {
 # settings.conf keeps quit-at-end: false for human installs.
 sed -i 's/^quit-at-end:.*/quit-at-end: true/' /etc/calamares/settings.conf
 
-# Fixed geometry for the remote pointer (see the header). Appended only if absent, and
-# never a duplicate: a repeated key in this YAML is a lie about which value is in use.
+# Window geometry for the remote pointer (see the header). Appended only if absent,
+# and never a duplicate: a repeated key in this YAML is a lie about which value is in
+# use. windowExpanding: noexpand is the part that matters (no maximise); the size line
+# is belt-and-braces - Calamares 3.3.14 clamps it up to its own 1024x520 minimum, and
+# the host finds the real client area in a screendump rather than trusting any size.
 if ! grep -qE '^windowExpanding:' "$BRANDING/branding.desc"; then
     {
         printf '\n# CI-only (appended by astraos-install): fixed geometry for the remote pointer.\n'
