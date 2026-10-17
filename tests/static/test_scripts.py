@@ -198,6 +198,51 @@ def test_no_pipeline_into_grep_q_where_pipefail_is_set() -> None:
     )
 
 
+BOOTSTRAP = REPO_ROOT / "scripts" / "bootstrap-build-environment.sh"
+
+# A list built by piping into a process substitution: `readarray ... < <(... | filter)`.
+# The hazard is the filter, not the list — it has to be installed on the host already.
+_LIST_BUILT_BY_PIPE = re.compile(r"readarray[^\n]*<\s*<\((?P<body>[^\n]*)\)")
+
+
+def test_bootstrap_does_not_need_a_tool_it_installs() -> None:
+    """The bootstrap script may not depend on a program it exists to install.
+
+    Measured on a minimal Debian 13 host that had no `awk`: the package list was
+    de-duplicated with `printf | awk | readarray`, the filter did not exist, the process
+    substitution produced an EMPTY list instead of an error, and the script printed
+    "all build dependencies are already installed" and exited 0 having installed nothing.
+    The build then stopped at `validate-environment.sh` with four "required tool MISSING"
+    lines — which reads as a broken host rather than a broken script.
+
+    Two rules come out of that: the list is built in bash, and an empty list is an error
+    rather than a reason to claim success.
+    """
+    historical = (
+        "readarray -t PACKAGES < <(printf '%s\\n' \"${PACKAGES[@]}\" | awk '!seen[$0]++')"
+    )
+    historical_match = _LIST_BUILT_BY_PIPE.search(historical)
+    assert historical_match is not None and "|" in historical_match.group("body"), (
+        "the detector no longer recognises the line that made a real bootstrap install nothing"
+    )
+
+    text = BOOTSTRAP.read_text(encoding="utf-8", errors="replace")
+    offenders: list[str] = []
+    for number, line in enumerate(text.splitlines(), 1):
+        match = _LIST_BUILT_BY_PIPE.search(line)
+        if match is not None and "|" in match.group("body"):
+            offenders.append(f"{number}: {line.strip()}")
+
+    assert not offenders, (
+        "bootstrap-build-environment.sh builds its package list through an external "
+        "command, which may not be installed on the host yet:\n  " + "\n  ".join(offenders)
+    )
+    assert "the build dependency list is empty" in text, (
+        "an empty package list must be an error; otherwise the script installs nothing and "
+        "reports that everything was already present"
+    )
+
+
 # Scripts whose whole job is to REPORT, not to act. These deliberately avoid `set -e`
 # (and some avoid `-u`) so that a missing optional tool prints "unknown" and the rest of
 # the report still appears. Aborting would leave the user with no output at all, which

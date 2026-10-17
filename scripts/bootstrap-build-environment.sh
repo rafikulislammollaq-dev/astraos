@@ -88,8 +88,28 @@ else
     die "apt-get is not available. AstraOS supports Debian-derived build hosts; see docs/BUILDING.md"
 fi
 
-# De-duplicate while preserving order.
-readarray -t PACKAGES < <(printf '%s\n' "${PACKAGES[@]}" | awk '!seen[$0]++')
+# De-duplicate while preserving order, in bash and not through an external filter.
+# Measured failure on a minimal Debian 13 host with no `awk` installed yet: the old
+# `printf | awk | readarray` form ran a program that was not there, the process
+# substitution produced an EMPTY list instead of an error, and the count below read 0,
+# so this script printed "all build dependencies are already installed" and exited 0
+# having installed nothing. The build then failed in validate-environment.sh with four
+# "required tool MISSING" lines. A bootstrap script must not need a tool it exists to
+# install, and it must not treat an empty result as success.
+PACKAGES_UNIQUE=()
+declare -A PACKAGES_SEEN=()
+for pkg in "${PACKAGES[@]}"; do
+    if [ -n "${PACKAGES_SEEN[$pkg]:-}" ]; then
+        continue
+    fi
+    PACKAGES_SEEN[$pkg]=1
+    PACKAGES_UNIQUE+=("$pkg")
+done
+PACKAGES=("${PACKAGES_UNIQUE[@]}")
+
+if [ "${#PACKAGES[@]}" -eq 0 ]; then
+    die "internal error: the build dependency list is empty, so nothing could be checked or installed"
+fi
 
 say "host: ${PRETTY_NAME:-unknown}"
 say "package manager: ${PKG_MANAGER}"
@@ -144,6 +164,21 @@ else
     fi
     # shellcheck disable=SC2016
     sudo sh -c "$CMD"
+fi
+
+# Prove the install instead of trusting apt's exit status. If a package is still not
+# installed here, say which one: "dependencies installed" that installed nothing is the
+# exact silent success this script exists to avoid.
+STILL_MISSING=()
+for pkg in "${MISSING[@]}"; do
+    PKG_STATUS="$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null || true)"
+    case "$PKG_STATUS" in
+        *'install ok installed'*) continue ;;
+    esac
+    STILL_MISSING+=("$pkg")
+done
+if [ "${#STILL_MISSING[@]}" -ne 0 ]; then
+    die "these packages are still not installed after apt-get: ${STILL_MISSING[*]}"
 fi
 
 say "build dependencies installed"
