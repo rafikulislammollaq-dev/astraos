@@ -136,9 +136,18 @@ updated. Every step proven in CI or recorded as untested.
     went out as a thousand-pixel delta and the pointer pinned itself to a screen
     corner. The screenshots are the proof — 02 through 09 are the same page with a
     different clock. Fixed in source by moving the driver to QMP and sending
-    `input-send-event` `abs` axes addressed to the named tablet; the driver now also
-    hashes the client area before and after its walk, so an unresponsive pointer is
-    reported in about two minutes instead of costing 45.
+    `input-send-event` `abs` axes; the driver now also hashes the client area before
+    and after its walk, so an unresponsive pointer is reported in about two minutes
+    instead of costing 45.
+  - Run 39103628321 (2026-10-18) tested that fix and reached the first click, where
+    QEMU aborted: naming the tablet as the `device` on each event walks the consoles,
+    and the fixed text console `-vga std` creates has no `device` property to find
+    (`Property 'qemu-fixed-text-console.device' not found` in `qemu1.out`). The events
+    now omit the device — the tablet is the only absolute pointer on the machine, so
+    an `abs` event has one possible home — and `query-mice` records the pointer
+    routing in `ui.log` before the first click. The same run showed the welcome
+    screendump being taken before Qt had drawn anything, so the client-area detection
+    now looks again once before falling back.
 
   The manual procedure in `docs/INSTALLATION_VIRTUALBOX.md` stays either way.
 - [x] **Boot menu paths exercised in CI**: syslinux (BIOS) and GRUB-EFI, not only

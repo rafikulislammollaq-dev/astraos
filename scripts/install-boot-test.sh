@@ -50,6 +50,23 @@
 #         the driver stops and the host is told, in about two minutes, what an
 #         unresponsive pointer costs instead of 45.
 #
+#   ...and one QMP trap, on the same subject
+#     Naming the device on each input event ("device": the tablet's id) is the obvious
+#     way to be explicit, and it aborts QEMU. Run 39103628321 got all the way to the
+#     first click and died there: qemu1.out holds nothing but
+#
+#         Unexpected error in object_property_find_err() at qom/object.c:1329:
+#         Property 'qemu-fixed-text-console.device' not found
+#
+#     because resolving a device walks the consoles, and the fixed text console that
+#     -vga std creates has no "device" property to find. The events therefore carry no
+#     device, which is not a retreat: QEMU's rule for an omitted one is that only
+#     devices with no input routing are admissible, and the tablet is this machine's
+#     only absolute pointer, so an "abs" event has exactly one possible home. Which
+#     device that is, and whether it is the current one, is no longer inferred from
+#     QEMU's internals - query-mice writes every pointer it knows about to ui.log
+#     before the first click.
+#
 #   Phase 2 - boot the result. The installed disk image is converted, loop-mounted on
 #   this host, and its GRUB configuration is edited to add the serial console and the
 #   installed-mode switches to every kernel line (the guest's self-test reads them
@@ -319,8 +336,10 @@ say "creating a blank 20 GiB disk"
 qemu-img create -f qcow2 "$WORK/disk.qcow2" 20G
 
 say "phase 1: booting the live medium to install it onto the blank disk"
-# The tablet is named so the driver can address it: input events are sent to this exact
-# device, not to "whatever pointer QEMU picks first".
+# The tablet is named so that it can be told apart from the PS/2 mouse this machine
+# also has, in QEMU's own reporting and in qemu1.out if anything goes wrong. The driver
+# does NOT address events to it by name - naming a device aborts QEMU here, which is
+# the second lesson in the header's POINTER INPUT section.
 TABLET_ID=astraos-tablet
 # usb-tablet is the absolute-positioning pointer the driver clicks with, and a tablet
 # device needs a USB controller to attach to: without qemu-xhci before it QEMU refuses
@@ -378,7 +397,9 @@ import time
 
 serial_path, monitor_path, shots_dir, done_path = sys.argv[1:5]
 password = os.environ.get("INSTALL_TEST_PASSWORD", "")
-# Must match the -device usb-tablet,id=... on the phase-1 QEMU command line above.
+# The id given to the tablet on the phase-1 QEMU command line above, kept here only so
+# the log can name the device it expects to be driving. Events are not addressed to it
+# by name; see pointer_to() for why.
 TABLET = "astraos-tablet"
 
 log = open(os.path.join(shots_dir, "ui.log"), "w", buffering=1)
@@ -474,6 +495,16 @@ if qmp("qmp_capabilities") is None:
     say("QMP refused the capabilities handshake; no command will be sent")
     sys.exit(0)
 say("QMP ready (tablet %s)" % TABLET)
+
+# Every pointer QEMU knows about, before the first click: which one is absolute, and
+# which one is currently receiving events. Two runs of this exercise have turned on
+# which device the guest actually follows, and a fact that decides whether a click can
+# work belongs in the evidence rather than in somebody's memory of QEMU's input
+# routing. query-mice is read-only and costs nothing.
+for entry in qmp("query-mice") or []:
+    say("mouse index=%s name=%s current=%s absolute=%s"
+        % (entry.get("index"), entry.get("name"),
+           entry.get("current"), entry.get("absolute")))
 
 
 def serial_text():
@@ -612,19 +643,32 @@ def client_digest(path, rect):
 
 
 def pointer_to(x, y):
-    """Put the pointer at a screen position, absolutely, on the tablet.
+    """Put the pointer at a screen position, absolutely.
 
-    These are the coordinates the driver means: the pixel column and row. Sent as "abs"
-    to the named device, they mean the same thing on the wire that they mean here.
+    These are the coordinates the driver means: the pixel column and row. Sent as
+    "abs" they mean on the wire what they mean here.
+
+    The events deliberately carry no "device". Naming the tablet is the obvious way to
+    be explicit and it aborts QEMU: run 39103628321 reached the first click and died
+    there, with qemu1.out holding nothing but
+
+        Unexpected error in object_property_find_err() at qom/object.c:1329:
+        Property 'qemu-fixed-text-console.device' not found
+
+    Resolving a device walks the consoles, and the fixed text console -vga std creates
+    has no "device" property to find. Omitting the device is not a retreat: QEMU's
+    rule for an omitted one is that only devices with no input routing are admissible,
+    and the tablet is this machine's only absolute pointer, so an "abs" event has
+    exactly one possible home. Which device that is, and whether it is the current one,
+    is written to ui.log by query-mice before the first click.
     """
     return qmp(
         "input-send-event",
         {
-            "device": TABLET,
             "events": [
                 {"type": "abs", "data": {"axis": "x", "value": x}},
                 {"type": "abs", "data": {"axis": "y", "value": y}},
-            ],
+            ]
         },
         pause=0.4,
     )
@@ -641,14 +685,14 @@ def click(x, y):
         return False
     down = qmp(
         "input-send-event",
-        {"device": TABLET, "events": [{"type": "btn", "data": {"down": True, "button": "left"}}]},
+        {"events": [{"type": "btn", "data": {"down": True, "button": "left"}}]},
         pause=0.2,
     )
     if down is None:
         return False
     return qmp(
         "input-send-event",
-        {"device": TABLET, "events": [{"type": "btn", "data": {"down": False, "button": "left"}}]},
+        {"events": [{"type": "btn", "data": {"down": False, "button": "left"}}]},
         pause=0.5,
     ) is not None
 
@@ -677,12 +721,34 @@ shot("01-welcome")
 # only the origin has to be found. The 1153/170/690 fallback values are the ones
 # measured on run 39024106426's screenshots, used only if the detection finds nothing
 # plausible.
-client = client_rect(shot_path("01-welcome"))
-if client is None or abs(client["right"] - 1153) > 40 or abs(client["top"] - 170) > 40:
-    say("client-area detection implausible (%s); using the recorded values" % client)
-    client = {"top": 170, "bottom": 690, "right": 1153}
-else:
+def plausible(rect):
+    """A client area is believable only if it is where a 1024x520 window's would be."""
+    return (rect is not None
+            and abs(rect["right"] - 1153) <= 40
+            and abs(rect["top"] - 170) <= 40)
+
+
+welcome_shot = "01-welcome"
+client = client_rect(shot_path(welcome_shot))
+if not plausible(client):
+    # Run 39103628321 shot 60 seconds after the driver's marker and got a bare desktop
+    # (a 6 KB screendump, no light region at all): the window was not drawn yet. The
+    # fallback then supplied the geometry with nothing in the evidence to check it
+    # against, which is the state this design exists to avoid. Qt's first window on an
+    # emulated CPU is simply not there yet at a fixed 60 seconds; look again shortly
+    # rather than believing the first answer.
+    say("client-area detection implausible in %s (%s); waiting and looking again"
+        % (welcome_shot, client))
+    time.sleep(25)
+    welcome_shot = "01b-welcome-retry"
+    shot(welcome_shot)
+    client = client_rect(shot_path(welcome_shot))
+
+if plausible(client):
     say("client area: top %(top)d bottom %(bottom)d right %(right)d" % client)
+else:
+    say("client-area detection still implausible (%s); using the recorded values" % client)
+    client = {"top": 170, "bottom": 690, "right": 1153}
 
 # The wizard's buttons are anchored to the client area's bottom-right corner: Next
 # spans its 59x23 there, and (right-151, bottom-20) is its centre. Every offset below
@@ -693,7 +759,8 @@ say("Next button target: %d,%d" % next_at)
 
 # What the wizard looks like before it is touched: the reference the walk is judged
 # against, so that "the clicks did nothing" is a measurement rather than an assumption.
-welcome_digest = client_digest(shot_path("01-welcome"), client)
+# It is hashed from whichever welcome screendump the geometry above came from.
+welcome_digest = client_digest(shot_path(welcome_shot), client)
 
 # Pages whose defaults are already correct are simply clicked through. The partition
 # page arrives with the one blank disk already selected and Erase pre-selected

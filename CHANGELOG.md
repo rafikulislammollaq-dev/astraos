@@ -400,6 +400,28 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   whole-screen comparison changes every minute and would hide exactly the stall this is
   meant to catch. Pinned by two new tests in `tests/static/test_install_boot.py`.
 
+- **Naming the tablet on each pointer event aborts QEMU, so the events carry no device
+  (source; first CI run 39103628321 failed with the reason).** The change above was
+  tested on 2026-10-18 and run 39103628321 reached the first click and died there, with
+  `qemu1.out` holding nothing but `Unexpected error in object_property_find_err() ...:
+  Property 'qemu-fixed-text-console.device' not found`, and `ui.log` ending at "the
+  monitor closed while waiting for input-send-event". Naming a device on an input event
+  walks the consoles, and the fixed text console `-vga std` creates has no `device`
+  property to find. The events therefore omit the device, which is not a retreat:
+  QEMU admits only devices with no input routing when one is omitted, and the tablet is
+  this machine's only absolute pointer, so an `abs` event has exactly one possible
+  home. Which device that is, and whether it is the current one, is no longer inferred
+  from QEMU's internals — `query-mice` writes every pointer QEMU knows about to
+  `ui.log` before the first click, so the routing is a recorded fact.
+
+  That same run also showed the welcome screendump being taken before Qt had drawn
+  anything (a 6 KB dump, no light region), which sent the client-area detection down
+  its fallback with nothing in the evidence to check against. The detection now looks
+  again once before believing that, and the digest that judges the walk is taken from
+  whichever welcome dump the geometry actually came from. Worth noting what the run did
+  prove: the fail-fast works. The same class of failure that cost run 39049818027
+  forty-five minutes was caught in **5m32s**, with a named cause.
+
 - **The install exercise's wizard walk never pressed anything: Return does nothing in
   Calamares, and its clicks aimed at a window that never existed.** Run 39024106426
   drove the whole walk — every page, the users-page typing and all — and its

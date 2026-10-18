@@ -309,19 +309,26 @@ def test_the_driver_has_a_usb_controller_to_click_with() -> None:
     )
 
 
-def test_the_clicks_are_absolute_and_addressed_to_the_tablet() -> None:
-    """The human monitor cannot say where the pointer is; run 39049818027 proved it.
+def test_the_clicks_are_absolute_and_not_addressed_to_a_named_device() -> None:
+    """The human monitor cannot say where the pointer is; naming a device kills QEMU.
 
-    HMP's mouse_move is a RELATIVE move (hmp_mouse_move queues
-    qemu_input_queue_rel) and it is delivered to whichever pointer device registered
-    first - the i8042 PS/2 mouse - while the live session's X server follows the
-    absolute usb-tablet. Run 39049818027 therefore clicked Next eleven times and left
-    the wizard on its Welcome page for a full 45 minutes, with every screenshot from
-    02 onward showing that same page, and the verdict could only say that no report
-    arrived.
+    Two separate runs, two separate traps:
 
-    So the driver must speak QMP, send "abs" axes, and name the device it is aiming at.
-    These pins keep a relative click from being reintroduced as a "simplification".
+    * Run 39049818027 drove the walk with HMP's mouse_move, which is a *relative* move
+      (hmp_mouse_move queues qemu_input_queue_rel) delivered to whichever pointer
+      registered first - the i8042 PS/2 mouse - while the live session's X server
+      follows the absolute usb-tablet. Every coordinate went out as a thousand-pixel
+      delta, the pointer pinned itself to a screen corner, and the wizard never left
+      its Welcome page for a full 45 minutes.
+    * Run 39103628321 had moved the driver to QMP and reached the first click, and
+      QEMU aborted there: naming the device on an input event walks the consoles, and
+      the fixed text console `-vga std` creates has no "device" property to find
+      ("Property 'qemu-fixed-text-console.device' not found", qemu1.out).
+
+    So: QMP, absolute axes, and no "device". An omitted device is not vagueness -
+    QEMU admits only devices with no input routing, and the tablet is this machine's
+    only absolute pointer, so an "abs" event has one possible home. Which device that
+    is must be read from QEMU, not assumed, so the driver asks query-mice.
     """
     code = _code(HOST_SCRIPT)
     assert '"type": "abs"' in code, (
@@ -335,18 +342,18 @@ def test_the_clicks_are_absolute_and_addressed_to_the_tablet() -> None:
         "HMP's mouse_move is relative and lands on the PS/2 mouse; using it again is "
         "what kept the wizard on its first page for 45 minutes"
     )
-    assert '"device": TABLET' in code, (
-        "every pointer event must be addressed to the named tablet, not to whatever "
-        "pointer QEMU would pick on its own"
+    assert '"device":' not in code, (
+        "naming a device on an input event aborts QEMU on -vga std (run 39103628321); "
+        "the tablet is the only absolute pointer, so an abs event has one home"
+    )
+    assert "query-mice" in code, (
+        "which pointer is absolute, and which is current, must be read from QEMU and "
+        "written to the evidence rather than assumed"
     )
     assert '-qmp "unix:$WORK/monitor1.sock' in code, (
         "the phase-1 monitor socket must be a QMP one; HMP cannot express an absolute "
         "position. (Phase 2 keeps the human monitor on purpose: it only screendumps "
         "the greeter and never touches the pointer.)"
-    )
-    # The tablet's id is what the driver addresses it by: the two must not drift apart.
-    assert 'TABLET_ID=astraos-tablet' in code and 'TABLET = "astraos-tablet"' in code, (
-        "the host's tablet id and the driver's tablet name must be the same device"
     )
 
 
