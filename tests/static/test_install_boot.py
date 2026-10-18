@@ -294,7 +294,6 @@ def test_the_install_unit_is_enabled_and_wanted_by_the_desktop_target() -> None:
 def test_the_driver_has_a_usb_controller_to_click_with() -> None:
     """usb-tablet needs a USB bus: the exercise's first CI run died without one.
 
-    The driver clicks with absolute coordinates, which is what usb-tablet provides.
     "-device usb-tablet" on a machine with no USB controller makes
     qemu-system-x86_64 exit before the guest boots ("No 'usb-bus' bus found for
     device 'usb-tablet'", run 38919644411), so the controller must be on the command
@@ -307,6 +306,71 @@ def test_the_driver_has_a_usb_controller_to_click_with() -> None:
     )
     assert code.index("qemu-xhci") < code.index("usb-tablet"), (
         "the controller must be defined before the tablet that attaches to it"
+    )
+
+
+def test_the_clicks_are_absolute_and_addressed_to_the_tablet() -> None:
+    """The human monitor cannot say where the pointer is; run 39049818027 proved it.
+
+    HMP's mouse_move is a RELATIVE move (hmp_mouse_move queues
+    qemu_input_queue_rel) and it is delivered to whichever pointer device registered
+    first - the i8042 PS/2 mouse - while the live session's X server follows the
+    absolute usb-tablet. Run 39049818027 therefore clicked Next eleven times and left
+    the wizard on its Welcome page for a full 45 minutes, with every screenshot from
+    02 onward showing that same page, and the verdict could only say that no report
+    arrived.
+
+    So the driver must speak QMP, send "abs" axes, and name the device it is aiming at.
+    These pins keep a relative click from being reintroduced as a "simplification".
+    """
+    code = _code(HOST_SCRIPT)
+    assert '"type": "abs"' in code, (
+        "pointer moves must be absolute QMP input-send-event axes; a relative move is "
+        "not a position"
+    )
+    assert "input-send-event" in code, (
+        "the pointer must be driven through QMP's input-send-event"
+    )
+    assert "mouse_move" not in code, (
+        "HMP's mouse_move is relative and lands on the PS/2 mouse; using it again is "
+        "what kept the wizard on its first page for 45 minutes"
+    )
+    assert '"device": TABLET' in code, (
+        "every pointer event must be addressed to the named tablet, not to whatever "
+        "pointer QEMU would pick on its own"
+    )
+    assert '-qmp "unix:$WORK/monitor1.sock' in code, (
+        "the phase-1 monitor socket must be a QMP one; HMP cannot express an absolute "
+        "position. (Phase 2 keeps the human monitor on purpose: it only screendumps "
+        "the greeter and never touches the pointer.)"
+    )
+    # The tablet's id is what the driver addresses it by: the two must not drift apart.
+    assert 'TABLET_ID=astraos-tablet' in code and 'TABLET = "astraos-tablet"' in code, (
+        "the host's tablet id and the driver's tablet name must be the same device"
+    )
+
+
+def test_the_driver_reports_an_unresponsive_pointer_instead_of_waiting() -> None:
+    """A wizard that did not move must be named in minutes, not after the whole budget.
+
+    The 45 minutes of run 39049818027 were spent watching an untouched Welcome page
+    because nothing could tell the host the walk had failed. The driver now hashes the
+    client area of its first and last screendump, and the host stops waiting when the
+    driver gives up - so the next failure of this kind costs about two minutes.
+    """
+    code = _code(HOST_SCRIPT)
+    assert "def client_digest(" in code, (
+        "the walk must be able to measure whether the client area changed at all"
+    )
+    assert "the clicks did not register" in code, (
+        "an unchanged client area across the whole walk must be named as what it is"
+    )
+    host = _text(HOST_SCRIPT)
+    assert "kill -0 \"$UI_DRIVER_PID\"" in host, (
+        "the wait loop must notice the driver giving up instead of running out the clock"
+    )
+    assert "the wizard driver stopped before the installer reported" in host, (
+        "a driver that gave up must reach the verdict as its own named problem"
     )
 
 

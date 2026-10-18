@@ -118,13 +118,29 @@ updated. Every step proven in CI or recorded as untested.
   The exercise exists in the source (2026-10-16): `scripts/install-boot-test.sh`
   installs the ISO onto a blank disk by driving the ISO's own Calamares UI over the
   QEMU monitor, then boots that disk alone and requires the image's self-test in its
-  installed mode. Its first CI run (2026-10-16, run 38919644411) failed before the
-  guest ever booted: the driver's `usb-tablet` had no USB controller to attach to
-  and QEMU exited at startup (`No 'usb-bus' bus found for device 'usb-tablet'` in
-  `qemu1.out`). Fixed the same day (`qemu-xhci` on the command line, pinned by
-  `tests/static/test_install_boot.py`); the retry is the proof, and its outcome will
-  be recorded here. The manual procedure in `docs/INSTALLATION_VIRTUALBOX.md` stays
-  either way.
+  installed mode. It has not yet completed an installation, and each run so far has
+  failed for a different, named reason:
+  - Run 38919644411 (2026-10-16) died before the guest booted: the driver's
+    `usb-tablet` had no USB controller to attach to and QEMU exited at startup
+    (`No 'usb-bus' bus found for device 'usb-tablet'` in `qemu1.out`). Fixed the same
+    day — `qemu-xhci` on the command line, pinned by
+    `tests/static/test_install_boot.py`.
+  - Run 39024106426 (2026-10-17) walked the whole wizard and left it on its first
+    page: the driver pressed Return at a Calamares 3.3 that designates no default
+    button. Rewritten to click the widgets' real positions, located in the driver's
+    own screendump.
+  - Run 39049818027 (2026-10-17) clicked eleven times and still left the wizard on
+    its Welcome page for the whole 45-minute budget: the clicks were sent as HMP
+    `mouse_move`, which is a *relative* move delivered to the PC's PS/2 mouse, while
+    the live session's X server follows the absolute `usb-tablet`. Every coordinate
+    went out as a thousand-pixel delta and the pointer pinned itself to a screen
+    corner. The screenshots are the proof — 02 through 09 are the same page with a
+    different clock. Fixed in source by moving the driver to QMP and sending
+    `input-send-event` `abs` axes addressed to the named tablet; the driver now also
+    hashes the client area before and after its walk, so an unresponsive pointer is
+    reported in about two minutes instead of costing 45.
+
+  The manual procedure in `docs/INSTALLATION_VIRTUALBOX.md` stays either way.
 - [x] **Boot menu paths exercised in CI**: syslinux (BIOS) and GRUB-EFI, not only
   the kernel extracted from the ISO. The exercise exists in the source (2026-10-16):
   `scripts/boot-menu-test.sh` boots the ISO with QEMU's own firmware — the host

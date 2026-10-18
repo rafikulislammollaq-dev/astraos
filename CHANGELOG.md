@@ -370,6 +370,36 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- **The install exercise's clicks went to the wrong pointer, in the wrong units, so the
+  wizard sat untouched for 45 minutes and the verdict could only say "no report
+  arrived".** Run 39049818027 (2026-10-17) clicked Next eleven times — through locale,
+  keyboard, the partition page, both password fields, summary and Install — and every
+  screendump from `02-locale` onward is the same **Welcome** page with a different clock
+  in the panel. The coordinates were never the problem: they are right (the Next button
+  is at (1002, 670) and the client area was correctly located at top 170, bottom 690,
+  right 1153). The *delivery* was. `hmp_mouse_move` queues `qemu_input_queue_rel` — it is
+  a **relative** move — and it is delivered to whichever pointer device registered first,
+  the i8042 PS/2 mouse that every PC machine has. The live session's X server follows the
+  absolute `usb-tablet` instead. So "click at (1002, 670)" went out as *move 1002 pixels
+  right and 670 down*, the pointer slammed into a screen corner, and nothing after that
+  could matter. Two independent mistakes hid each other: the monitor could not express an
+  absolute position, and the device it addressed was not the one being read.
+
+  The driver now speaks **QMP** (`-qmp` instead of `-monitor`), and drives the pointer
+  with `input-send-event` `abs` axes addressed to the named tablet
+  (`-device usb-tablet,id=astraos-tablet`, and `"device": TABLET` on every event) — the
+  two axes then mean on the wire exactly what they mean in the code. Screendumps and key
+  typing move to QMP as well (`screendump`, `send-key`). Because the protocol is now
+  request/response, **every command's reply is checked**: a refused command is now named
+  in `ui.log`, where the HMP driver could not tell a delivered click from a dropped one.
+  And the walk finally **measures its own effect**: it hashes the client area of its first
+  and last screendumps, and if the wizard has not moved by the end of it, the driver
+  stops and the host reports an unresponsive pointer in about two minutes — with the
+  host's wait loop now noticing a driver that gives up instead of running out the clock.
+  The region hashed is the client area, not the screen, because the panel clock inside a
+  whole-screen comparison changes every minute and would hide exactly the stall this is
+  meant to catch. Pinned by two new tests in `tests/static/test_install_boot.py`.
+
 - **The install exercise's wizard walk never pressed anything: Return does nothing in
   Calamares, and its clicks aimed at a window that never existed.** Run 39024106426
   drove the whole walk — every page, the users-page typing and all — and its

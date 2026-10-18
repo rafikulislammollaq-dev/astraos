@@ -22,6 +22,34 @@
 #   pictures: the driver reports into the share ("done": rc=<n>) and the structural
 #   log must mention the destructive modules.
 #
+#   POINTER INPUT - WHY QMP, AND WHY THE DRIVER CHECKS ITS OWN WORK
+#     The driver speaks QMP, not the human monitor, because HMP cannot express an
+#     absolute pointer position. HMP's mouse_move is a RELATIVE move, and it is
+#     delivered to whichever pointer device registered first - the i8042 PS/2 mouse
+#     that every PC machine has - while the live session's X server follows the
+#     absolute usb-tablet instead. So a click aimed at Next (1002, 670) went out as
+#     "move a thousand pixels right, six hundred down", the pointer slammed into a
+#     screen corner, and nothing the driver did afterwards could matter.
+#
+#     Run 39049818027 (2026-10-17) measured the cost: eleven clicks and 45 minutes
+#     later the wizard was still on its Welcome page, and every screenshot from 02
+#     onward was that same page with a different clock in the panel. Nothing in the
+#     verdict could say so - the only question the host could answer was whether the
+#     guest wrote its report, and it had not, so the run reported "the installer
+#     never wrote its report" and said nothing about why.
+#
+#     Three things follow, and all three are in the driver now:
+#       * pointer moves are QMP input-send-event "abs" events addressed to the named
+#         usb-tablet, so the coordinates mean what they say and reach the device the
+#         guest is actually reading;
+#       * every QMP reply is checked, so a refused command is named in the evidence
+#         instead of passing silently - the HMP driver could not tell the difference
+#         between a delivered click and a dropped one;
+#       * the walk measures its own effect: the client area of the first and last
+#         screendumps are hashed, and if the wizard has not changed by the end of it,
+#         the driver stops and the host is told, in about two minutes, what an
+#         unresponsive pointer costs instead of 45.
+#
 #   Phase 2 - boot the result. The installed disk image is converted, loop-mounted on
 #   this host, and its GRUB configuration is edited to add the serial console and the
 #   installed-mode switches to every kernel line (the guest's self-test reads them
@@ -291,10 +319,18 @@ say "creating a blank 20 GiB disk"
 qemu-img create -f qcow2 "$WORK/disk.qcow2" 20G
 
 say "phase 1: booting the live medium to install it onto the blank disk"
+# The tablet is named so the driver can address it: input events are sent to this exact
+# device, not to "whatever pointer QEMU picks first".
+TABLET_ID=astraos-tablet
 # usb-tablet is the absolute-positioning pointer the driver clicks with, and a tablet
 # device needs a USB controller to attach to: without qemu-xhci before it QEMU refuses
 # the device at startup ("No 'usb-bus' bus found for device 'usb-tablet'") and dies
 # before the guest ever boots.
+#
+# QMP, NOT HMP - the monitor protocol is the fix for a bug that cost this exercise a
+# 45-minute run (see the header's POINTER INPUT section). HMP's mouse_move is relative
+# and lands on the PS/2 mouse; QMP's input-send-event takes abs axes and a device name,
+# which is exactly what this driver means.
 qemu-system-x86_64 "${ACCEL[@]}" \
     -m 4096 -smp 4 -vga std \
     -cdrom "$ISO" \
@@ -304,9 +340,9 @@ qemu-system-x86_64 "${ACCEL[@]}" \
     -nic user,model=e1000 \
     -display none -no-reboot \
     -serial "file:$WORK/serial1.log" \
-    -monitor "unix:$WORK/monitor1.sock,server,nowait" \
+    -qmp "unix:$WORK/monitor1.sock,server,nowait" \
     -device qemu-xhci \
-    -device usb-tablet \
+    -device "usb-tablet,id=$TABLET_ID" \
     >"$WORK/qemu1.out" 2>&1 &
 QEMU_PID=$!
 
@@ -314,13 +350,27 @@ QEMU_PID=$!
 # One screendump before every action; the pass condition stays the guest's own report.
 mkdir -p "$WORK/shots"
 cat > "$WORK/drive-ui.py" <<'PY'
-# Drives the live installer's Calamares window over QEMU's monitor. The Next button is
-# clicked through every page whose defaults are already correct (Calamares never marks
-# a default button, so Return does nothing), and the users page gets the generated
-# password typed into its two password fields. Every step starts with a screendump, so
-# a wrong coordinate is visible in the evidence instead of being guessed about; the
-# client area is located in the first one, because the window's position is the window
-# manager's to decide.
+# Drives the live installer's Calamares window over QEMU's QMP socket. The Next button
+# is clicked through every page whose defaults are already correct (Calamares never
+# marks a default button, so Return does nothing), and the users page gets the
+# generated password typed into its two password fields. Every step starts with a
+# screendump, so a wrong coordinate is visible in the evidence instead of being guessed
+# about; the client area is located in the first one, because the window's position is
+# the window manager's to decide.
+#
+# WHY QMP AND NOT HMP
+#   The pointer is driven with absolute axes through input-send-event, addressed to the
+#   named usb-tablet. The human monitor cannot express that: HMP's mouse_move is a
+#   RELATIVE move (hmp_mouse_move queues qemu_input_queue_rel) delivered to whichever
+#   pointer registered first - the i8042 PS/2 mouse, which this machine also has and
+#   which the live session's X server does not read, because libinput prefers the
+#   absolute tablet. Run 39049818027 spent its whole 45-minute budget that way: every
+#   "absolute" coordinate went out as a thousand-pixel delta, the pointer pinned itself
+#   to a screen corner, and the wizard never left its Welcome page. The evidence is the
+#   screenshots - 02 through 09 are the same page with a different clock. So the
+#   transport is QMP, every command's reply is checked, and the walk proves it moved.
+import hashlib
+import json
 import os
 import socket
 import sys
@@ -328,6 +378,8 @@ import time
 
 serial_path, monitor_path, shots_dir, done_path = sys.argv[1:5]
 password = os.environ.get("INSTALL_TEST_PASSWORD", "")
+# Must match the -device usb-tablet,id=... on the phase-1 QEMU command line above.
+TABLET = "astraos-tablet"
 
 log = open(os.path.join(shots_dir, "ui.log"), "w", buffering=1)
 
@@ -353,15 +405,75 @@ if sock is None:
     say("cannot reach the QEMU monitor; giving up")
     sys.exit(0)
 time.sleep(0.5)
-try:
-    sock.recv(65536)  # the monitor's greeting
-except OSError:
-    pass
+
+# QMP is JSON, and asynchronous: the server greets with a "QMP" object, may interleave
+# events at any point, and only answers a command with an object carrying "return" or
+# "error". Buffering is decoded one whole JSON value at a time rather than one line,
+# because a reply is a single line only while QEMU's pretty printing is off - and
+# reading by line is how a driver silently desynchronises itself from the monitor.
+_buffer = b""
+_decoder = json.JSONDecoder()
 
 
-def hmp(command, pause=0.3):
-    sock.sendall((command + "\n").encode())
-    time.sleep(pause)
+def read_message():
+    """The next QMP message, or None when the monitor closes."""
+    global _buffer
+    while True:
+        text = _buffer.decode("utf-8", "replace").lstrip()
+        if text:
+            try:
+                message, consumed = _decoder.raw_decode(text)
+            except ValueError:
+                pass  # a partial object; wait for the rest of it
+            else:
+                _buffer = text[consumed:].encode("utf-8")
+                return message
+        try:
+            chunk = sock.recv(65536)
+        except OSError:
+            return None
+        if not chunk:
+            return None
+        _buffer += chunk
+
+
+def qmp(execute, arguments=None, pause=0.3):
+    """One QMP command. Returns its "return", or None if QEMU refused it.
+
+    The old HMP driver could not tell a rejected command from a delivered one, which is
+    why a broken pointer went unreported for 45 minutes. Every failure is named here.
+    """
+    request = {"execute": execute}
+    if arguments:
+        request["arguments"] = arguments
+    try:
+        sock.sendall((json.dumps(request) + "\n").encode())
+    except OSError:
+        say("the monitor closed while sending %s" % execute)
+        return None
+    while True:
+        message = read_message()
+        if message is None:
+            say("the monitor closed while waiting for %s" % execute)
+            return None
+        if "event" in message:
+            continue  # an asynchronous event, not our answer
+        if "error" in message:
+            say("%s was refused: %s" % (execute, message["error"].get("desc", message["error"])))
+            return None
+        if "return" in message:
+            time.sleep(pause)
+            return message["return"]
+
+
+greeting = read_message()
+if greeting is None or "QMP" not in greeting:
+    say("the monitor did not greet as QMP; the socket is not a -qmp one")
+    sys.exit(0)
+if qmp("qmp_capabilities") is None:
+    say("QMP refused the capabilities handshake; no command will be sent")
+    sys.exit(0)
+say("QMP ready (tablet %s)" % TABLET)
 
 
 def serial_text():
@@ -391,7 +503,7 @@ def shot_path(name):
 
 def shot(name):
     path = shot_path(name)
-    hmp("screendump %s" % path, pause=2.5)
+    qmp("screendump", {"filename": path}, pause=2.5)
     for _ in range(10):
         if os.path.exists(path):
             try:
@@ -461,15 +573,91 @@ def client_rect(path):
     return {"top": top, "bottom": bottom, "right": right}
 
 
+def client_digest(path, rect):
+    """A fingerprint of the client area alone (a P6 PPM), or None if it cannot be read.
+
+    The region the wizard occupies, hashed: two dumps that agree on this are the same
+    page, however much the desktop around them (the clock, a blinking cursor) has moved
+    on. That is the difference between "the clicks did nothing" and "the screen is not
+    frozen", which a whole-screen byte comparison cannot tell apart.
+    """
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError:
+        return None
+    fields = []
+    pos = 0
+    while len(fields) < 4 and pos < len(data):
+        while pos < len(data) and data[pos:pos + 1].isspace():
+            pos += 1
+        start = pos
+        while pos < len(data) and not data[pos:pos + 1].isspace():
+            pos += 1
+        fields.append(data[start:pos])
+    try:
+        width, height = int(fields[1]), int(fields[2])
+    except (IndexError, ValueError):
+        return None
+    pos += 1
+    stride = width * 3
+    left, right = 0, min(rect["right"], width)
+    top = max(0, rect["top"])
+    bottom = min(rect["bottom"], height)
+    digest = hashlib.sha256()
+    for y in range(top, bottom):
+        start = pos + y * stride + left * 3
+        digest.update(data[start:start + (right - left) * 3])
+    return digest.hexdigest()
+
+
+def pointer_to(x, y):
+    """Put the pointer at a screen position, absolutely, on the tablet.
+
+    These are the coordinates the driver means: the pixel column and row. Sent as "abs"
+    to the named device, they mean the same thing on the wire that they mean here.
+    """
+    return qmp(
+        "input-send-event",
+        {
+            "device": TABLET,
+            "events": [
+                {"type": "abs", "data": {"axis": "x", "value": x}},
+                {"type": "abs", "data": {"axis": "y", "value": y}},
+            ],
+        },
+        pause=0.4,
+    )
+
+
 def click(x, y):
-    hmp("mouse_move %d %d" % (x, y), pause=0.4)
-    hmp("mouse_button 1", pause=0.2)
-    hmp("mouse_button 0", pause=0.5)
+    """Move, then press, then release - three commands, as the tablet wants them.
+
+    The press and the release are separate so the guest is given a real interval
+    between them; a single batch arrives as one transition and some toolkits read a
+    zero-length press as no press at all.
+    """
+    if pointer_to(x, y) is None:
+        return False
+    down = qmp(
+        "input-send-event",
+        {"device": TABLET, "events": [{"type": "btn", "data": {"down": True, "button": "left"}}]},
+        pause=0.2,
+    )
+    if down is None:
+        return False
+    return qmp(
+        "input-send-event",
+        {"device": TABLET, "events": [{"type": "btn", "data": {"down": False, "button": "left"}}]},
+        pause=0.5,
+    ) is not None
 
 
 def type_text(text):
+    # The password is lower-case letters and digits, which are QKeyCode names as they
+    # stand, so each character is one send-key. Nothing is echoed into the log.
     for char in text:
-        hmp("sendkey %s" % char, pause=0.08)
+        qmp("send-key", {"keys": [{"type": "qcode", "data": char}]}, pause=0.08)
 
 
 say("waiting for the install driver to start Calamares")
@@ -503,6 +691,10 @@ else:
 next_at = (client["right"] - 151, client["bottom"] - 20)
 say("Next button target: %d,%d" % next_at)
 
+# What the wizard looks like before it is touched: the reference the walk is judged
+# against, so that "the clicks did nothing" is a measurement rather than an assumption.
+welcome_digest = client_digest(shot_path("01-welcome"), client)
+
 # Pages whose defaults are already correct are simply clicked through. The partition
 # page arrives with the one blank disk already selected and Erase pre-selected
 # (initialPartitioningChoice in the CI seed), and the summary page has no confirmation
@@ -524,13 +716,13 @@ for name, settle in (("02-locale", 10.0), ("03-keyboard", 10.0),
 password_at = (client["right"] - 726, client["top"] + 224)
 confirm_at = (client["right"] - 521, client["top"] + 224)
 
-hmp("mouse_move %d %d" % password_at, pause=0.4)
+pointer_to(*password_at)
 shot("05a-pointer-password")
 click(*password_at)
 type_text(password)
 shot("06-password-typed")
 
-hmp("mouse_move %d %d" % confirm_at, pause=0.4)
+pointer_to(*confirm_at)
 shot("06a-pointer-confirm")
 click(*confirm_at)
 type_text(password)
@@ -545,6 +737,20 @@ shot("08-summary")
 click(*next_at)
 time.sleep(15.0)
 shot("09-install")
+
+# PROVE THE POINTER MOVED, instead of assuming it did. Run 39049818027 clicked eleven
+# times and the wizard was still on Welcome when the budget ran out; the driver had no
+# way to notice, so the verdict could only be "the installer never wrote its report".
+# The panel's clock is inside the compared region and changes every minute, so the
+# whole-screen bytes never match; the client area's are hashed instead, and that region
+# is the wizard itself. Unchanged across the whole walk means the clicks changed
+# nothing - so stop now, name it, and let the host judge it in seconds.
+walk_digest = client_digest(shot_path("09-install"), client)
+if walk_digest is not None and walk_digest == welcome_digest:
+    say("the wizard's client area is unchanged from the welcome page after the whole "
+        "walk: the clicks did not register (pointer input is not reaching the guest)")
+    sys.exit(0)
+say("the wizard moved off the welcome page; the click walk registered")
 
 # The installation itself (unpacking the image onto an emulated disk) is the long part.
 # One screendump per minute until the guest writes its report; the report, not the
@@ -575,8 +781,21 @@ UI_DRIVER_PID=$!
 # --- 5. wait for the installer's report ------------------------------------------------
 deadline=$(( $(date +%s) + TIMEOUT_MINUTES * 60 ))
 init_failure=""
+driver_failure=""
 while : ; do
     if [ -s "$WORK/seed/done" ]; then
+        break
+    fi
+    # The driver walks the wizard first and only then watches for the report. When it
+    # gives up on that walk it knows something the host cannot see from the outside, and
+    # the remaining budget would only be spent watching a wizard nobody is driving.
+    # Run 39049818027 paid 45 minutes this way against a wizard that had never left its
+    # first page. The driver logs its own reason to shots/ui.log, which is evidence.
+    if [ -z "$driver_failure" ] && ! kill -0 "$UI_DRIVER_PID" 2>/dev/null; then
+        wait "$UI_DRIVER_PID" 2>/dev/null || true
+        driver_failure="the wizard driver stopped before the installer reported"
+        say "$driver_failure; its last words were:"
+        tail -n 3 "$WORK/shots/ui.log" 2>/dev/null | sed 's/^/install-boot:   /' || true
         break
     fi
     if grep -qE 'BOOT FAILED!|Kernel panic' "$WORK/serial1.log" 2>/dev/null; then
@@ -652,6 +871,8 @@ fi
 problems=()
 if [ -n "$init_failure" ]; then
     problems+=("phase 1: ${init_failure}")
+elif [ -n "$driver_failure" ]; then
+    problems+=("phase 1: ${driver_failure}")
 elif [ "$phase1_ok" -ne 1 ]; then
     if [ -z "$phase1_rc" ]; then
         problems+=("phase 1: the installer never wrote its report")

@@ -65,12 +65,18 @@ hardware.** What has happened, with the record:
 An automated end-to-end exercise now exists in the source (2026-10-16):
 `scripts/install-boot-test.sh`, run by CI as the `install-boot` job, installs the ISO
 onto a blank disk by driving the ISO's own Calamares UI over the QEMU monitor and then
-boots that disk alone. It has run four times and **has not yet completed an
+boots that disk alone. It has run five times and **has not yet completed an
 installation** — startup failures first, then a wizard that never advanced because the
-driver pressed Return at a Calamares that marks no default button. The driver now
-clicks the widgets' real positions inside the client area it finds in its own
-screendump, and that rebuild is under test. Until a green run exists, nothing in this
-section changes.
+driver pressed Return at a Calamares that marks no default button, then (run
+39049818027, 2026-10-17) a wizard that still never advanced because the clicks were
+sent through the human monitor, whose `mouse_move` is a *relative* move aimed at the
+PC's PS/2 mouse rather than the absolute `usb-tablet` the live session actually reads.
+That run's evidence is unambiguous: every screendump from 02 onward is the same
+Welcome page with a different clock, and the verdict could only report that no report
+arrived. The driver now speaks QMP, sends absolute pointer events to the named tablet,
+checks every reply, and hashes the client area before and after its click walk so that
+this failure is reported in minutes rather than after the whole budget. Until a green
+run exists, nothing in this section changes.
 
 **Consequence:** statements about the live system booting in a virtual machine, and about
 the live session's networking, are now backed by recorded runs. Everything about
