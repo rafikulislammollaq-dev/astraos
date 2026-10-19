@@ -1,0 +1,52 @@
+name: Probe KVM on the runner
+
+# Throwaway diagnostic: does a GitHub ubuntu-24.04 runner offer /dev/kvm, and can
+# qemu-system-x86_64 actually use it? scripts/install-boot-test.sh gates on
+# `[ -w /dev/kvm ]` and falls back to TCG emulation, which is the difference between a
+# ~5 minute install and a ~45 minute one. Delete this workflow once it has answered.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Look at /dev/kvm
+        run: |
+          echo "=== /dev/kvm ==="
+          ls -l /dev/kvm 2>&1 || echo "ABSENT"
+          echo "=== identity ==="
+          id
+          echo "=== writable as this user? ==="
+          if [ -w /dev/kvm ]; then echo "WRITABLE"; else echo "NOT-WRITABLE"; fi
+          echo "=== cpu flags ==="
+          grep -m1 -o -E 'vmx|svm' /proc/cpuinfo || echo "no vmx/svm flag"
+          echo "=== kvm modules ==="
+          lsmod | grep -i kvm || echo "no kvm modules loaded"
+
+      - name: Can qemu use it
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86
+          echo "=== qemu with -accel kvm, before any chmod ==="
+          out=$(timeout 12 qemu-system-x86_64 -accel kvm -display none -monitor none \
+                  -serial null -m 256 -S 2>&1)
+          rc=$?
+          echo "rc=$rc"
+          echo "$out"
+          echo "rc=124 means it started and was timed out -> KVM WORKS"
+
+      - name: Retry after chmod
+        run: |
+          echo "=== try chmod 666 ==="
+          sudo chmod 666 /dev/kvm 2>&1 || echo "chmod failed"
+          sudo setfacl -m u:"$USER":rw /dev/kvm 2>&1 || echo "setfacl unavailable or failed"
+          if [ -w /dev/kvm ]; then echo "WRITABLE-AFTER-CHMOD"; else echo "STILL-NOT-WRITABLE"; fi
+          echo "=== qemu with -accel kvm, after chmod ==="
+          out=$(timeout 12 qemu-system-x86_64 -accel kvm -display none -monitor none \
+                  -serial null -m 256 -S 2>&1)
+          rc=$?
+          echo "rc=$rc"
+          echo "$out"
+          echo "rc=124 means it started and was timed out -> KVM WORKS"
