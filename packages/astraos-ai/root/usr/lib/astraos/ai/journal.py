@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     goal          TEXT NOT NULL,
     steps         TEXT NOT NULL,
     status        TEXT NOT NULL,
+    provenance    TEXT NOT NULL DEFAULT 'user',
     step_index    INTEGER NOT NULL DEFAULT 0,
     attempts      TEXT NOT NULL DEFAULT '{}',
     result        TEXT,
@@ -101,7 +102,15 @@ CREATE TABLE IF NOT EXISTS approvals (
 # it a first-class return (see research 0.2), because a worker that is told to
 # return "I need to ask something, specifically this" as a success returns it,
 # whereas one that treats asking as failing guesses instead.
-STATUSES = ("pending", "running", "ok", "failed", "needs_human", "cancelled")
+STATUSES = (
+    "pending",
+    "running",
+    "paused",
+    "ok",
+    "failed",
+    "needs_human",
+    "cancelled",
+)
 
 
 def _now() -> str:
@@ -157,6 +166,17 @@ class Journal:
         connection.execute("PRAGMA foreign_keys=ON")
         connection.executescript(SCHEMA)
         connection.commit()
+        # A database written by an earlier version has no provenance column, and
+        # SQLite's CREATE TABLE IF NOT EXISTS will not add one. The migration is
+        # here rather than behind a schema version because ALTER TABLE ADD COLUMN
+        # is cheap and the default is the honest reading: a task recorded before
+        # provenance existed came from the user.
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
+        if "provenance" not in columns:
+            connection.execute(
+                "ALTER TABLE tasks ADD COLUMN provenance TEXT NOT NULL DEFAULT 'user'"
+            )
+            connection.commit()
         self._connection = connection
         return connection
 
@@ -187,15 +207,20 @@ class Journal:
     # Tasks
     # ------------------------------------------------------------------
 
-    def add_task(self, goal: str, steps: list[dict]) -> str:
-        """Queue a task. The id is returned so the caller can follow it."""
+    def add_task(self, goal: str, steps: list[dict], provenance: str = "user") -> str:
+        """Queue a task. The id is returned so the caller can follow it.
+
+        provenance travels with the task because a resumed task must be judged by
+        where its plan came from, not by who ran the resume command: a plan written
+        from a document stays a document's plan across a reboot.
+        """
         self._connect()
         task_id = uuid.uuid4().hex[:12]
         now = _now()
         self._connection.execute(
-            "INSERT INTO tasks (id, run_id, goal, steps, status, created_ts,"
-            " updated_ts) VALUES (?,?,?,?, 'pending', ?, ?)",
-            (task_id, self.run_id, goal, json.dumps(steps), now, now),
+            "INSERT INTO tasks (id, run_id, goal, steps, status, provenance,"
+            " created_ts, updated_ts) VALUES (?,?,?,?, 'pending', ?, ?, ?)",
+            (task_id, self.run_id, goal, json.dumps(steps), provenance, now, now),
         )
         self._event("task_added", task_id, {"goal": goal, "steps": len(steps)})
         self._connection.commit()
@@ -314,7 +339,7 @@ class Journal:
         # and the answer that was given.
         rows = self._connect().execute(
             "SELECT * FROM tasks"
-            " WHERE status IN ('pending','running','needs_human')"
+            " WHERE status IN ('pending','running','paused','needs_human')"
             " ORDER BY created_ts"
         ).fetchall()
         return [dict(row) for row in rows]

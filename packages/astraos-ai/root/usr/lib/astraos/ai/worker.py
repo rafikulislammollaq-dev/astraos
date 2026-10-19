@@ -289,7 +289,7 @@ class Worker:
         provenance: str = _guard.TRUSTED_PROVENANCE,
     ) -> dict:
         """Do the one thing the worker named, and report what happened."""
-        task_id = self.journal.add_task(request, [])
+        task_id = self.journal.add_task(request, [], provenance)
         self.journal.set_status(task_id, "running")
         try:
             with self.pool.asking("worker") as engine:
@@ -424,7 +424,7 @@ class Worker:
         provenance: str = _guard.TRUSTED_PROVENANCE,
     ):
         """The one-step path, emitted rather than collected."""
-        task_id = self.journal.add_task(request, [])
+        task_id = self.journal.add_task(request, [], provenance)
         self.journal.set_status(task_id, "running")
         try:
             with self.pool.asking("worker") as engine:
@@ -477,7 +477,7 @@ class Worker:
             yield {"type": "done", **outcome}
             return
 
-        task_id = self.journal.add_task(outcome.get("text") or "planned task", plan)
+        task_id = self.journal.add_task(outcome.get("text") or "planned task", plan, provenance)
         self.journal.set_status(task_id, "running")
 
         for index, step in enumerate(plan, 1):
@@ -696,12 +696,89 @@ class Worker:
             outcome["text"] = "The plan was empty, so nothing was done."
             return outcome
 
-        task_id = self.journal.add_task(outcome.get("text") or "planned task", plan)
+        task_id = self.journal.add_task(outcome.get("text") or "planned task", plan, provenance)
         self.journal.set_status(task_id, "running")
 
         for index, step in enumerate(plan, 1):
             self._on_event({"type": "step-start", "step": step})
             evidence = self._run_step(step, index, task_id, provenance)
+            outcome["plan"].append(step)
+            outcome["evidence"].append(evidence)
+            if not evidence["ok"]:
+                status = self._end_status(evidence)
+                outcome["kind"] = status
+                outcome["text"] = (
+                    evidence["error"]
+                    or "That step did not work, so the rest of the plan was not run."
+                )
+                self.journal.set_status(task_id, status)
+                self.journal.set_result(task_id, None, error=outcome["text"])
+                return outcome
+
+        outcome["kind"] = "action"
+        outcome["text"] = outcome["text"] or "Done."
+        self.journal.set_status(task_id, "ok")
+        self.journal.set_result(task_id, {"text": outcome["text"]})
+        return outcome
+
+    def resume_task(self, task_id: str) -> dict:
+        """Continue a stored plan from where it stopped.
+
+        The journal is the state: the plan, the attempt history and the step index
+        are all on disk, so a reboot is the same event as a crash. The resume point
+        is the last step that did not succeed, not the one after it - a plan whose
+        third step failed must retry the third step, not skip to the fourth.
+
+        A task whose plan came from a document keeps that provenance, so a step
+        that was refused before is refused again rather than becoming trusted by
+        the act of resuming.
+        """
+        outcome = {"kind": "failed", "text": "", "plan": [], "evidence": [], "needs": []}
+        task = self.journal.task(task_id)
+        if task is None:
+            outcome["kind"] = "refuse"
+            outcome["text"] = f"there is no task called {task_id!r}"
+            return outcome
+        if task["status"] in ("ok", "cancelled"):
+            outcome["kind"] = "refuse"
+            outcome["text"] = (
+                f"task {task_id} is already {task['status']}; there is nothing to resume"
+            )
+            return outcome
+
+        try:
+            steps = json.loads(task["steps"] or "[]")
+            attempts = json.loads(task["attempts"] or "{}")
+        except ValueError:
+            steps, attempts = [], {}
+        if not isinstance(steps, list) or not steps:
+            outcome["kind"] = "refuse"
+            outcome["text"] = (
+                f"task {task_id} has no stored plan, so there is no step to resume "
+                "from; it was queued before a plan existed"
+            )
+            return outcome
+
+        index = int(task["step_index"] or 0)
+        start = 1
+        if index > 0:
+            start = index
+            history = attempts.get(str(index)) if isinstance(attempts, dict) else None
+            if isinstance(history, list) and history and history[-1].get("ok"):
+                start = index + 1
+        if start > len(steps):
+            outcome["kind"] = "action"
+            outcome["text"] = "Every step had already run; the task is now marked done."
+            self.journal.set_status(task_id, "ok")
+            self.journal.set_result(task_id, {"text": outcome["text"]})
+            return outcome
+
+        provenance = str(task.get("provenance") or _guard.TRUSTED_PROVENANCE)
+        self.journal.set_status(task_id, "running")
+        for position in range(start, len(steps) + 1):
+            step = steps[position - 1]
+            self._on_event({"type": "step-start", "step": step})
+            evidence = self._run_step(step, position, task_id, provenance)
             outcome["plan"].append(step)
             outcome["evidence"].append(evidence)
             if not evidence["ok"]:

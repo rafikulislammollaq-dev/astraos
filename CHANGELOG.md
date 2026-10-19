@@ -56,6 +56,25 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   include tree), one holding the stored-ISO workflow to the same script, flags, runner
   and artifact so the two cannot drift apart.
 
+- **A stopped task can be resumed, and it remembers where it came from (source; 9
+  tests, 2026-10-19).** The journal already stored the plan before the first step ran,
+  every attempt and the step index, and its comment said that "a crash on step two
+  leaves nothing for a human to resume from" - but nothing read that state back: the
+  list of unfinished tasks was for looking at. `astra-ai resume` now continues one.
+  With no id it lists the tasks that are open (including the new `paused`); with an id
+  it starts at the first step that did not succeed, so a failed third step is retried
+  rather than skipped, and a step that succeeded is not run twice. Resuming needs no
+  model to start: the steps are already decided, and `astra-ai work` and
+  `astra-ai resume` ask the same terminal question through one shared function.
+
+  The task now carries the provenance of its plan. A plan written from a document
+  stays a document's plan after a reboot, so the guard refuses it again rather than
+  treating `resume` as a fresh, trusted request. Journals written before this change
+  get the column by `ALTER TABLE`, reading their old tasks as the user's own; a test
+  opens one and checks it. Nine tests in `tests/static/test_astra_ai_resume.py` cover
+  the retry point, the skip point, the stopped plan, the finished task, the missing
+  plan, provenance, `paused`, the migration, and the shared confirmation.
+
 - **Astra Guard: four permission levels, a refusal of untrusted instructions, and an
   audit chain (source; 13 tests, 2026-10-19).** `docs/ROADMAP.md`, Stage 3 asks for a
   policy engine outside the model and a record that can be inspected afterwards.

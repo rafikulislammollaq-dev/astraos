@@ -66,7 +66,7 @@ proving it rather than asserting it.
 | Astra Core | the distribution: packaging, desktop, boot, recovery | exists; maturity tracked in `README.md` |
 | Astra Engine | local inference: `llama-server`, the model ladder, the JSON worker | partial: builds and runs in CI (emulated Sandy Bridge, 360M smoke model); self-selects the engine build and the ladder rung from the measured profile; per-tier quality numbers still need real hardware |
 | Astra Guard | permissions, sandbox, audit log, undo | partial: four permission levels, prompt-injection discipline and a hash-chained audit log exist and are tested; sandboxing and undo do not |
-| Astra Runtime | task objects: plan → approve → execute → verify, persistence, resume | does not exist (`astra-ai work` is a single structured answer today) |
+| Astra Runtime | task objects: plan → approve → execute → verify, persistence, resume | partial: the journal persists plans, attempts, step index and provenance, and `astra-ai resume` continues a stopped task; approval and verification are still phases inside a step rather than task states |
 | Astra Vault | document index and user-approved memory | does not exist |
 | Astra Missions | the task interface: plans, approvals, results | does not exist |
 | Astra Voice | dictation, wake word, read-aloud | does not exist (`whisper-cli` builds in the engine artifact) |
@@ -445,7 +445,15 @@ report with citations, save it, and show me what changed."
 
 - [ ] **Task objects with a lifecycle** (queued → planning → awaiting approval →
   running → verifying → completed, plus paused / failed / cancelled /
-  needs-attention), persisted and resumable across a reboot.
+  needs-attention), persisted and resumable across a reboot. **Partly implemented
+  2026-10-19**: the journal persists the plan before the first step runs, every
+  attempt, the step index and the plan's provenance, and `astra-ai resume` continues
+  a stopped task at the step that did not succeed (nine tests in
+  `tests/static/test_astra_ai_resume.py`). The statuses pending / running / paused /
+  ok / failed / needs_human / cancelled exist. Still missing: `planning`,
+  `awaiting approval` and `verifying` are phases inside a step rather than states of
+  the task, so a task waiting for a human is not distinguishable in the journal from
+  one that is running.
 - [ ] **A small, reliable tool set for v0**: search and read authorized folders,
   extract text (PDF), compare documents, write into a workspace — and a verifier
   that checks the artifact exists, is well-formed, and that every citation

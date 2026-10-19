@@ -612,6 +612,22 @@ def cmd_stop(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _terminal_confirm(action: str, call_args: dict) -> bool:
+    """Ask the person at this terminal, with the exact action in front of them.
+
+    Nothing dangerous runs on a terminal that cannot ask: the only way to say yes
+    is to type it, and an end of input is a no.
+    """
+    question = ai_worker.question_for(action, call_args)
+    print(f"astra-ai: {question}", file=sys.stderr)
+    print("astra-ai: run it? [y/N] ", end="", file=sys.stderr, flush=True)
+    try:
+        answer = sys.stdin.readline().strip().lower()
+    except (OSError, EOFError):
+        answer = ""
+    return answer in ("y", "yes")
+
+
 def cmd_work(args: argparse.Namespace) -> int:
     """Answer a request with the executor and the middle brain.
 
@@ -626,18 +642,7 @@ def cmd_work(args: argparse.Namespace) -> int:
     """
     settings = config.load_settings()
     pool = tiers.TierPool(settings)
-
-    def confirm(action: str, call_args: dict) -> bool:
-        question = ai_worker.question_for(action, call_args)
-        print(f"astra-ai: {question}", file=sys.stderr)
-        print("astra-ai: run it? [y/N] ", end="", file=sys.stderr, flush=True)
-        try:
-            answer = sys.stdin.readline().strip().lower()
-        except (OSError, EOFError):
-            answer = ""
-        return answer in ("y", "yes")
-
-    agent = ai_worker.Worker(pool, confirm=confirm)
+    agent = ai_worker.Worker(pool, confirm=_terminal_confirm)
     goal = " ".join(args.text).strip()
     outcome = agent.handle(goal)
 
@@ -655,6 +660,67 @@ def cmd_work(args: argparse.Namespace) -> int:
         print(f"astra-ai: {outcome['text']}")
     else:
         print("astra-ai: nothing to report.", file=sys.stderr)
+    return 0 if outcome.get("kind") in ("action", "answer") else 1
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    """Continue a plan that stopped, from the journal rather than from memory.
+
+    The journal stores the plan before the first step runs, so a crash, a reboot
+    or a terminal closed at the wrong moment leaves a task that can be picked up
+    again. With no id the command lists what is open; with one it starts at the
+    first step that did not succeed, so a failed third step is retried rather than
+    skipped over.
+
+    Resuming needs no model of its own to start: the steps are already decided,
+    and a step that needs new arguments asks for them exactly as it did the first
+    time. Confirmation is the same terminal question as `astra-ai work`.
+    """
+    from astraos.ai import journal as journal_module
+
+    journal = journal_module.journal()
+    task_id = (args.task or "").strip()
+
+    if not task_id:
+        open_tasks = journal.unfinished()
+        if not open_tasks:
+            _note("no task is waiting to be resumed")
+            return 0
+        print("tasks that can be resumed:")
+        for task in open_tasks:
+            goal = " ".join(str(task.get("goal", "")).split())
+            if len(goal) > 60:
+                goal = goal[:57] + "..."
+            print(
+                f"  {task['id']}  {task['status']:<11}  step {task['step_index']}"
+                f"  {goal}"
+            )
+        print("")
+        print("continue one with:  astra-ai resume ID")
+        return 0
+
+    task = journal.task(task_id)
+    if task is None:
+        _note(f"there is no task called {task_id!r}")
+        return 2
+
+    settings = config.load_settings()
+    pool = tiers.TierPool(settings)
+    agent = ai_worker.Worker(pool, confirm=_terminal_confirm)
+    outcome = agent.resume_task(task_id)
+
+    if args.json:
+        print(json.dumps(outcome, indent=2, sort_keys=True))
+        return 0 if outcome.get("kind") in ("action", "answer") else 1
+
+    for step in outcome.get("plan", []):
+        print(f"astra-ai: step: {step.get('action')}({step.get('args', {})})",
+              file=sys.stderr)
+    for evidence in outcome.get("evidence", []):
+        if evidence.get("output"):
+            print(f"astra-ai:   -> {evidence['output']}")
+    if outcome.get("text"):
+        print(f"astra-ai: {outcome['text']}")
     return 0 if outcome.get("kind") in ("action", "answer") else 1
 
 
@@ -873,6 +939,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("journal", help="what ran, what failed, what needs a human")
     p.add_argument("--json", action="store_true", help="the summary as JSON")
     p.set_defaults(handler=cmd_journal)
+
+    p = sub.add_parser("resume", help="continue a stored task where it stopped")
+    p.add_argument("task", nargs="?", default="",
+                   help="the task id; omit it to list the tasks that can be resumed")
+    p.add_argument("--json", action="store_true", help="the whole result as JSON, for scripts")
+    p.set_defaults(handler=cmd_resume)
 
     p = sub.add_parser("skills", help="the installed skills, and what each one needs")
     p.add_argument("--json", action="store_true", help="as JSON, for scripts")
