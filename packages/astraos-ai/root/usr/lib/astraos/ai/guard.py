@@ -75,7 +75,9 @@ LEVEL_MEANING = {
 ACTION_LEVELS: dict[str, str] = {
     # observe - the answer is information, not a change
     "list_windows": "observe",
+    "read_file": "observe",
     "screenshot": "observe",
+    "search_files": "observe",
     "tell_battery": "observe",
     "tell_system_info": "observe",
     "tell_time": "observe",

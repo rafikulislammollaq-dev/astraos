@@ -205,6 +205,10 @@ decided outside the model by `astraos/ai/guard.py`, and every decision is record
   request is marked `document`, and only `observe` actions are allowed for it; the rest
   are refused and the refusal is recorded. This is tested with fixtures that order the
   agent to exfiltrate.
+- The file tools (`search_files`, `read_file`) read only the user's Documents, Desktop,
+  Downloads, Pictures, Music and Videos, and the path is resolved before it is checked,
+  so a symlink out of those folders is refused. Reads are `observe` and are recorded;
+  there is no write action yet.
 - The ledger is `$XDG_STATE_HOME/astraos/guard/audit.jsonl`, one JSON line per decision
   and outcome, each carrying the previous record's SHA-256. `astra-guard verify` walks
   the chain and names the first edited or removed record.

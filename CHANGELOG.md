@@ -56,6 +56,29 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   include tree), one holding the stored-ISO workflow to the same script, flags, runner
   and artifact so the two cannot drift apart.
 
+- **The assistant can find and read the user's documents, and only those (source; 8
+  tests, 2026-10-19).** Stage 4's flagship task starts with "find the documents about
+  X", and there was no way to find one. `search_files` walks the user's Documents,
+  Desktop, Downloads, Pictures, Music and Videos for a name, and `read_file` returns a
+  text file from them. Both are `observe` in Astra Guard — a read changes nothing, and
+  the audit log records it — so the model can use them without a confirmation and the
+  user can still see what was read.
+
+  The roots are a short allowlist rather than a denylist of secrets, because a denylist
+  is wrong the moment a new program writes a secret somewhere. The path is resolved
+  *before* the check, so a symlink inside Documents that points at `/etc` resolves to
+  `/etc` and is refused; a file beside Documents is refused even when the path is
+  relative. Binary files are refused rather than decoded into noise, files over 1 MB
+  are refused rather than becoming a one-megabyte answer, and the search stops at 50
+  matches or 20,000 files rather than walking a home directory forever. Tests use
+  `ASTRAOS_FILES_HOME` to point the six folders at a temporary home; a test that reads
+  the developer's own Documents would fail on a machine without one and pass for the
+  wrong reason.
+
+  Not done, and named so it is not assumed: there is no PDF text extraction, no
+  document comparison, no writing into a workspace, and no citation verifier yet. This
+  is the read half of the tool set, not the whole of it.
+
 - **A task has a step budget and a time budget (source; 6 tests, 2026-10-19).**
   `docs/ROADMAP.md`, Stage 4 asks for budgets so a weak model cannot loop forever. A
   plan longer than twelve steps is now refused before it becomes a task — `"The plan

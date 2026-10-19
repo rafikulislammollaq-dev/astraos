@@ -457,7 +457,14 @@ report with citations, save it, and show me what changed."
 - [ ] **A small, reliable tool set for v0**: search and read authorized folders,
   extract text (PDF), compare documents, write into a workspace — and a verifier
   that checks the artifact exists, is well-formed, and that every citation
-  resolves to a real passage.
+  resolves to a real passage. **Partly implemented 2026-10-19**: `search_files`
+  finds a file by name in the user's Documents, Desktop, Downloads, Pictures, Music
+  and Videos, and `read_file` returns a text file from those folders. The roots are
+  checked on the resolved path, so a symlink out of them is refused; binaries and
+  files over 1 MB are refused, and both tools are `observe` in Guard, so every read
+  is in the audit log. The tests are `tests/static/test_astra_ai_files.py`. Still
+  missing: PDF text extraction, comparing documents, writing into a workspace, and
+  the citation verifier.
 - [ ] **The task interface** (Missions) showing real progress from executed steps,
   approvals with targets, artifacts, and unresolved limitations — never invented
   percentages.

@@ -515,6 +515,162 @@ def open_path(path: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Reading the user's own folders
+# ---------------------------------------------------------------------------
+
+# Reading is limited to the folders people keep their own documents in, not the
+# whole home directory. A denylist (never ~/.ssh, never ~/.config) is a list that
+# is wrong the moment a new program writes a secret somewhere; an allowlist of
+# six folders is short enough to explain and to check.
+READ_FOLDERS = ("Documents", "Desktop", "Downloads", "Pictures", "Music", "Videos")
+
+# The largest file read_file returns, and the most files search_files walks.
+# Both are limits on the assistant's appetite, not on the disk.
+MAX_READ_BYTES = 1_000_000
+MAX_SEARCH_FILES = 20_000
+MAX_SEARCH_RESULTS = 50
+
+
+def _files_home() -> Path:
+    """The root of the folders above.
+
+    ASTRAOS_FILES_HOME exists so a test can point the whole thing at a temporary
+    home; it is read at call time for the same reason the audit path is.
+    """
+    return Path(os.environ.get("ASTRAOS_FILES_HOME") or Path.home())
+
+
+def _read_roots() -> list[Path]:
+    home = _files_home()
+    return [home / name for name in READ_FOLDERS]
+
+
+def _authorized(path: str) -> Path:
+    """The resolved path when it is inside one of READ_FOLDERS; otherwise refuse.
+
+    resolve() follows symlinks before the check, so a link inside Documents that
+    points at /etc resolves to /etc and is refused. It does not close the
+    time-of-check/time-of-use gap: a link swapped between this call and the open
+    is a different file. That is a limit worth knowing, not one worth pretending
+    a single-process check can remove.
+    """
+    given = (path or "").strip()
+    if not given:
+        raise ActionError("a path is needed")
+    wanted = Path(given).expanduser()
+    if not wanted.is_absolute():
+        wanted = _files_home() / wanted
+    try:
+        resolved = wanted.resolve()
+    except OSError as exc:
+        raise ActionError(f"{given} cannot be resolved: {exc}") from exc
+    for root in _read_roots():
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            continue
+        try:
+            resolved.relative_to(root_resolved)
+        except ValueError:
+            continue
+        return resolved
+    allowed = ", ".join(f"~/{name}" for name in READ_FOLDERS)
+    raise ActionError(
+        f"{given} is outside the folders this assistant may read ({allowed})"
+    )
+
+
+def search_files(text: str = "", folder: str = "") -> str:
+    """Find files by name in the user's folders.
+
+    File names, not contents: a name search is a directory walk that returns in
+    a moment; a content search over a whole home directory is a different
+    feature with a different cost. The caller reads a file with read_file.
+    """
+    wanted = (text or "").strip().lower()
+    if not wanted:
+        raise ActionError("search_files needs part of a file name")
+
+    if folder:
+        start = _authorized(folder)
+        if not start.is_dir():
+            raise ActionError(f"{folder} is not a folder")
+        roots = [start]
+    else:
+        roots = [root for root in _read_roots() if root.is_dir()]
+
+    matches: list[Path] = []
+    seen = 0
+    stopped = False
+    for root in roots:
+        for base, directories, names in os.walk(root, followlinks=False):
+            directories[:] = [name for name in directories if not name.startswith(".")]
+            for name in names:
+                seen += 1
+                if seen > MAX_SEARCH_FILES:
+                    stopped = True
+                    break
+                if wanted in name.lower():
+                    matches.append(Path(base) / name)
+                    if len(matches) >= MAX_SEARCH_RESULTS:
+                        stopped = True
+                        break
+            if stopped:
+                break
+        if stopped:
+            break
+
+    if not matches:
+        where = folder or "the user's folders"
+        return f"no file name containing {wanted!r} in {where}"
+
+    matches.sort()
+    lines = [f"{len(matches)} file(s) with {wanted!r} in the name:"]
+    for path in matches:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = 0
+        lines.append(f"  {path}  ({size} bytes)")
+    if stopped:
+        lines.append(
+            f"(stopped at {len(matches)} matches or {MAX_SEARCH_FILES} files; "
+            "narrow the search with folder)"
+        )
+    return "\n".join(lines)
+
+
+def read_file(path: str = "") -> str:
+    """Read a text file from one of the user's folders.
+
+    The content is returned unmodified, not summarised: the caller is the one
+    that knows what it is looking for. A binary file is refused rather than
+    decoded into noise, and the size is capped so a video renamed .txt does not
+    become a 4 GB answer.
+    """
+    target = _authorized(path)
+    if not target.exists():
+        raise ActionError(f"no such file: {path}")
+    if not target.is_file():
+        raise ActionError(f"{path} is not a file")
+    try:
+        size = target.stat().st_size
+    except OSError as exc:
+        raise ActionError(f"{path} cannot be read: {exc}") from exc
+    if size > MAX_READ_BYTES:
+        raise ActionError(
+            f"{path} is {size} bytes; read_file reads at most {MAX_READ_BYTES}"
+        )
+    try:
+        raw = target.read_bytes()
+    except OSError as exc:
+        raise ActionError(f"{path} cannot be read: {exc}") from exc
+    if b"\x00" in raw[:4096]:
+        raise ActionError(f"{path} looks like a binary file, not text")
+    return raw.decode("utf-8", "replace")
+
+
+# ---------------------------------------------------------------------------
 # Volume and brightness
 # ---------------------------------------------------------------------------
 
@@ -1256,6 +1412,19 @@ ACTIONS: dict[str, Action] = {
         "open_path", "open a file or folder in its usual application",
         {"path": _string("a path, e.g. ~/Documents or /home/you/report.pdf")},
         False, False, open_path,
+    ),
+    "search_files": Action(
+        "search_files",
+        "find files by name in the user's documents, desktop, downloads, "
+        "pictures, music and videos",
+        {"text": _string("part of the file name"),
+         "folder": _string("one folder to search in, e.g. ~/Documents", required=False)},
+        False, False, search_files,
+    ),
+    "read_file": Action(
+        "read_file", "read a text file from one of the user's folders",
+        {"path": _string("the file's path, as shown by search_files")},
+        False, False, read_file,
     ),
     # Sound
     "volume_up": Action(

@@ -70,6 +70,7 @@ DESCRIPTION = "the assistant's action catalog is complete, and its guards hold"
 # and that is the point - the catalog is a promise to the user, not a detail.
 EXPECTED_ACTIONS = {
     "open_app", "open_url", "open_path",
+    "search_files", "read_file",
     "volume_up", "volume_down", "set_volume", "mute_toggle",
     "set_brightness", "lock_screen", "screenshot",
     "wifi_on", "wifi_off", "bluetooth_on", "bluetooth_off",
