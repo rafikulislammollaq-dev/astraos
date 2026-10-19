@@ -1255,6 +1255,14 @@ if [ "$phase1_ok" -eq 1 ]; then
     say "installed root: $ROOT_PART"
     [ -f "$ROOT_MNT/boot/grub/grub.cfg" ] || die "the installed system has no /boot/grub/grub.cfg to patch"
     "${SUDO[@]}" cp "$ROOT_MNT/boot/grub/grub.cfg" "$WORK/grub-original.cfg"
+    # cp as root keeps the source's mode, and the installed grub.cfg's mode is whatever the
+    # installer left it at. Run 39238238246 found it unreadable to the unprivileged runner,
+    # so the check below grepped a file it had no permission to open and reported "patching
+    # grub.cfg appended nothing" for a grub.cfg that had in fact been patched correctly -
+    # the patch was on the disk, the reading of it was not. Both copies are evidence and
+    # neither holds a secret, so they are made readable here, rather than read through sudo,
+    # and the artifact step can collect them too.
+    "${SUDO[@]}" chmod 0644 "$WORK/grub-original.cfg"
 
     # Every kernel line gets the serial console and the installed-mode switches; the
     # self-test reads the switches from /proc/cmdline. username= is what tells the
@@ -1262,6 +1270,7 @@ if [ "$phase1_ok" -eq 1 ]; then
     patch_append="console=ttyS0,115200n8 astraos.ci=1 astraos.ci.installed=1 username=${ASTRAOS_LIVE_USER}"
     "${SUDO[@]}" sed -i -E "s#^([[:space:]]*linux[[:space:]]+[^[:space:]]+.*)\$#\1 ${patch_append}#" "$ROOT_MNT/boot/grub/grub.cfg"
     "${SUDO[@]}" cp "$ROOT_MNT/boot/grub/grub.cfg" "$WORK/grub-patched.cfg"
+    "${SUDO[@]}" chmod 0644 "$WORK/grub-patched.cfg"
 
     if ! grep -q 'astraos.ci.installed=1' "$WORK/grub-patched.cfg"; then
         die "patching grub.cfg appended nothing; the installed boot would run no self-test"
