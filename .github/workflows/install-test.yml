@@ -1,0 +1,133 @@
+name: Test the installer against a stored ISO
+
+# Why this exists.
+#
+# The install exercise is entirely host-side. The ISO it boots carries the installer,
+# not the driver: `config/live-build/config/includes.chroot` holds only `etc` and `usr`,
+# so nothing under `scripts/` is ever inside the image. A change to the driver, to the
+# driver's tests, or to this project's documents therefore does not change one byte of
+# the ISO -- and paying ~18 minutes of packaging to rebuild an equivalent medium before
+# every single attempt at the installer was the wrong shape for a loop that is expected
+# to run many times.
+#
+# Every `build-iso.yml` run that sets `upload_artifact` already archives the ISO as the
+# `astraos-iso` artifact for fourteen days. This workflow takes that artifact -- from the
+# run named by `run_id`, or from the newest run that has one -- and runs exactly the
+# exercise `build-iso.yml`'s `install-boot` job runs, with no build in front of it.
+#
+# Rebuild the ISO when the ISO's own contents change (packages, hooks, branding, the
+# Calamares modules, the live configuration). Test here when only the driver changed.
+# The driver is the thing under development; the ISO is the thing under test.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run ID holding the astraos-iso artifact (blank = newest run that has one)"
+        required: false
+        default: ""
+      timeout:
+        description: "Minutes each half of the exercise may take"
+        required: false
+        default: "45"
+
+# Reading another run's artifact needs `actions: read`; the default token on a
+# workflow_dispatch may be narrower than that.
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  install-boot:
+    name: Install the stored ISO onto a disk and boot it
+    runs-on: ubuntu-24.04
+    # Two emulated boots with a full Calamares install between them (the long pole),
+    # plus converting and loop-mounting the installed disk on the host. The script
+    # budgets each half by itself (--timeout is per half); this ceiling covers both
+    # halves plus the ISO download and the QEMU install with margin.
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Find a run that holds an ISO
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WANTED: ${{ inputs.run_id }}
+        run: |
+          if [ -n "$WANTED" ]; then
+            echo "run-id=$WANTED" >> "$GITHUB_OUTPUT"
+            echo "Taking the ISO from run $WANTED, as asked."
+            exit 0
+          fi
+          # Newest unexpired astraos-iso artifact, and the run that produced it.
+          # The artifact list is already ordered newest first and omits expired ones.
+          found=$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts?name=astraos-iso&per_page=1" \
+            --jq '.artifacts[0].workflow_run.id // empty')
+          if [ -z "$found" ]; then
+            echo "::error::No unexpired astraos-iso artifact exists. Run build-iso.yml with upload_artifact=true first, or pass run_id."
+            exit 1
+          fi
+          echo "run-id=$found" >> "$GITHUB_OUTPUT"
+          echo "Newest run holding an ISO: $found"
+
+      - name: Download the ISO
+        uses: actions/download-artifact@v4
+        with:
+          name: astraos-iso
+          run-id: ${{ steps.source.outputs.run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: iso
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils imagemagick
+
+      - name: Install the ISO and boot the installed system
+        run: |
+          ls -la iso/
+          ./scripts/install-boot-test.sh --timeout "${{ inputs.timeout }}" \
+            --out install-out iso/*.iso
+
+      - name: Summarise the install exercise
+        if: always()
+        run: |
+          {
+            echo "### Install exercise"
+            echo ""
+            echo "The first boot installs the ISO onto a blank disk through the ISO's"
+            echo "own Calamares UI, driven over the QEMU monitor; the second boots that"
+            echo "disk alone, with no medium attached, and expects the image's own"
+            echo "self-test in its installed mode."
+            echo ""
+            echo "The ISO came from run \`${{ steps.source.outputs.run-id }}\`; no new"
+            echo "image was built for this attempt."
+            echo ""
+            if [ -f install-out/done ]; then
+              echo "- installer report: \`$(cat install-out/done)\`"
+            else
+              echo "- installer report: none was written"
+            fi
+            echo ""
+            echo '```'
+            if [ -f install-out/serial2.log ]; then
+              grep 'ASTRAOS-SMOKE:' install-out/serial2.log \
+                || echo "no self-test output on the installed system's console"
+            else
+              echo "the installed system never wrote to a serial console"
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the install evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astraos-install-test
+          retention-days: 14
+          if-no-files-found: warn
+          path: install-out/

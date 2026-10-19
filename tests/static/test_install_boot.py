@@ -52,6 +52,8 @@ SERVICES_HOOK = (
     / "0400-services.hook.chroot"
 )
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build-iso.yml"
+# The same exercise, run against an ISO that a previous build already archived.
+STORED_ISO_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "install-test.yml"
 PARTITION_CONF = REPO_ROOT / "installer" / "calamares" / "modules" / "partition.conf"
 USERS_CONF = REPO_ROOT / "installer" / "calamares" / "modules" / "users.conf"
 
@@ -481,4 +483,58 @@ def test_a_dead_installer_is_caught_before_the_deadline() -> None:
     assert 'problems+=("phase 1: ${init_failure}")' in code, (
         "an initialization failure must reach the verdict as its own problem, not as "
         "'the installer never wrote its report'"
+    )
+
+
+def test_the_driver_is_not_copied_into_the_image() -> None:
+    """The claim that lets a driver fix skip the build, pinned to the tree.
+
+    `scripts/install-boot-test.sh` and the Python driver inside it run on the host and
+    drive the guest over the monitor. Nothing under `scripts/` is copied into the image
+    -- the include tree carries the live configuration, not the CI harness -- so a change
+    to the driver does not change one byte of the ISO, and rebuilding one to exercise it
+    buys an equivalent medium for roughly eighteen minutes.
+    """
+    assert not (INCLUDES / "scripts").exists(), (
+        "the host-side scripts appeared inside the image's include tree; if the driver "
+        "is ever copied into the image, a stored-ISO exercise no longer tests the same "
+        "thing a rebuild would"
+    )
+    assert INCLUDES not in HOST_SCRIPT.parents, (
+        "the driver must live outside the image's include tree"
+    )
+
+
+def test_a_driver_change_can_be_tested_without_rebuilding_the_iso() -> None:
+    """The stored-ISO workflow must run the same exercise, not a drifting second copy.
+
+    It takes the `astraos-iso` artifact a previous `build-iso.yml` run already archived
+    and hands it to the same script with the same flags, so the only thing it removes is
+    the packaging step in front of the exercise.
+    """
+    workflow = _text(STORED_ISO_WORKFLOW)
+    assert "workflow_dispatch" in workflow, (
+        "the stored-ISO exercise is dispatched by hand"
+    )
+    assert "runs-on: ubuntu-24.04" in workflow, (
+        "the exercise needs the same runner the build workflow's job uses"
+    )
+    assert "./scripts/install-boot-test.sh --timeout" in workflow, (
+        "it must run the exercise the build workflow runs, not a second variant that can "
+        "drift away from it"
+    )
+    assert "install-out iso/*.iso" in workflow, (
+        "it must hand the script an ISO and collect the evidence the same way"
+    )
+    assert "name: astraos-iso" in workflow and "path: iso" in workflow, (
+        "the ISO must come from the archived artifact, unpacked where iso/*.iso resolves"
+    )
+    assert "astraos-install-test" in workflow, (
+        "the evidence keeps the artifact name the build workflow's job uses"
+    )
+    assert "actions: read" in workflow, (
+        "reading another run's artifact needs the actions scope on the default token"
+    )
+    assert "timeout-minutes: 120" in workflow, (
+        "the same per-half budget and ceiling as the build workflow's job"
     )
