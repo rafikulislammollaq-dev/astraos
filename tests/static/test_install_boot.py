@@ -62,6 +62,16 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build-iso.yml"
 # The same exercise, run against an ISO that a previous build already archived.
 STORED_ISO_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "install-test.yml"
 PARTITION_CONF = REPO_ROOT / "installer" / "calamares" / "modules" / "partition.conf"
+BOOTLOADER_CONF = REPO_ROOT / "installer" / "calamares" / "modules" / "bootloader.conf"
+INSTALLER_HOOK = (
+    REPO_ROOT
+    / "config"
+    / "live-build"
+    / "config"
+    / "hooks"
+    / "live"
+    / "0300-installer.hook.chroot"
+)
 USERS_CONF = REPO_ROOT / "installer" / "calamares" / "modules" / "users.conf"
 
 
@@ -229,6 +239,48 @@ def test_the_wizard_is_advanced_by_clicks_and_the_targets_are_found_on_screen() 
             "run 39024106426's screenshots and reproduced against a local Calamares "
             "3.3.14; %s left the driver" % offset
         )
+
+
+def test_the_bootloader_config_states_every_key_its_module_reads() -> None:
+    """Calamares reads ONE config per module: this file replaces its packaged copy.
+
+    So a key the bootloader module reads with no default is either stated in this
+    repository's copy or it is a KeyError part-way through an installation - on a machine
+    whose filesystems have already been written. Run 39230792183 is the bill for that:
+    the installer filled the filesystems, reached job 26 of 27, and stopped on
+
+        ERROR: Error while running: KeyError: 'grubInstall'
+          main.py(654): run_grub_install <- (717): install_grub <- (897): prepare_bootloader
+
+    `grubMkconfig`, `grubCfg`, `grubProbe` and `efiBootMgr` are the next four lookups on
+    the same path (main.py lines 779, 719, 748 and 459) and would have fired in turn, one
+    per attempt. Every key pinned below is one Calamares 3.3.14's own bootloader.conf
+    ships, which is the configuration upstream tests.
+
+    The build hook is pinned too, because it is the half that runs against the *installed*
+    copy: a source tree that keeps the keys proves nothing about an image that has lost
+    them, and the image is what installs a user's machine.
+    """
+    conf = _text(BOOTLOADER_CONF)
+    for key in ("efiBootLoader", "grubInstall", "grubMkconfig", "grubCfg", "grubProbe",
+                "efiBootMgr"):
+        assert re.search(rf"^{key}:[ \t]*\S", conf, re.M), (
+            f"bootloader.conf does not state {key}. Calamares' bootloader module reads it "
+            "with no default - this file replaces the packaged copy rather than extending "
+            "it - so an installation would stop with a KeyError instead of installing a "
+            "bootloader; run 39230792183 stopped on exactly that"
+        )
+
+    hook = _text(INSTALLER_HOOK)
+    assert "grubInstall grubMkconfig grubCfg grubProbe efiBootMgr" in hook, (
+        "0300-installer.hook.chroot must check the installed bootloader.conf for the keys "
+        "the module reads without a default, so that a copy which loses one is refused at "
+        "build time rather than during somebody's installation"
+    )
+    assert "^${key}:[[:space:]]*[^[:space:]]" in hook, (
+        "the hook's bootloader check must require a non-empty value for each key, not "
+        "merely the key's presence"
+    )
 
 
 def test_every_step_of_the_walk_is_proven_rather_than_assumed() -> None:

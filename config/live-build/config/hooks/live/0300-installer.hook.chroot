@@ -218,4 +218,34 @@ else
     fail "users.conf does not require a non-empty password (passwordRequirements: minLength >= 1); the users module accepts an empty password when no requirements are configured"
 fi
 
+# --- Bootloader module --------------------------------------------------------
+# A module config in /etc/calamares/modules REPLACES Calamares' own, it does not extend
+# it: Calamares falls back to the packaged copy under /usr/share/calamares/modules only
+# when there is no file at all. So a key the module reads with no default has to be stated
+# here, and a missing one is not a default - it is a KeyError part-way through an
+# installation, on a machine that has already had its filesystems written.
+#
+# This assertion did not exist, and run 39230792183 is what that cost: the installer filled
+# the filesystems, reached job 26 of 27, and died on
+#
+#   ERROR: Error while running: KeyError: 'grubInstall'
+#     main.py(654): run_grub_install <- (717): install_grub <- (897): prepare_bootloader
+#
+# The four keys after it on the same path (main.py lines 779, 719, 748 and 459) would have
+# fired in turn, one per attempt. All six below are the keys Calamares 3.3.14's own
+# bootloader.conf ships, which is the configuration upstream tests; the image is refused
+# if this repository's copy omits any of them.
+BOOTLOADER_CONF=/etc/calamares/modules/bootloader.conf
+[ -f "$BOOTLOADER_CONF" ] \
+    || fail "bootloader.conf is missing; the installer would install no bootloader at all"
+BOOTLOADER_MISSING=""
+for key in efiBootLoader grubInstall grubMkconfig grubCfg grubProbe efiBootMgr; do
+    grep -qsE "^${key}:[[:space:]]*[^[:space:]]" "$BOOTLOADER_CONF" \
+        || BOOTLOADER_MISSING="${BOOTLOADER_MISSING} ${key}"
+done
+if [ -n "${BOOTLOADER_MISSING}" ]; then
+    fail "bootloader.conf does not state:${BOOTLOADER_MISSING}. Calamares' bootloader module reads these with no default, so the installation would stop with a KeyError instead of installing a bootloader"
+fi
+printf '%s ok    bootloader.conf states every key the bootloader module reads without a default\n' "$PREFIX"
+
 log "installer configuration validated"

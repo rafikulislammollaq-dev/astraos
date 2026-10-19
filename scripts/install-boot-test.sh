@@ -1038,14 +1038,19 @@ while time.time() < deadline:
     qmp("send-key", {"keys": [{"type": "qcode", "data": "shift"}]}, pause=0.3)
     time.sleep(2.0)
     shot("%02d-exec" % number)
-    size = os.path.getsize(shot_path("%02d-exec" % number))
+    # NOT `size`: that name is the module's screen-size dict, which shot() fills in and
+    # to_abs() reads, and rebinding it here broke the very next screendump with
+    # "TypeError: 'int' object does not support item assignment" (run 39230792183, one
+    # minute into a healthy install, which is why the run reported a dead driver instead
+    # of the bootloader failure it actually died of).
+    dump_bytes = os.path.getsize(shot_path("%02d-exec" % number))
     digest = client_digest(shot_path("%02d-exec" % number), client)
-    if size < 20000:
+    if dump_bytes < 20000:
         # A real page of this wizard is about 3.4 MB of PPM; a bare desktop was 6 KB in
         # run 39103628321 and a blanked screen about 300 bytes. Anything this small is not
         # a page, so it is said plainly rather than being read later as a hung install.
         say("%02d-exec is only %d bytes: the guest is drawing no page at all"
-            % (number, size))
+            % (number, dump_bytes))
     elif digest == exec_page:
         unchanged += 1
         if unchanged == 8:
@@ -1145,21 +1150,44 @@ if [ -s "$WORK/seed/done" ]; then
 fi
 
 # The exit code alone is thin evidence about what happened on the disk; the structural
-# log must also show the destructive modules ran. (Quitting at all is already the shape
-# of success: the CI driver sets quit-at-end: true, and the wizard reaches the end of
-# its sequence - and therefore quits by itself - only after the exec phase succeeded; a
-# failed job stops the queue on its error page, nobody clicks anything in CI, and this
-# script's deadline catches it.)
+# log must also show the destructive modules ran. It has to be, because rc=0 does NOT mean
+# the install succeeded - run 39230792183 proves it, and it also disproves what this
+# comment used to claim. The bootloader job failed, Calamares put up its error page,
+# nobody clicked anything, and it exited 0 on its own within seconds:
+#
+#   ERROR: Installation failed: "Bad main script file"
+#   Calamares will quit when the dialog closes.
+#   Shutting down Calamares... Finished shutdown.
+#
+# So the log is the only evidence that the queue reached its end, and it has to be a log
+# that exists. The structured session log is preferred; Calamares' console transcript
+# (`calamares -d`) is the fallback, and it carries the same `Starting job "x" ( n / 27 )`
+# lines. Requiring a file that is never written would not make this exercise stricter, it
+# would make it unpassable - which is exactly what happened here: this loop reported
+# `unpackfs bootloader` missing from a session log that did not exist, while both names
+# were sitting in the console log next to it. Which file was read is said out loud.
 phase1_ok=0
 if [ "$phase1_rc" = "0" ]; then
-    missing=""
-    for token in unpackfs bootloader; do
-        grep -q "$token" "$WORK/seed/calamares-session.log" 2>/dev/null || missing="$missing $token"
+    install_log=""
+    for candidate in "$WORK/seed/calamares-session.log" "$WORK/seed/calamares-console.log"; do
+        if [ -s "$candidate" ]; then
+            install_log="$candidate"
+            break
+        fi
     done
-    if [ -z "$missing" ]; then
-        phase1_ok=1
+    if [ -z "$install_log" ]; then
+        say "the installer exited 0 and left no Calamares log at all; there is nothing to check that against"
     else
-        say "the installer exited 0 but its session log never mentions:$missing"
+        say "reading ${install_log##*/} for the modules that must have run"
+        missing=""
+        for token in unpackfs bootloader; do
+            grep -q "$token" "$install_log" 2>/dev/null || missing="$missing $token"
+        done
+        if [ -z "$missing" ]; then
+            phase1_ok=1
+        else
+            say "the installer exited 0 but ${install_log##*/} never mentions:$missing"
+        fi
     fi
 fi
 

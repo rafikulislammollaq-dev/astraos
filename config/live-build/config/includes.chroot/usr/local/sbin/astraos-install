@@ -137,11 +137,18 @@ if [ -n "$live_uid" ] && [ -d "/run/user/$live_uid" ]; then
 fi
 
 say "starting calamares"
+# Calamares writes its structured log to $HOME/.cache/calamares/session.log, and this unit
+# runs without a login shell, so HOME was empty in run 39230792183: the file went to
+# "//.cache/calamares/session.log" - its own log line says so verbatim - which is neither of
+# the two places the collector below looked. The host's pass condition reads that file, so
+# no matter how well the installation had gone the exercise could not have passed it. Give
+# calamares a HOME, and keep the empty-HOME path as a candidate anyway.
+export HOME=/root
 calamares -d >> "$SEED/calamares-console.log" 2>&1
 rc=$?
 
 # The structured log is the record of every step the wizard took.
-for candidate in /root/.cache/calamares/session.log /var/log/calamares/session.log; do
+for candidate in /root/.cache/calamares/session.log /.cache/calamares/session.log /var/log/calamares/session.log; do
     if [ -f "$candidate" ]; then
         cp "$candidate" "$SEED/calamares-session.log" 2>/dev/null || true
         break
