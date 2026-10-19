@@ -244,6 +244,7 @@ do_ai_usage() {
     astra ai stop           stop a running assistant
     astra ai say TEXT       speak TEXT through this computer's speakers
     astra ai work TASK      do a task: plan it, run it, verify each step
+    astra ai resume [ID]    continue a task that stopped, from where it stopped
     astra ai journal        what ran, what failed, and what you must decide
     astra ai skills         the installed skills and what each one needs here
     astra ai knowledge WORDS search this computer's own documentation
