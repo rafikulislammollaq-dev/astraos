@@ -18,7 +18,7 @@ Debian release, and not a website pretending to be an operating system.
 | 2 | ISO builds in CI | Yes (Build ISO run 38864588609, 2026-10-16: image built in about 18 minutes, 25/25 structural checks, `structural=PASS`, ISO 2,432,696,320 bytes) |
 | 3 | ISO boots in a virtual machine | **Yes** (VirtualBox by hand, live session, 2026-10-15; QEMU in CI through the ISO's own boot menus on BIOS and UEFI, run 38919644411, 2026-10-16 — the image's own self-test reported PASS, 52 checks, and the captured screenshot carries the HUD — and under OVMF's Secure Boot-enforcing firmware with the Microsoft keys enrolled, run 39028358504, 2026-10-17) |
 | 4 | Network and browser work out of the box | **Network proven in CI** (run 38919644411: NetworkManager active, an IPv4 address, a real name resolved by DNS); **no browser has been launched in a booted image yet** |
-| 5 | Installer runs and installed system boots | Not tested yet |
+| 5 | Installer runs and installed system boots | **Yes** (run 39242006646, 2026-10-19: the ISO installed itself onto a blank disk through its own Calamares UI, the disk booted alone with no ISO attached, reached the LightDM greeter, and the image's self-test passed in installed mode — 51 checks, 0 failed) |
 | 6 | Tested on physical hardware | Not tested yet |
 | 7 | Secure Boot, signed images, stable release | **Secure Boot boots** (run 39028358504, 2026-10-17: the ISO reached the login prompt under OVMF's enforcing firmware with the Microsoft keys, the firmware verifying Microsoft-signed shim and Debian-signed GRUB and kernel); signed images and a stable release are not supported |
 
@@ -88,19 +88,22 @@ Built and proven on GitHub Actions on 2026-10-16 (Build AI engine run #1, about
   smallest in the catalogue: a smoke test of the engine, not a test of the
   ladder's answer quality.)
 
-Not tested: the installer, installing to disk, Wi-Fi, GPUs, physical machines,
-Secure Boot on real hardware, audio, printing, Bluetooth, the SPICE and VMware guest
-tools against those hypervisors' interfaces (the QEMU agent answers the host in CI —
-run 39028358504), and the assistant's web page beyond
-the pairing arc. The installer's CI attempts have not completed an installation:
-QEMU first refused the driver's tablet for want of a USB controller (run 38919644411);
-the retry reached a running Calamares, which exited at startup on a branding key its
-configuration never had (`slideshow`; run 38924527286); and the run after that reached
-a healthy installer whose wizard never advanced — Calamares 3.3 marks no default
-button, so the driver's Return presses did nothing (run 39024106426). All three fixes
-are in the tree — the branding key with a build-time check for it, the USB controller,
-and a walk driver that clicks the widgets' real positions — and the next attempt is in
-flight (run 39038301775).
+The installer is no longer on that list. On 2026-10-19 (run 39242006646) the ISO installed
+itself onto a blank virtual disk through its own Calamares UI, driven over the QEMU
+monitor; the disk then booted alone with no ISO attached, reached the LightDM greeter, and
+the image's self-test passed in installed mode — 51 checks, 0 failed. Getting there took a
+different named defect in every exercise, all recorded in `CHANGELOG.md`; the last two were
+a `bootloader.conf` that replaced Calamares' own without carrying every key its module
+reads, and a `mount` module config that did not exist at all, so the target had no `/dev`
+for `grub-install`. What that run does *not* prove is listed in
+`docs/KNOWN_LIMITATIONS.md`: the installation is virtual, legacy BIOS, one ext4 partition,
+unencrypted, nobody has logged in to the installed system, and no physical machine has run
+any of it.
+
+Not tested: Wi-Fi, GPUs, physical machines, Secure Boot on real hardware, audio, printing,
+Bluetooth, the SPICE and VMware guest tools against those hypervisors' interfaces (the QEMU
+agent answers the host in CI — run 39028358504), and the assistant's web page beyond the
+pairing arc.
 
 ---
 
@@ -131,7 +134,7 @@ live filesystem holds 182,962 files (2,159 MiB extracted).
 | Display manager | LightDM (GTK greeter) |
 | Display server | X11 |
 | Boot splash | Plymouth, AstraOS theme |
-| Installer | Calamares, configured and branded; the CI install exercise has not yet completed an installation — its run history is in `CHANGELOG.md`, and the rebuilt walk driver is under test |
+| Installer | Calamares, configured and branded; CI installs the image onto a blank disk, boots the disk alone, reaches the greeter and passes the self-test in installed mode (run 39242006646, 2026-10-19). Every defect that stood in the way is in `CHANGELOG.md` |
 | Bootloader | GRUB (UEFI) and syslinux (BIOS), hybrid ISO; Debian's signed Secure Boot chain carried, and it boots under OVMF's enforcing firmware in CI (run 39028358504, 2026-10-17) |
 | Networking | NetworkManager with applet, wpa_supplicant |
 | Browser | Firefox ESR |
@@ -167,11 +170,12 @@ the ISO stores the system as a compressed squashfs.
    VirtualBox's own Guest Additions from its CD image — Debian 13 does not package the
    VirtualBox guest utilities, so AstraOS cannot ship them. Right Ctrl releases the
    mouse; inside the terminal copy is Ctrl+Shift+C and paste is Ctrl+Shift+V.
-3. **Physical hardware and the installer are untested.** The image boots in virtual
-   machines — by hand in VirtualBox through the live menu (2026-10-15), and in CI
-   under QEMU through its own boot menus on BIOS and UEFI (run 38913161772) — but
-   nothing has run on physical hardware, no installation has been performed, and
-   Calamares has not been run at all.
+3. **Physical hardware is untested, and the proven installation is one narrow one.** The
+   image boots in virtual machines — by hand in VirtualBox through the live menu
+   (2026-10-15), and in CI under QEMU through its own boot menus on BIOS and UEFI — and in
+   CI it installs onto a blank virtual disk and boots that disk alone (run 39242006646,
+   2026-10-19). That exercise is legacy BIOS, one ext4 partition, no encryption and no
+   swap, and nobody logs in afterwards. Nothing has run on physical hardware.
 4. **The ISO is larger than it needs to be** (about 2.4 GB: APT recommends are on, and
    the codec, Wine and Flatpak sets are included).
 5. **`/etc/os-release` may be overwritten by a future upgrade of Debian's `base-files`.**
@@ -253,10 +257,12 @@ hand with `./scripts/smoke-boot.sh dist/astraos-*.iso` (see `docs/BUILDING.md`).
 
 An `install-boot` job goes further still: it installs the ISO onto a blank disk through
 the ISO's own Calamares UI, driven over the QEMU monitor, then boots the installed disk
-alone and requires the image's self-test in its installed mode. The exercise exists in
-the source as of 2026-10-16 (`scripts/install-boot-test.sh`) and has not yet completed
-an installation — every failure and fix is in `CHANGELOG.md`, with the rebuilt walk
-driver under test; `docs/BUILDING.md` describes it.
+alone and requires the image's self-test in its installed mode. It went green for the first
+time on 2026-10-19 (run 39242006646): the installation completed, the disk booted with no
+ISO attached, the LightDM greeter appeared, and the self-test reported `PASS (51 checks,
+0 failed)` in installed mode. Every failure and fix on the way is in `CHANGELOG.md`;
+`docs/BUILDING.md` describes the exercise, and `.github/workflows/install-test.yml` re-runs
+the same one against a stored ISO when a change is driver-only and needs no rebuild.
 
 ---
 

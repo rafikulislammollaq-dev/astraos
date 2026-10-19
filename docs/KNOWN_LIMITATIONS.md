@@ -69,9 +69,12 @@ hardware.** What has happened, with the record:
 An automated end-to-end exercise now exists in the source (2026-10-16):
 `scripts/install-boot-test.sh`, run by CI as the `install-boot` job, installs the ISO
 onto a blank disk by driving the ISO's own Calamares UI over the QEMU monitor and then
-boots that disk alone. It has run nine times and **has not yet completed an
-installation**. Each failure so far has been a different, named defect rather than a
-recurring one: startup failures first; then a wizard that never advanced because the
+boots that disk alone. **It completed an installation for the first time on 2026-10-19**
+(run 39242006646): the installation ran to the end of its queue with rc=0, the disk
+booted with no ISO attached, the LightDM greeter appeared, and the image's self-test
+reported `PASS (51 checks, 0 failed)` in installed mode. Every exercise before it failed for
+a different, named defect: startup failures first; then a wizard that never advanced
+because the
 driver pressed Return at a Calamares that marks no default button (run 39024106426);
 then clicks that never registered because HMP's `mouse_move` is a *relative* move aimed
 at the PC's PS/2 mouse rather than the absolute `usb-tablet` the live session reads, so
@@ -104,11 +107,12 @@ not leave, instead of reporting that the walk registered — and clicks the part
 page's Erase disk row on the page itself. Until a green run exists, nothing in
 this section changes.
 
-**Consequence:** statements about the live system booting in a virtual machine, and about
-the live session's networking, are now backed by recorded runs. Everything about
-*installing* — the installer, the installed system, disk encryption — and everything about
-*physical hardware* is still a statement of *intent backed by configuration*, not a report
-of a test. UEFI booting and Secure Boot enforcement have crossed that line: the image's
+**Consequence:** statements about the live system booting in a virtual machine, about the
+live session's networking, and about the installer completing an installation and the
+installed system booting on a virtual disk are now backed by recorded runs. What the green
+run does not cover — logging in to the installed system, disk encryption, a UEFI
+installation, physical hardware — is still a statement of *intent backed by configuration*,
+not a report of a test. UEFI booting and Secure Boot enforcement have crossed that line: the image's
 own GRUB entry has carried its kernel to the live system's login prompt under QEMU's own
 firmware (plain UEFI since 2026-10-16), and under OVMF's Secure Boot-enforcing firmware
 with the Microsoft keys enrolled the firmware verified the signed chain and the system
@@ -190,10 +194,10 @@ never on physical hardware.
 | Network recognition in the live session | **CI PASS** (NetworkManager active, IPv4 address, DNS resolution) | Physical hardware |
 | Suspending and resuming | UNTESTED | Bare metal, ideally a laptop |
 | Rebooting and shutting down | **CI, partly** (the self-test powers the machine off cleanly; reboot untested) | Booting the image |
-| Installer launch | UNTESTED | Booting the image |
-| Installer completing on a virtual disk | UNTESTED | A disposable virtual disk |
-| Installed system booting without the ISO | UNTESTED | Completing an installation |
-| Logging in to the installed system | UNTESTED | Completing an installation |
+| Installer launch | **CI PASS** — run 39242006646: Calamares started, the wizard walked every page, and all 27 jobs ran | Booting the image by hand and interacting with it |
+| Installer completing on a virtual disk | **CI PASS** — run 39242006646: the queue finished with rc=0, and the session log records the `unpackfs` and `bootloader` jobs | A second partitioning scheme (UEFI + ESP, LVM, encryption) |
+| Installed system booting without the ISO | **CI PASS** — run 39242006646: the disk booted alone, reached the LightDM greeter, and the self-test passed in installed mode (51 checks, 0 failed) | Booting on physical hardware |
+| Logging in to the installed system | UNTESTED | Completing an installation and logging in as the user the installer created |
 | Software installation and system updates on the installed system | UNTESTED | Completing an installation |
 | Disk encryption through the installer | UNTESTED | A VM, and then verifying with `lsblk` and `cryptsetup status` |
 | Dual-boot alongside an existing system | UNTESTED | A VM with two operating systems |

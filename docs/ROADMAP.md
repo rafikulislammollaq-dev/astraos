@@ -118,12 +118,12 @@ updated. Every step proven in CI or recorded as untested.
   recorded in the items below. The test boots the ISO's kernel with the ISO as its live
   medium; the syslinux and GRUB boot menus are exercised by the `boot-menus` exercise
   below (green in that run).
-- [ ] **Calamares installer end to end in a VM**, and the installed system boots.
-  The exercise exists in the source (2026-10-16): `scripts/install-boot-test.sh`
-  installs the ISO onto a blank disk by driving the ISO's own Calamares UI over the
-  QEMU monitor, then boots that disk alone and requires the image's self-test in its
-  installed mode. It has not yet completed an installation, and each run so far has
-  failed for a different, named reason:
+- [x] **Calamares installer end to end in a VM**, and the installed system boots.
+  **Proven 2026-10-19, run 39242006646** — the last entry below. The exercise exists in
+  the source (2026-10-16): `scripts/install-boot-test.sh` installs the ISO onto a blank
+  disk by driving the ISO's own Calamares UI over the QEMU monitor, then boots that disk
+  alone and requires the image's self-test in its installed mode. Every exercise before
+  the green one failed for a different, named reason:
   - Run 38919644411 (2026-10-16) died before the guest booted: the driver's
     `usb-tablet` had no USB controller to attach to and QEMU exited at startup
     (`No 'usb-bus' bus found for device 'usb-tablet'` in `qemu1.out`). Fixed the same
@@ -216,6 +216,32 @@ updated. Every step proven in CI or recorded as untested.
     install. This one *did* need the ISO rebuilt — the Calamares config is installed into the
     image by the build hook and the installer script lives in `includes.chroot`, unlike
     everything in the two runs above.
+  - Run 39242006646 (2026-10-19, against the stored ISO from run 39238238246) is **green**,
+    and it is the first green install exercise in this repository's history. Calamares ran
+    its queue to 27 of 27 with `rc=0`; the disk booted with no ISO attached; the LightDM
+    greeter appeared; and the self-test reported `PASS (51 checks, 0 failed)` in installed
+    mode. Two defects stood between the previous run and this one, and they are the same
+    shape — configuration that replaced Calamares' own while being incomplete. The
+    bootloader config was missing the five keys its module reads with no default
+    (`grubInstall` first; run 39230792183). And the `mount` module had **no config at all**:
+    the project installs upstream's `calamares` and deliberately not
+    `calamares-settings-debian`, which is where Debian's own `/etc/calamares` tree comes
+    from, so a module config this repository does not ship is *absent* rather than
+    defaulted — and without `extraMounts` the target had no `/dev` for `grub-install`
+    (`cannot find a device for /boot/grub (is /dev mounted?)`, run 39233194012). One host
+    bug followed: `cp` through sudo kept the installed `grub.cfg`'s unreadable mode, so the
+    phase-2 check grepped a file it could not open and reported a correct patch as missing
+    (run 39238238246; fixed in `a6b04d6`). The exercise now records which module configs
+    the medium actually carried, with hashes, so a stale medium is named as a stale medium
+    rather than read as a failed installation.
+
+    **What this green run does not prove**, and nothing below may be inferred from it: the
+    installation was legacy BIOS with one ext4 partition, no encryption and no swap; the
+    disk was virtual; nobody logged in to the installed system (the greeter was
+    photographed, not used); and the installed system carries the *live* image's initramfs,
+    because nothing in the sequence regenerates it — that it boots is something this run
+    measured, not something the design provides. Those gaps are the `UNTESTED` rows in
+    `docs/KNOWN_LIMITATIONS.md`.
 
   The manual procedure in `docs/INSTALLATION_VIRTUALBOX.md` stays either way.
 - [x] **Boot menu paths exercised in CI**: syslinux (BIOS) and GRUB-EFI, not only

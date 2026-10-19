@@ -19,6 +19,24 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The installer installs AstraOS, and the installed disk boots on its own.** Run
+  39242006646 (2026-10-19) is the first green install exercise in this repository's
+  history: the ISO booted, its own Calamares UI was driven through every page, all 27 jobs
+  ran with `rc=0`, the disk then booted **with no ISO attached**, the LightDM greeter
+  appeared, and the image's self-test reported `PASS (51 checks, 0 failed)` in installed
+  mode. Getting there took a different named defect in every exercise; the last two were
+  the bootloader config that replaced Calamares' own incompletely and the `mount` config
+  that did not exist at all (both in `### Fixed` below), and one host-side bug followed
+  (also below). The green run's evidence artifact records which Calamares module configs
+  the medium carried, with hashes, and the hashes of the configs it ran on — so this is a
+  measurement, not a claim.
+
+  **What it does not prove matters as much as what it does.** The installation was legacy
+  BIOS, one ext4 partition, no encryption and no swap; the disk was virtual; the greeter
+  was photographed but nobody logged in; and the installed system boots the *live* image's
+  initramfs, because nothing in the Calamares sequence regenerates one. Those rows stay
+  `UNTESTED` in `docs/KNOWN_LIMITATIONS.md`, and the green run does not move them.
+
 - **A driver fix no longer pays for an ISO rebuild: the exercise can run against a stored
   ISO (source; `.github/workflows/install-test.yml`).** The install exercise is
   host-side — `config/live-build/config/includes.chroot` carries only `etc` and `usr`, so
@@ -391,6 +409,24 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   `libdvdnav4` pulls the read library at the soname the release actually ships.
 
 ### Fixed
+
+- **The install exercise's phase-2 check grepped a file it had no permission to open, and
+  reported a correct patch as missing.** Run 39238238246 completed an installation for the
+  first time — the wizard walked every page, `unpackfs` filled the filesystems, the `mount`
+  module mounted `/dev`, `/proc`, `/sys` and `/run` into the target because it finally had
+  an `extraMounts` list to do it from, `grub-install` found a device for `/boot/grub`, and
+  the installed disk carried a `grub.cfg` — and then failed at:
+
+  ```
+  grep: /tmp/astraos-install.FyODVS/grub-patched.cfg: Permission denied
+  install-boot: patching grub.cfg appended nothing; the installed boot would run no self-test
+  ```
+
+  The patch was on the disk. The *reading* of it was not: `cp` through sudo keeps the
+  installed `grub.cfg`'s mode, the runner is not root, and the check grepped a file it
+  could not open. Both copies are now `chmod 0644` where they are made — they are evidence
+  and hold no secret — which also fixes the artifact step that had been copying them as the
+  unprivileged runner and failing silently (`|| true`) on both.
 
 - **Every installation this project ever attempted died one job short of finishing, and the
   cause was a configuration file that did not exist rather than one that was wrong.** Run
