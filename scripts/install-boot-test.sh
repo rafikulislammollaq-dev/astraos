@@ -199,6 +199,7 @@ cleanup() {
         cp -f "$WORK/seed/calamares-session.log" "$OUT_DIR/calamares-session.log" 2>/dev/null || true
         cp -f "$WORK/seed/settings-installed.conf" "$OUT_DIR/settings-installed.conf" 2>/dev/null || true
         cp -f "$WORK/seed/configs.sha256" "$OUT_DIR/configs.sha256" 2>/dev/null || true
+        cp -f "$WORK/seed/modules-in-image.txt" "$OUT_DIR/modules-in-image.txt" 2>/dev/null || true
         cp -f "$WORK/grub-original.cfg" "$WORK/grub-patched.cfg" "$OUT_DIR/" 2>/dev/null || true
         if [ -f "$WORK/greeter.png" ]; then
             cp -f "$WORK/greeter.png" "$OUT_DIR/greeter.png"
@@ -1188,6 +1189,24 @@ if [ "$phase1_rc" = "0" ]; then
         else
             say "the installer exited 0 but ${install_log##*/} never mentions:$missing"
         fi
+    fi
+
+    # The medium also has to be one that could have worked. The guest records which of the
+    # module configs the exercise cares about the image already carried, and anything absent
+    # is a medium older than the fix - a different verdict from "the installation failed",
+    # which is what it would otherwise be read as. The exercise deliberately does not seed
+    # mount.conf or fstab.conf: a seed copy of a config the image is supposed to ship makes
+    # that difference invisible, and invisible is how the original defect survived.
+    if [ -f "$WORK/seed/modules-in-image.txt" ] && grep -q '^absent' "$WORK/seed/modules-in-image.txt"; then
+        say "the live medium does not carry a module config the installer needs, so it could"
+        say "not have installed anything - this is a medium older than the fix, not a failed"
+        say "installation:"
+        while IFS= read -r line; do
+            case $line in
+                absent*) say "  $line" ;;
+            esac
+        done < "$WORK/seed/modules-in-image.txt"
+        phase1_ok=0
     fi
 fi
 

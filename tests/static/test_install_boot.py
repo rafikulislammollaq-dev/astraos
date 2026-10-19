@@ -63,6 +63,8 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build-iso.yml"
 STORED_ISO_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "install-test.yml"
 PARTITION_CONF = REPO_ROOT / "installer" / "calamares" / "modules" / "partition.conf"
 BOOTLOADER_CONF = REPO_ROOT / "installer" / "calamares" / "modules" / "bootloader.conf"
+MOUNT_CONF = REPO_ROOT / "installer" / "calamares" / "modules" / "mount.conf"
+FSTAB_CONF = REPO_ROOT / "installer" / "calamares" / "modules" / "fstab.conf"
 INSTALLER_HOOK = (
     REPO_ROOT
     / "config"
@@ -239,6 +241,104 @@ def test_the_wizard_is_advanced_by_clicks_and_the_targets_are_found_on_screen() 
             "run 39024106426's screenshots and reproduced against a local Calamares "
             "3.3.14; %s left the driver" % offset
         )
+
+
+def test_the_exercise_seeds_only_the_configs_it_must_rewrite() -> None:
+    """A seed copy of a config the image is supposed to ship would hide the difference.
+
+    The host writes the exercise's presets into the seed and the guest installs them by
+    name; a name in the guest's list that the host never wrote fails before the wizard opens
+    - "cannot install the module presets". The list is short on purpose. partition.conf and
+    users.conf are seeded because the exercise must add switches to them. mount.conf and
+    fstab.conf are not: they are the image's own files, and copying a missing one in would
+    turn "this medium cannot install anything" into a pass against a medium nobody has -
+    which is the shape of the bug that cost run 39233194012. The guest records what the
+    medium carried instead, and the host fails the run on an `absent` line.
+    """
+    host = _code(HOST_SCRIPT)
+    guest = _code(DRIVER)
+
+    copied = set(re.findall(r"modules/([\w.-]+\.conf)", guest))
+    assert copied == {"partition.conf", "users.conf"}, (
+        "the guest's installer must copy exactly the exercise's own presets out of the seed, "
+        f"and nothing the image is meant to ship; it copies {sorted(copied)}"
+    )
+
+    seeded = set(re.findall(r"seed/modules/([\w.-]+\.conf)", host))
+    assert copied <= seeded, (
+        f"scripts/install-boot-test.sh never writes {sorted(copied - seeded)} into the seed, "
+        "so the guest would be told to install a file that does not exist, print 'cannot "
+        "install the module presets' and exit before the wizard opens"
+    )
+
+    assert "modules-in-image.txt" in guest, (
+        "the guest must record which module configs the medium already carried; without it "
+        "the exercise cannot tell a medium older than the fix from an installer that failed"
+    )
+    assert "modules-in-image.txt" in host, (
+        "the host must read the guest's record of the medium's configs and collect it into "
+        "the evidence, or the one signal that distinguishes those two verdicts is discarded"
+    )
+    assert "grep -q '^absent'" in host, (
+        "the host must fail the run when the medium was missing one of those configs, so a "
+        "stale medium cannot be reported as an installer failure"
+    )
+
+
+def test_the_mount_config_makes_the_target_a_usable_chroot() -> None:
+    """`mount` is the module whose missing config kills every installation.
+
+    Nothing in this image supplies a mount module config. The project installs upstream's
+    `calamares` package and deliberately not `calamares-settings-debian`, which is where
+    Debian's own /etc/calamares tree comes from, so a module config this repository does not
+    ship is absent rather than defaulted. The mount module therefore ran with an empty
+    configuration in run 39233194012, its `extraMounts` never happened, and twenty-five jobs
+    had already written the disk when job 26 of 27 stopped:
+
+        .. Running QList("grub-install", "--target=i386-pc", "--recheck", "--force", "/dev/vda")
+        grub-install: error: cannot find a device for /boot/grub (is /dev mounted?)
+
+    `extraMounts` is the only thing that puts those filesystems inside the target, so this
+    pins the list itself rather than the file's existence - and pins the build hook, because
+    the hook is what runs against the copy that gets installed.
+    """
+    conf = _text(MOUNT_CONF)
+    for point in ("/proc", "/sys", "/dev", "/run"):
+        assert re.search(rf"^\s*mountPoint:\s*{point}\s*$", conf, re.M), (
+            f"mount.conf has no extraMounts entry for {point}. Calamares mounts these into "
+            "the target from this list and from nowhere else, so the target would have no "
+            f"{point} when the bootloader is installed - run 39233194012 died of exactly "
+            "that, at job 26 of 27, on a disk it had already partitioned and unpacked onto"
+        )
+
+    assert "for point in /proc /sys /dev /run; do" in _text(INSTALLER_HOOK), (
+        "0300-installer.hook.chroot must refuse an image whose mount.conf has lost one of "
+        "the four special-filesystem mounts, so that losing one is a build failure instead "
+        "of somebody's failed installation"
+    )
+
+
+def test_the_fstab_config_writes_debian_crypttab_options() -> None:
+    """The harmless case of the same mistake, pinned so that it stays harmless.
+
+    The fstab module reads every one of its keys with a default, so job 12 of 27 ran in run
+    39233194012 with no config at all and wrote a usable /etc/fstab. But the default it
+    substitutes is not Debian's: a plain `luks` crypttab entry is not something Debian's
+    cryptsetup-initramfs can use to unlock an encrypted root filesystem, and Calamares' own
+    fstab.conf names `luks,keyscript=/bin/cat` as the value Debian needs.
+    """
+    assert re.search(
+        r"^crypttabOptions:\s*luks,keyscript=/bin/cat\s*$", _text(FSTAB_CONF), re.M
+    ), (
+        "fstab.conf must set crypttabOptions to Debian's value. Calamares' own fstab.conf "
+        "names `luks,keyscript=/bin/cat` as the required setting for Debian and Debian-based "
+        "distributions, and its plain-luks default cannot be unlocked by "
+        "cryptsetup-initramfs"
+    )
+    assert "crypttabOptions: luks,keyscript=/bin/cat" in _text(INSTALLER_HOOK), (
+        "0300-installer.hook.chroot must check the installed fstab.conf for Debian's "
+        "crypttab options"
+    )
 
 
 def test_the_bootloader_config_states_every_key_its_module_reads() -> None:

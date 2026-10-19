@@ -219,11 +219,24 @@ else
 fi
 
 # --- Bootloader module --------------------------------------------------------
-# A module config in /etc/calamares/modules REPLACES Calamares' own, it does not extend
-# it: Calamares falls back to the packaged copy under /usr/share/calamares/modules only
-# when there is no file at all. So a key the module reads with no default has to be stated
-# here, and a missing one is not a default - it is a KeyError part-way through an
-# installation, on a machine that has already had its filesystems written.
+# A module config in /etc/calamares/modules REPLACES Calamares' own, it does not extend it:
+# Calamares reads one file per module, first at /etc/calamares/modules, then at
+# /usr/share/calamares/modules. So a key the module reads with no default has to be stated
+# in the file this repository ships, and a missing one is not a default - it is a KeyError
+# part-way through an installation, on a machine that has already had its filesystems
+# written.
+#
+# And on THIS image the second of those two paths is empty. That is what the Mount section
+# further down had to learn the hard way: the project installs upstream's `calamares` and
+# deliberately not `calamares-settings-debian`, which is where Debian's own /etc/calamares
+# tree comes from (config/package-lists/60-installer.list.chroot explains that choice, and
+# it is the right one). Calamares' own output in run 39233194012 says what it costs:
+#
+#   WARNING: No config file for "mount" found anywhere at
+#   "/src/modules/mount/mount.conf" "/etc/calamares/modules/mount.conf"
+#   "/usr/share/calamares/modules/mount.conf"
+#
+# A module config this repository does not ship is not a packaged default. It is nothing.
 #
 # This assertion did not exist, and run 39230792183 is what that cost: the installer filled
 # the filesystems, reached job 26 of 27, and died on
@@ -247,5 +260,45 @@ if [ -n "${BOOTLOADER_MISSING}" ]; then
     fail "bootloader.conf does not state:${BOOTLOADER_MISSING}. Calamares' bootloader module reads these with no default, so the installation would stop with a KeyError instead of installing a bootloader"
 fi
 printf '%s ok    bootloader.conf states every key the bootloader module reads without a default\n' "$PREFIX"
+
+# --- Mount module ------------------------------------------------------------
+# THE ONE THAT MAKES THE TARGET A CHROOT. A copy of Calamares' own mount.conf, because
+# nothing else in this image supplies one, and its `extraMounts` is the only thing that
+# puts /dev, /proc, /sys and /run inside the target before the destructive phase runs.
+#
+# Run 39233194012 reached job 26 of 27 with twenty-five jobs already written to the disk,
+# and stopped:
+#
+#   .. Running QList("grub-install", "--target=i386-pc", "--recheck", "--force", "/dev/vda")
+#   grub-install: error: cannot find a device for /boot/grub (is /dev mounted?)
+#   ERROR: Installation failed: "Bootloader installation error"
+#
+# So this assertion is not "the file exists". The file did not exist, and nothing said so:
+# it is the four mounts that make the difference between a target Calamares can chroot into
+# and one it cannot, checked because they are the difference.
+MOUNT_CONF=/etc/calamares/modules/mount.conf
+[ -f "$MOUNT_CONF" ] \
+    || fail "mount.conf is missing. Nothing else in this image supplies one, so the mount module would run with an empty configuration, the target would have no /dev, /proc, /sys or /run, and the installation would die at the bootloader - which is exactly what run 39233194012 recorded"
+MOUNT_MISSING=""
+for point in /proc /sys /dev /run; do
+    grep -qsE "^[[:space:]]*mountPoint:[[:space:]]*${point}[[:space:]]*$" "$MOUNT_CONF" \
+        || MOUNT_MISSING="${MOUNT_MISSING} ${point}"
+done
+if [ -n "${MOUNT_MISSING}" ]; then
+    fail "mount.conf has no extraMounts entry for:${MOUNT_MISSING}. Calamares mounts these into the target from this list and from nowhere else; without them grub-install cannot find a device for /boot/grub"
+fi
+printf '%s ok    mount.conf mounts the special filesystems into the target\n' "$PREFIX"
+
+# --- fstab module ------------------------------------------------------------
+# The harmless case of the same mistake. This module reads every one of its keys with a
+# default, so job 12 of 27 ran in run 39233194012 and wrote a usable /etc/fstab - but the
+# default it substitutes is not Debian's, and Debian is what this distribution installs.
+# A plain `luks` crypttab entry is not something Debian's cryptsetup-initramfs can unlock.
+FSTAB_CONF=/etc/calamares/modules/fstab.conf
+[ -f "$FSTAB_CONF" ] \
+    || fail "fstab.conf is missing; the fstab module would write a plain-luks crypttab entry, which Debian's cryptsetup-initramfs cannot use to unlock an encrypted root filesystem"
+grep -qsE '^crypttabOptions:[[:space:]]*luks,keyscript=/bin/cat[[:space:]]*$' "$FSTAB_CONF" \
+    || fail "fstab.conf does not set crypttabOptions: luks,keyscript=/bin/cat, which Calamares' own fstab.conf names as the value Debian and Debian-based distributions need"
+printf '%s ok    fstab.conf writes the crypttab options Debian needs\n' "$PREFIX"
 
 log "installer configuration validated"

@@ -86,6 +86,21 @@ done
 say "live session is up"
 
 # --- prepare the installer (CI-only; everything here dies with the live boot) ---------
+# Which of the exercise's configs the medium already carried, and which it did not. Only the
+# two the exercise rewrites are copied from the seed: mount.conf and fstab.conf are the
+# image's own files, and copying a missing one in would hide the difference between the
+# medium being measured and a medium that does not exist - which is exactly the shape of the
+# bug that made run 39233194012 die at job 26 of 27. The host reads this file and fails the
+# run on an `absent` line rather than letting a stale medium look like a failed install.
+: > "$SEED/modules-in-image.txt"
+for f in partition.conf users.conf mount.conf fstab.conf; do
+    if [ -f "$MODULES/$f" ]; then
+        printf 'image  %-16s %s\n' "$f" "$(sha256sum "$MODULES/$f" | cut -d' ' -f1)"
+    else
+        printf 'absent %-16s -\n' "$f"
+    fi
+done >> "$SEED/modules-in-image.txt"
+
 cp "$SEED/modules/partition.conf" "$SEED/modules/users.conf" "$MODULES/" || {
     say "cannot install the module presets"
     exit 1
@@ -112,7 +127,8 @@ fi
 
 # Evidence of what the installer actually saw, written back through the share.
 cp /etc/calamares/settings.conf "$SEED/settings-installed.conf"
-sha256sum "$MODULES/partition.conf" "$MODULES/users.conf" "$SEED/settings-installed.conf" \
+sha256sum "$MODULES/partition.conf" "$MODULES/users.conf" "$MODULES/mount.conf" \
+    "$MODULES/fstab.conf" "$SEED/settings-installed.conf" \
     > "$SEED/configs.sha256" 2>/dev/null || true
 
 rm -f "$SEED/done" "$SEED/calamares-console.log" "$SEED/calamares-session.log"
