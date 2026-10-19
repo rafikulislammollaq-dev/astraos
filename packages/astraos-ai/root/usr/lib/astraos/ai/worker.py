@@ -94,6 +94,14 @@ TASK_SCHEMA = {
 # the same question with less patience.
 MAX_ATTEMPTS = 2
 
+# A task is bounded before it starts. The numbers are small on purpose: a 1.7B
+# model that has lost the thread writes plans that repeat, and the cost of a
+# wrong plan is the user's time, not the model's. The step limit is a refusal
+# (the plan is never started); the time limit parks the task as "paused", which
+# is resumable, because unfinished work is not failed work.
+MAX_PLAN_STEPS = 12
+MAX_TASK_SECONDS = 900.0
+
 # How long one task may take before the worker stops waiting for it. A task is
 # a single action with a bounded command inside it, so this is a ceiling that
 # catches a hung child process, not a timeout anyone tuned.
@@ -154,10 +162,16 @@ class Worker:
 
     def __init__(self, pool: TierPool, confirm: Confirm | None = None,
                  on_event: Callable[[dict], None] | None = None,
-                 journal: _journal.Journal | None = None):
+                 journal: _journal.Journal | None = None,
+                 clock: Callable[[], float] = time.monotonic,
+                 max_steps: int = MAX_PLAN_STEPS,
+                 max_seconds: float = MAX_TASK_SECONDS):
         self.pool = pool
         self._confirm = confirm
         self._on_event = on_event or (lambda event: None)
+        self._clock = clock
+        self._max_steps = max(1, int(max_steps))
+        self._max_seconds = max(1.0, float(max_seconds))
         # The journal is what makes a run auditable and resumable. It is
         # created here rather than taken from a parameter in the normal case,
         # and passed in by a caller that already has one - the web interface,
@@ -476,11 +490,18 @@ class Worker:
             outcome["text"] = "The plan was empty, so nothing was done."
             yield {"type": "done", **outcome}
             return
+        if self._too_long(plan, outcome):
+            yield {"type": "done", **outcome}
+            return
 
         task_id = self.journal.add_task(outcome.get("text") or "planned task", plan, provenance)
         self.journal.set_status(task_id, "running")
+        deadline = self._clock() + self._max_seconds
 
         for index, step in enumerate(plan, 1):
+            if self._out_of_time(deadline, task_id, index, outcome):
+                yield {"type": "done", **outcome}
+                return
             yield {"type": "step-start", "step": step}
             evidence = self._run_step(step, index, task_id, provenance)
             outcome["plan"].append(step)
@@ -514,6 +535,49 @@ class Worker:
         if evidence.get("needs_confirm") and not evidence.get("confirmed"):
             return "needs_human"
         return "failed"
+
+    # ------------------------------------------------------------------
+    # Budgets: a plan cannot be unbounded, and a task cannot run forever
+    # ------------------------------------------------------------------
+
+    def _too_long(self, plan: list[dict], outcome: dict) -> bool:
+        """True when a plan is longer than one task may be.
+
+        Refused before it becomes a task: a plan that never starts should not
+        leave a row somebody has to dismiss, and "nothing was done, ask for a
+        smaller piece" is clearer than a failed task with thirteen steps beside
+        it.
+        """
+        if len(plan) <= self._max_steps:
+            return False
+        outcome["kind"] = "refuse"
+        outcome["text"] = (
+            f"The plan has {len(plan)} steps and one task runs at most "
+            f"{self._max_steps}. Nothing was started; ask for a smaller piece "
+            "of the job."
+        )
+        return True
+
+    def _out_of_time(
+        self, deadline: float, task_id: str, position: int, outcome: dict
+    ) -> bool:
+        """True when the task's time is spent; parks it where it stopped.
+
+        The status is "paused", not "failed": the work is not wrong, it is
+        unfinished, and `astra-ai resume` continues at the next step. A budget
+        that failed the task would make the journal lie about what happened.
+        """
+        if self._clock() < deadline:
+            return False
+        outcome["kind"] = "paused"
+        outcome["text"] = (
+            f"The task used its {int(self._max_seconds)}-second budget and stopped "
+            f"before step {position}. It is saved; `astra-ai resume {task_id}` "
+            "continues it."
+        )
+        self.journal.set_status(task_id, "paused")
+        self.journal.set_result(task_id, None, error=outcome["text"])
+        return True
 
     # ------------------------------------------------------------------
     # Running a step, and telling the truth about it
@@ -695,11 +759,16 @@ class Worker:
             outcome["kind"] = "refuse"
             outcome["text"] = "The plan was empty, so nothing was done."
             return outcome
+        if self._too_long(plan, outcome):
+            return outcome
 
         task_id = self.journal.add_task(outcome.get("text") or "planned task", plan, provenance)
         self.journal.set_status(task_id, "running")
+        deadline = self._clock() + self._max_seconds
 
         for index, step in enumerate(plan, 1):
+            if self._out_of_time(deadline, task_id, index, outcome):
+                return outcome
             self._on_event({"type": "step-start", "step": step})
             evidence = self._run_step(step, index, task_id, provenance)
             outcome["plan"].append(step)
@@ -758,6 +827,8 @@ class Worker:
                 "from; it was queued before a plan existed"
             )
             return outcome
+        if self._too_long(steps, outcome):
+            return outcome
 
         index = int(task["step_index"] or 0)
         start = 1
@@ -775,7 +846,10 @@ class Worker:
 
         provenance = str(task.get("provenance") or _guard.TRUSTED_PROVENANCE)
         self.journal.set_status(task_id, "running")
+        deadline = self._clock() + self._max_seconds
         for position in range(start, len(steps) + 1):
+            if self._out_of_time(deadline, task_id, position, outcome):
+                return outcome
             step = steps[position - 1]
             self._on_event({"type": "step-start", "step": step})
             evidence = self._run_step(step, position, task_id, provenance)

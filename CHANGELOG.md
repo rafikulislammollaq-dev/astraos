@@ -56,6 +56,23 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   include tree), one holding the stored-ISO workflow to the same script, flags, runner
   and artifact so the two cannot drift apart.
 
+- **A task has a step budget and a time budget (source; 6 tests, 2026-10-19).**
+  `docs/ROADMAP.md`, Stage 4 asks for budgets so a weak model cannot loop forever. A
+  plan longer than twelve steps is now refused before it becomes a task — `"The plan
+  has 13 steps and one task runs at most 12. Nothing was started"` — because a plan
+  that never starts should not leave a row somebody has to dismiss. A task that
+  spends 900 seconds is filed `paused` where it stopped rather than `failed`: the work
+  is unfinished, not wrong, and `astra-ai resume` continues at the next step. Both
+  entry points use the same check — the collected path (`astra-ai work`) and the
+  streaming path (the web page) — since a budget one of them skips is not a budget.
+  The clock is injected, so the tests move it instead of waiting; six of them in
+  `tests/static/test_astra_ai_budget.py` cover the refusal, the plan exactly at the
+  limit, the pause, pausing then resuming to completion, and the streaming path.
+
+  Not done, and named so it is not assumed: there is no memory cap (that needs a
+  cgroup or `setrlimit` around the model server) and no separate tool-call count (a
+  step is the only unit the catalog has).
+
 - **A stopped task can be resumed, and it remembers where it came from (source; 9
   tests, 2026-10-19).** The journal already stored the plan before the first step ran,
   every attempt and the step index, and its comment said that "a crash on step two

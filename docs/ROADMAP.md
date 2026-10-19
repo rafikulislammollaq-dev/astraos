@@ -465,7 +465,12 @@ report with citations, save it, and show me what changed."
   targets are set from measured results, not aspiration; the suite starts smaller
   than the review's suggested one hundred cases and grows.
 - [ ] **Budgets**: time, memory and tool-call limits so a weak model cannot loop
-  forever.
+  forever. **Partly implemented 2026-10-19**: a plan longer than twelve steps is
+  refused before it becomes a task, and a task that spends its 900-second budget is
+  filed `paused` where it stopped — resumable, not failed — through the same check on
+  the collected and the streaming paths (`tests/static/test_astra_ai_budget.py`).
+  Still missing: a memory cap (a cgroup or `setrlimit` around the model server) and a
+  tool-call count (a step is the only unit the catalog has).
 
 ## Stage 5 — Come as you are: migration, familiarity and retention
 
