@@ -73,6 +73,16 @@ def _config_home() -> Path:
     return Path(os.environ.get("XDG_CONFIG_HOME") or (_home() / ".config"))
 
 
+def _state_home() -> Path:
+    """Where the machine keeps what it did, as opposed to what it is set to.
+
+    XDG separates state from configuration for exactly this reason: the audit
+    log is not a setting, and deleting a config file must not delete the record
+    of what was run.
+    """
+    return Path(os.environ.get("XDG_STATE_HOME") or (_home() / ".local" / "state"))
+
+
 class PATHS:
     """The filesystem locations the assistant uses.
 
@@ -86,6 +96,7 @@ class PATHS:
         bin_dir      locally built binaries (llama-server, whisper-cli)
         config_file  the settings file written by save_settings()
         profile_file the machine capability profile written by `astra-ai profile`
+        audit_file   Astra Guard's append-only record of every action decision
 
     Every one is an absolute pathlib.Path. The environment overrides
     exist for testing and for a user who keeps large files on another disk;
@@ -104,6 +115,10 @@ class PATHS:
     )
     profile_file = Path(
         os.environ.get("ASTRAOS_AI_PROFILE") or (_config_home() / "astraos" / "machine.json")
+    )
+    audit_file = Path(
+        os.environ.get("ASTRAOS_GUARD_AUDIT")
+        or (_state_home() / "astraos" / "guard" / "audit.jsonl")
     )
 
 

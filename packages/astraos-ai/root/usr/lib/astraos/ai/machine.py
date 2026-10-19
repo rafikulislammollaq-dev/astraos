@@ -49,6 +49,50 @@ REQUIRED_FLAG = "avx"
 # every machine.
 WATCHED_FLAGS = ("avx", "avx2", "f16c", "fma", "bmi2", "avx512f", "sse4_2")
 
+# The flags the avx2 build is compiled for (setup.py). "avx2" alone is not the
+# question: the build also uses F16C, FMA and BMI2, and a CPU that lists AVX2 but
+# lacks one of those would SIGILL on the first question - the exact failure this
+# profile exists to prevent.
+AVX2_BUILD_FLAGS = ("avx2", "f16c", "fma", "bmi2")
+
+# Headroom kept free after the models are downloaded, so that installing the
+# ladder cannot be the thing that fills the user's disk.
+DISK_HEADROOM_GIB = 1.0
+
+# The ladder rungs, highest first. Each entry is the rung's name, the RAM it needs,
+# the tiers it fills with their model and resident size, and the sentence a person
+# reads. The sizes and floors are docs/AI.md's table, not taste: the 1.7B executor
+# is ~1.0 GB resident and runs on the 4 GB reference machine, the 4B middle brain
+# is ~2.4 GB and wants 6 GB, and the 360M router is ~0.4 GB.
+LADDER_RUNGS: tuple[tuple[str, float, tuple[tuple[str, str, float], ...], str], ...] = (
+    (
+        "full",
+        6.0,
+        (
+            ("worker", "spark-x2.5-1.7b-q4_k_m", 1.0),
+            ("brain", "spark-x2.5-4b-q4_k_m", 2.4),
+            ("router", "smollm2-360m-instruct-q8_0", 0.4),
+        ),
+        "the whole ladder: the executor, the middle brain and the router",
+    ),
+    (
+        "worker",
+        3.5,
+        (
+            ("worker", "spark-x2.5-1.7b-q4_k_m", 1.0),
+            ("router", "smollm2-360m-instruct-q8_0", 0.4),
+        ),
+        "the executor and the router; a request that needs the middle brain is "
+        "handed back to the user instead of being guessed at",
+    ),
+    (
+        "router",
+        2.0,
+        (("router", "smollm2-360m-instruct-q8_0", 0.4),),
+        "the router alone: the assistant can sort a request but cannot act on it",
+    ),
+)
+
 
 def _read(path: Path) -> str:
     """Read a file that may legitimately not exist on this machine."""
@@ -178,6 +222,91 @@ def assess(profile: dict) -> dict:
     return {"rung": rung, "why": why}
 
 
+def recommend(profile: dict) -> dict:
+    """Choose the engine build and the model rung from the measurements.
+
+    Stage 2's promise is that the assistant picks the build and the models itself.
+    This is that choice, and it is a function of the numbers in the profile and
+    nothing else: the flags the CPU reports decide the engine variant, the RAM
+    decides how far up the ladder the machine can go, and the free space decides
+    whether the models fit. It is not a benchmark and does not guess at quality -
+    it says what will run here, not how well it will think.
+    """
+    cpu = profile["cpu"]
+    flags = set(cpu["instructions"])
+    ram = _gib(profile["memory"]["ram_kib"])
+    free = profile["storage"]["free_bytes"] / (1024 ** 3)
+
+    if all(flag in flags for flag in AVX2_BUILD_FLAGS):
+        variant = "avx2"
+        variant_why = (
+            "the CPU lists " + ", ".join(AVX2_BUILD_FLAGS) + ", so the avx2 build runs"
+        )
+    elif REQUIRED_FLAG in flags:
+        variant = "avx"
+        missing = [flag for flag in AVX2_BUILD_FLAGS if flag not in flags]
+        variant_why = (
+            f"the CPU lists {REQUIRED_FLAG} but not {', '.join(missing)}, so the avx "
+            "build is the newest one that cannot SIGILL here"
+        )
+    else:
+        variant = None
+        variant_why = f"the CPU does not report {REQUIRED_FLAG}; no shipped build can run"
+
+    why = [variant_why]
+    if variant is None:
+        return {
+            "rung": "none",
+            "engine_variant": None,
+            "models": [],
+            "summary": "no model: the engine builds this release ships cannot run on this CPU",
+            "quantization": "Q4_K_M",
+            "why": why,
+        }
+
+    for rung, floor_ram, models, summary in LADDER_RUNGS:
+        need = sum(model[2] for model in models) + DISK_HEADROOM_GIB
+        if ram < floor_ram:
+            why.append(
+                f"the {rung} rung wants {floor_ram:.1f} GiB of RAM; this machine has "
+                f"{ram:.1f} GiB"
+            )
+            continue
+        if free < need:
+            why.append(
+                f"the {rung} rung wants {need:.1f} GiB free on / for its models and "
+                f"headroom; this machine has {free:.1f} GiB"
+            )
+            continue
+        why.append(f"{summary} ({need:.1f} GiB of models and headroom)")
+        return {
+            "rung": rung,
+            "engine_variant": variant,
+            "models": [
+                {"tier": tier, "model": model, "resident_gib": resident}
+                for tier, model, resident in models
+            ],
+            "summary": summary,
+            "quantization": "Q4_K_M",
+            "why": why,
+        }
+
+    last = LADDER_RUNGS[-1]
+    last_need = sum(model[2] for model in last[2]) + DISK_HEADROOM_GIB
+    why.append(
+        f"no rung fits: even the {last[0]} rung wants {last[1]:.1f} GiB of RAM and "
+        f"{last_need:.1f} GiB free on /"
+    )
+    return {
+        "rung": "none",
+        "engine_variant": variant,
+        "models": [],
+        "summary": "no model fits this machine",
+        "quantization": "Q4_K_M",
+        "why": why,
+    }
+
+
 def collect(root: Path | str = "/") -> dict:
     """Measure the machine. ``root`` exists so tests can point at a fixture tree."""
     root = Path(root)
@@ -190,6 +319,7 @@ def collect(root: Path | str = "/") -> dict:
         "storage": _storage(root),
     }
     profile["readiness"] = assess(profile)
+    profile["recommendation"] = recommend(profile)
     return profile
 
 
@@ -208,6 +338,11 @@ def plain_words(profile: dict) -> list[str]:
     audio_line = profile["audio"][0] if profile["audio"] else "no cards in /proc/asound"
     accelerator_line = ", ".join(profile["accelerators"]) if profile["accelerators"] else "none found"
     readiness = profile["readiness"]
+    recommendation = profile.get("recommendation") or recommend(profile)
+    variant = recommendation["engine_variant"] or "none"
+    models = ", ".join(
+        f"{entry['tier']} {entry['model']}" for entry in recommendation["models"]
+    ) or "none fit this machine"
     return [
         f"CPU           {cpu['name']} ({cpu['cores']} cores)",
         f"Instructions  {presented}",
@@ -221,6 +356,9 @@ def plain_words(profile: dict) -> list[str]:
         "",
         f"AI readiness  {readiness['rung']} "
         f"(derived from the measurements above: {'; '.join(readiness['why'])})",
+        f"AI rung       {recommendation['rung']} - {recommendation['summary']}",
+        f"Engine build  {variant} (chosen from the flags above)",
+        f"Models        {models}",
     ]
 
 

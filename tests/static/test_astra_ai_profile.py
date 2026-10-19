@@ -13,6 +13,10 @@ What these tests pin, and why:
   * The readiness rung is derived from the measurements against the model
     ladder's documented sizes: the reference machine shape must come out
     "ready", a no-AVX machine "unsupported", a small one "tight".
+  * The recommendation is a pure function of the same numbers: the flags choose
+    the engine build, and the RAM and free space choose how far up the ladder the
+    machine can go. The reference machine must get the avx build and the worker
+    rung - never the 4B middle brain it does not have the RAM to hold.
   * The command (`astra-ai profile`), the first-run write (`astra-ai status`) and
     the boot self-test's live check (`ai-profile`) are parts of one promise and
     are pinned here together.
@@ -227,3 +231,92 @@ def test_the_self_test_text_explains_the_check() -> None:
     text = SELF_TEST.read_text(encoding="utf-8")
     assert "ai-profile" in text
     assert "never as root" in text
+
+
+def test_the_recommendation_chooses_the_build_and_the_rung_from_the_numbers() -> None:
+    """Stage 2's promise: the assistant picks its own build and models.
+
+    The reference machine is the one this distribution is tested on - Sandy Bridge,
+    AVX and no AVX2, 4 GiB of RAM. It must get the avx build (the avx2 build would
+    SIGILL) and the worker rung, and must NOT be told to install the 4B middle
+    brain, which wants 6 GiB. A machine that really has Haswell-class flags and
+    16 GiB is the other half: avx2 and the whole ladder.
+    """
+    machine = _load_machine()
+
+    reference = machine.recommend(_profile())
+    assert reference["engine_variant"] == "avx"
+    assert reference["rung"] == "worker"
+    assert [entry["tier"] for entry in reference["models"]] == ["worker", "router"]
+    assert any("avx" in reason for reason in reference["why"])
+
+    haswell = machine.recommend(
+        _profile(
+            cpu={
+                "name": "test",
+                "cores": 8,
+                "instructions": ["avx", "avx2", "f16c", "fma", "bmi2", "sse4_2"],
+                "missing_instructions": [],
+            },
+            memory={"ram_kib": 16 * 1024 * 1024, "swap_kib": 0},
+        )
+    )
+    assert haswell["engine_variant"] == "avx2"
+    assert haswell["rung"] == "full"
+    assert [entry["tier"] for entry in haswell["models"]] == [
+        "worker",
+        "brain",
+        "router",
+    ]
+
+
+def test_the_recommendation_says_no_rather_than_pretending() -> None:
+    """Every refusal names the number that decided it, and offers no model."""
+    machine = _load_machine()
+
+    no_avx = machine.recommend(
+        _profile(
+            cpu={
+                "name": "test",
+                "cores": 2,
+                "instructions": ["sse4_2"],
+                "missing_instructions": ["avx"],
+            }
+        )
+    )
+    assert no_avx["rung"] == "none"
+    assert no_avx["engine_variant"] is None
+    assert no_avx["models"] == []
+
+    tiny = machine.recommend(_profile(memory={"ram_kib": 1_500_000, "swap_kib": 0}))
+    assert tiny["rung"] == "none" and tiny["models"] == []
+    assert any("RAM" in reason for reason in tiny["why"])
+
+    crowded = machine.recommend(_profile(storage={"free_bytes": 1 * 1024 ** 3}))
+    assert crowded["rung"] == "none" and crowded["models"] == []
+    assert any("free on /" in reason for reason in crowded["why"])
+
+
+def test_the_written_profile_carries_the_choice_and_the_cli_shows_it() -> None:
+    """The choice is written down with the measurements, not recomputed from taste."""
+    machine = _load_machine()
+    profile = _profile()
+    profile["readiness"] = machine.assess(profile)
+    profile["recommendation"] = machine.recommend(profile)
+
+    with tempfile.TemporaryDirectory(prefix="astraos-ai-machine-") as tmp:
+        target = Path(tmp) / "state" / "astraos" / "machine.json"
+        machine.write(profile, target, now="2026-10-19T00:00:00+0000")
+        loaded = machine.load(target)
+    assert loaded is not None
+    assert loaded["recommendation"]["rung"] == "worker"
+    assert loaded["recommendation"]["engine_variant"] == "avx"
+
+    text = "\n".join(machine.plain_words(loaded))
+    assert "AI rung       worker" in text
+    assert "Engine build  avx" in text
+    assert "spark-x2.5-1.7b-q4_k_m" in text
+
+    cli = CLI.read_text(encoding="utf-8")
+    assert "machine.recommend(profile)" in cli
+    assert 'print(f"  ai rung' in cli

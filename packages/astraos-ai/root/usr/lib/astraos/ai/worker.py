@@ -53,6 +53,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 from . import actions as _actions
+from . import guard as _guard
 from . import journal as _journal
 from . import prompt as _prompt
 from .llm import EngineUnavailable
@@ -110,7 +111,21 @@ CONFIRM_QUESTIONS = {
     "reboot": "the assistant wants to restart this machine",
     "suspend": "the assistant wants to suspend this machine",
     "close_window": "the assistant wants to close this window",
+    "type_text": "the assistant wants to type this into the window that has focus",
+    "press_key": "the assistant wants to press this key",
 }
+
+
+def provenance_for(retrieved: str) -> str:
+    """Where this request's instructions came from: the user, or content they read.
+
+    Retrieved documents are data. If one of them contains instruction-shaped text
+    (guard.scan_untrusted), the request is marked untrusted and Astra Guard refuses
+    anything above observe for it. Nothing here decides that a document is
+    malicious - it decides that this request may only read, which is the part a
+    prompt cannot guarantee.
+    """
+    return "document" if _guard.scan_untrusted(retrieved) else _guard.TRUSTED_PROVENANCE
 
 
 def question_for(action: str, args: dict) -> str:
@@ -217,6 +232,7 @@ class Worker:
 
         retrieved = _prompt.knowledge_for(request)
         full_context = "\n\n".join(part for part in (context, retrieved) if part)
+        provenance = provenance_for(retrieved)
 
         try:
             with self.pool.asking("worker") as engine:
@@ -255,17 +271,23 @@ class Worker:
                     "No middle brain is installed, so this is being attempted in "
                     "one step instead. " + str(exc)
                 )
-                return self._single_step(request, full_context, outcome)
-            return self.run_plan(plan, outcome)
+                return self._single_step(request, full_context, outcome, provenance)
+            return self.run_plan(plan, outcome, provenance)
 
         if kind == "action":
-            return self._single_step(request, full_context, outcome)
+            return self._single_step(request, full_context, outcome, provenance)
 
         outcome["kind"] = "refuse"
         outcome["text"] = "I could not work out what was being asked for."
         return outcome
 
-    def _single_step(self, request: str, context: str, outcome: dict) -> dict:
+    def _single_step(
+        self,
+        request: str,
+        context: str,
+        outcome: dict,
+        provenance: str = _guard.TRUSTED_PROVENANCE,
+    ) -> dict:
         """Do the one thing the worker named, and report what happened."""
         task_id = self.journal.add_task(request, [])
         self.journal.set_status(task_id, "running")
@@ -289,7 +311,7 @@ class Worker:
             return outcome
 
         step = {"action": action, "args": args, "why": decision.get("reason", "")}
-        evidence = self._run_step(step, 1, task_id)
+        evidence = self._run_step(step, 1, task_id, provenance)
         outcome["plan"] = [step]
         outcome["evidence"] = [evidence]
         outcome["kind"] = "action" if evidence["ok"] else self._end_status(evidence)
@@ -338,6 +360,7 @@ class Worker:
 
         retrieved = _prompt.knowledge_for(request)
         full_context = "\n\n".join(part for part in (context, retrieved) if part)
+        provenance = provenance_for(retrieved)
 
         try:
             with self.pool.asking("worker") as engine:
@@ -375,17 +398,17 @@ class Worker:
                     "No middle brain is installed, so this is being attempted in "
                     "one step instead. " + str(exc)
                 )
-                for event in self._single_step_events(request, full_context, outcome):
+                for event in self._single_step_events(request, full_context, outcome, provenance):
                     yield event
                 return
 
             yield {"type": "plan", "goal": outcome["text"] or plan_goal(plan), "steps": plan}
-            for event in self._run_plan_events(plan, outcome):
+            for event in self._run_plan_events(plan, outcome, provenance):
                 yield event
             return
 
         if kind == "action":
-            for event in self._single_step_events(request, full_context, outcome):
+            for event in self._single_step_events(request, full_context, outcome, provenance):
                 yield event
             return
 
@@ -393,7 +416,13 @@ class Worker:
         outcome["text"] = "I could not work out what was being asked for."
         yield {"type": "done", **outcome}
 
-    def _single_step_events(self, request: str, context: str, outcome: dict):
+    def _single_step_events(
+        self,
+        request: str,
+        context: str,
+        outcome: dict,
+        provenance: str = _guard.TRUSTED_PROVENANCE,
+    ):
         """The one-step path, emitted rather than collected."""
         task_id = self.journal.add_task(request, [])
         self.journal.set_status(task_id, "running")
@@ -421,7 +450,7 @@ class Worker:
 
         step = {"action": action, "args": args, "why": decision.get("reason", "")}
         yield {"type": "step-start", "step": step}
-        evidence = self._run_step(step, 1, task_id)
+        evidence = self._run_step(step, 1, task_id, provenance)
         outcome["plan"] = [step]
         outcome["evidence"] = [evidence]
         outcome["kind"] = "action" if evidence["ok"] else self._end_status(evidence)
@@ -435,7 +464,12 @@ class Worker:
         yield {"type": "step", "evidence": evidence}
         yield {"type": "done", **outcome}
 
-    def _run_plan_events(self, plan: list[dict], outcome: dict):
+    def _run_plan_events(
+        self,
+        plan: list[dict],
+        outcome: dict,
+        provenance: str = _guard.TRUSTED_PROVENANCE,
+    ):
         """The plan, one task at a time, emitted as each step runs."""
         if not plan:
             outcome["kind"] = "refuse"
@@ -448,7 +482,7 @@ class Worker:
 
         for index, step in enumerate(plan, 1):
             yield {"type": "step-start", "step": step}
-            evidence = self._run_step(step, index, task_id)
+            evidence = self._run_step(step, index, task_id, provenance)
             outcome["plan"].append(step)
             outcome["evidence"].append(evidence)
             if not evidence["ok"]:
@@ -506,7 +540,13 @@ class Worker:
         self.journal.answer(approval_id, "yes" if granted else "no")
         return granted
 
-    def _run_step(self, step: dict, index: int = 0, task_id: str = "") -> dict:
+    def _run_step(
+        self,
+        step: dict,
+        index: int = 0,
+        task_id: str = "",
+        provenance: str = _guard.TRUSTED_PROVENANCE,
+    ) -> dict:
         """Run one task, with the confirmation, the retry and the log of it."""
         action = str(step.get("action", "")).strip()
         args = step.get("args") if isinstance(step.get("args"), dict) else {}
@@ -548,7 +588,11 @@ class Worker:
             # arguments all have defaults silently ran with the DEFAULTS - asked for
             # 20% volume, set_volume applied 50% and reported ok=True. Both paths
             # (/api/work and `astra-ai work`) go through here.
-            result = _actions.execute({"action": action, "args": args}, confirmed=True)
+            result = _actions.execute(
+                {"action": action, "args": args},
+                confirmed=True,
+                provenance=provenance,
+            )
             evidence["ok"] = bool(result.get("ok"))
             evidence["output"] = str(result.get("output", "")).strip()
             evidence["error"] = str(result.get("error") or "")
@@ -629,7 +673,12 @@ class Worker:
     # A whole plan
     # ------------------------------------------------------------------
 
-    def run_plan(self, plan: list[dict], outcome: dict) -> dict:
+    def run_plan(
+        self,
+        plan: list[dict],
+        outcome: dict,
+        provenance: str = _guard.TRUSTED_PROVENANCE,
+    ) -> dict:
         """Run the middle brain's plan, one task at a time, and report all of it.
 
         A failed step stops the plan. That is a considered choice: the steps of
@@ -652,7 +701,7 @@ class Worker:
 
         for index, step in enumerate(plan, 1):
             self._on_event({"type": "step-start", "step": step})
-            evidence = self._run_step(step, index, task_id)
+            evidence = self._run_step(step, index, task_id, provenance)
             outcome["plan"].append(step)
             outcome["evidence"].append(evidence)
             if not evidence["ok"]:

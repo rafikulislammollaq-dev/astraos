@@ -81,16 +81,24 @@ EXPECTED_ACTIONS = {
     "suspend", "reboot", "shutdown", "run_command",
 }
 
-# The actions that can lose work or power the machine off. These five are the
-# whole reason needs_confirm exists; anything else joining the set is a
-# decision, not an accident, and has to be made here first.
-EXPECTED_CONFIRMED = {"close_window", "suspend", "reboot", "shutdown", "run_command"}
+# The actions that can lose work, change what you are writing, or power the
+# machine off. These seven are the whole reason needs_confirm exists; anything
+# else joining the set is a decision, not an accident, and has to be made here
+# first. type_text and press_key joined when Astra Guard classified them
+# `modify`: typing into the focused window can change a document or run a
+# command in a terminal, and the person is asked once per plan, with the text.
+EXPECTED_CONFIRMED = {
+    "close_window", "press_key", "type_text", "suspend", "reboot", "shutdown",
+    "run_command",
+}
 
 # Plausible plans for the confirmed actions, used to prove execute() refuses
 # before it runs anything. run_command's command would pass the guard list if
 # it were ever reached, so the "nothing ran" assertion means something.
 CONFIRMED_PLANS = {
     "close_window": {"title": "unsaved work"},
+    "press_key": {"key": "Return"},
+    "type_text": {"text": "hello"},
     "suspend": {},
     "reboot": {},
     "shutdown": {},

@@ -137,8 +137,8 @@ def _recorded_execute(calls: list, ok: bool = True):
     """
     original = actions.execute
 
-    def record(plan, confirmed=False):  # noqa: ANN001 - mirrors actions.execute
-        calls.append({"plan": dict(plan), "confirmed": confirmed})
+    def record(plan, confirmed=False, provenance="user"):  # noqa: ANN001 - mirrors actions.execute
+        calls.append({"plan": dict(plan), "confirmed": confirmed, "provenance": provenance})
         return {"ok": ok, "output": "recorded", "error": ""}
 
     actions.execute = record

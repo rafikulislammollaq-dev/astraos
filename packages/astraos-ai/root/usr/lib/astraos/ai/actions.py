@@ -68,6 +68,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import config as _config
+from . import guard as _guard
 
 # The maximum output an action hands back to the model or the web interface.
 # A window listing or a command that prints a directory tree can be megabytes;
@@ -219,6 +220,20 @@ def _clip(text: str) -> str:
     if len(text) <= MAX_OUTPUT_CHARS:
         return text
     return text[:MAX_OUTPUT_CHARS] + "\n(output shortened)"
+
+
+def _audit(decision: dict, outcome: str, detail: str = "") -> bool:
+    """Append one decision to Astra Guard's audit chain; False if it could not.
+
+    The failure is not raised for the levels that may run without a record: a
+    full disk must not stop the assistant from telling the time. execute()
+    refuses privileged work without a record, which is the part that matters.
+    """
+    try:
+        _guard.record(decision, outcome=outcome, detail=detail)
+    except _guard.GuardError:
+        return False
+    return True
 
 
 def _run_or_reason(argv: list[str], timeout: int = 30) -> str:
@@ -829,11 +844,16 @@ def type_text(text: str = "") -> str:
     """Type text into whatever window has focus.
 
     Note for whoever reads the log: this is the action with the sharpest edge
-    in the whole catalog. Typing into a focused terminal is running a command,
-    so the guard is the prompt (the model may only type what the user asked
-    for) plus the length cap - not a confirmation, because the user asking
-    "type this for me" and then being asked "are you sure?" for every phrase
-    would make the feature useless.
+    in the whole catalog. Typing into a focused terminal is running a command.
+
+    This function used to run without a confirmation, on the argument that a
+    person who asked "type this for me" should not be asked "are you sure?" for
+    every phrase. Astra Guard changed that decision: typing is classified
+    `modify` - it can change or lose the user's work - and everything above
+    `prepare` needs a yes that names the exact text. The person is asked once
+    per request, not once per phrase, because the text is fixed when the plan is
+    made. The length cap and the "no shell" rule stay as well: they limit what
+    can be typed, not who approved it.
     """
     wanted = text or ""
     if not wanted.strip():
@@ -1294,12 +1314,12 @@ ACTIONS: dict[str, Action] = {
     "type_text": Action(
         "type_text", "type text into the focused window",
         {"text": _string("the text to type")},
-        False, False, type_text,
+        True, True, type_text,
     ),
     "press_key": Action(
         "press_key", "press one key, e.g. Return or ctrl+c",
         {"key": _string("a key name from the fixed list in the catalog")},
-        False, False, press_key,
+        True, True, press_key,
     ),
     # Telling
     "tell_time": Action(
@@ -1530,7 +1550,11 @@ def _missing_argument(name: str, key: str) -> str:
     return f"the plan for '{name}' is missing the argument '{key}'"
 
 
-def execute(plan: dict, confirmed: bool = False) -> dict:
+def execute(
+    plan: dict,
+    confirmed: bool = False,
+    provenance: str = _guard.TRUSTED_PROVENANCE,
+) -> dict:
     """Run one plan. Never raises; the result says what happened.
 
     The result always has the same keys:
@@ -1545,6 +1569,12 @@ def execute(plan: dict, confirmed: bool = False) -> dict:
     confirmed=True is the user's yes. It is the caller's job to obtain it -
     and the caller is the CLI or the web interface, which has a human in
     front of it - never the model, which only ever produces the plan.
+
+    provenance is where the request came from. "user" is the person at the
+    keyboard; anything else - a retrieved document, a web page, a tool's output
+    - may only reach observe, so a document that orders the assistant to act is
+    refused rather than followed. Every action passes Astra Guard before it
+    runs, and every decision is appended to the audit chain.
     """
     result = {
         "ok": False,
@@ -1605,17 +1635,63 @@ def execute(plan: dict, confirmed: bool = False) -> dict:
             result["output"] = result["error"]
             return result
 
+    # Astra Guard decides, after the arguments are resolved so that the target
+    # and the effect are the actual ones. This is the enforcement, not a prompt:
+    # a refusal here is the action not running.
+    try:
+        decision = _guard.evaluate(
+            name,
+            args,
+            summary=action.summary,
+            provenance=provenance,
+            approved=confirmed,
+        )
+    except _guard.GuardError as exc:
+        result["refused"] = True
+        result["error"] = str(exc)
+        result["output"] = result["error"]
+        return result
+
+    result["level"] = decision["level"]
+
+    if not decision["allowed"]:
+        _audit(decision, "refused", decision["reason"])
+        result["refused"] = True
+        result["error"] = decision["reason"]
+        result["output"] = result["error"]
+        return result
+
+    if decision["level"] in _guard.APPROVAL_LEVELS:
+        try:
+            _guard.record(decision, outcome="approved")
+        except _guard.GuardError as exc:
+            result["refused"] = True
+            result["error"] = (
+                f"refused to run '{name}': {exc}. An action that can change your "
+                "work or this machine must leave a record before it runs"
+            )
+            result["output"] = result["error"]
+            return result
+    else:
+        _audit(decision, "allowed")
+
     try:
         output = action.func(**args)
     except ActionError as exc:
         result["error"] = str(exc)
         result["output"] = str(exc)
+        _audit(decision, "error", str(exc))
         return result
     except Exception as exc:  # noqa: BLE001 - a crash must read as a failure
         result["error"] = f"{name} failed: {exc.__class__.__name__}: {exc}"
         result["output"] = result["error"]
+        _audit(decision, "error", result["error"])
         return result
 
     result["ok"] = True
     result["output"] = _clip(str(output))
+    if not _audit(decision, "ok", result["output"]):
+        result["output"] = (
+            f"{result['output']} (Astra Guard could not append this to the audit log)"
+        ).strip()
     return result

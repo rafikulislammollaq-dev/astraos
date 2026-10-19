@@ -553,6 +553,12 @@ def cmd_status(args: argparse.Namespace) -> int:
         else:
             print(f"  engine build   {build['variant']} (this CPU lists its "
                   "requirements)")
+    profile = machine.load(profile_path)
+    if profile:
+        recommendation = profile.get("recommendation") or machine.recommend(profile)
+        rung = recommendation["rung"]
+        variant = recommendation["engine_variant"] or "no build for this CPU"
+        print(f"  ai rung        {rung} ({variant})")
     print(f"  speech         {info['tts_tool'] or 'not installed'}")
     print(f"  transcription  {'ready' if info['stt'] else 'not installed'}")
     print(f"  models kept in {info['models_dir']}")

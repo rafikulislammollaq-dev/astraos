@@ -1,0 +1,174 @@
+#!/usr/bin/python3
+# astra-guard - AstraOS's seatbelt: what the assistant may do, and the record it left.
+#
+# Why this exists:
+#
+#     The prompt tells the model what it may ask for. A prompt is a request, and a
+#     model that has read a malicious document can ask for anything. Astra Guard is
+#     the enforcement outside the model: four permission levels, a policy that
+#     refuses anything above prepare without a human's yes, a rule that documents are
+#     data rather than instructions, and an append-only record of every decision.
+#
+# What it is not:
+#
+#     It is not a daemon and not a kernel module. It is a library that every action
+#     passes through (astraos/ai/actions.py calls it), plus this command for looking
+#     at what it decided. Nothing here needs root: the log is the user's own.
+#
+# Design rules, matching the rest of AstraOS:
+#
+#   * Read-only inspection is free. `levels`, `audit` and `verify` change nothing.
+#   * `check` evaluates a hypothetical action and does not run it. It is the way to
+#     see what the policy would say without finding out.
+#   * A broken chain is reported, not repaired. The log is evidence; rewriting it
+#     would destroy the thing it is evidence of.
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+# The package lives in /usr/lib in the image and in packages/*/root/usr/lib in the
+# repository; both are one directory above this file's parent.
+_LIB = Path(__file__).resolve().parents[1] / "lib"
+if str(_LIB) not in sys.path:
+    sys.path.append(str(_LIB))
+
+from astraos.ai import config  # noqa: E402
+from astraos.ai import guard  # noqa: E402
+
+
+def _levels(_args: argparse.Namespace) -> int:
+    print("Astra Guard's four levels, lowest first: observe and prepare run, and")
+    print("everything above prepare needs a yes that names the action and its target.")
+    print("")
+    for level in guard.LEVELS:
+        print(f"  {level:<11}{guard.LEVEL_MEANING[level]}")
+        names = sorted(name for name, at in guard.ACTION_LEVELS.items() if at == level)
+        if names:
+            print(f"  {'':<11}{', '.join(names)}")
+        print("")
+    print(
+        "Untrusted content - a retrieved document, a web page, a tool's output - may "
+        f"reach {guard.UNTRUSTED_MAX_LEVEL} only: a document cannot ask for an action."
+    )
+    print("")
+    print(f"The record: {config.PATHS.audit_file}")
+    return 0
+
+
+def _check(args: argparse.Namespace) -> int:
+    try:
+        raw = json.loads(args.args_json) if args.args_json else {}
+    except ValueError as exc:
+        print(f"astra-guard: --args is not JSON: {exc}")
+        return 2
+    if not isinstance(raw, dict):
+        print("astra-guard: --args must be a JSON object, e.g. '{\"percent\": 40}'")
+        return 2
+
+    try:
+        decision = guard.evaluate(
+            args.action,
+            raw,
+            provenance=args.provenance,
+            approved=args.approved,
+        )
+    except guard.GuardError as exc:
+        print(f"denied: {exc}")
+        return 1
+
+    print(f"{decision['decision']}: {decision['reason']}")
+    print(f"  level       {decision['level']}")
+    print(f"  target      {decision['target']}")
+    print(f"  effect      {decision['effect']}")
+    print(f"  provenance  {decision['provenance']}")
+    print(f"  approved    {'yes' if decision['approved'] else 'no'}")
+    return 0 if decision["allowed"] else 1
+
+
+def _audit(args: argparse.Namespace) -> int:
+    records = guard.read(limit=args.limit)
+    if not records:
+        print(f"no decisions recorded yet at {config.PATHS.audit_file}")
+        return 0
+    if args.json:
+        for record in records:
+            print(json.dumps(record, ensure_ascii=False))
+        return 0
+    for record in records:
+        if "error" in record:
+            print(f"  {record['error']}")
+            continue
+        print(
+            f"{record.get('ts', ''):<24}  "
+            f"{record.get('level', ''):<10}  "
+            f"{record.get('action', ''):<16}  "
+            f"{record.get('decision', ''):<5}  "
+            f"{record.get('outcome', ''):<8}  "
+            f"{record.get('target', '')}"
+        )
+        detail = str(record.get("detail", "")).strip()
+        if detail:
+            print(f"    {detail}")
+    return 0
+
+
+def _verify(_args: argparse.Namespace) -> int:
+    try:
+        result = guard.verify()
+    except guard.GuardError as exc:
+        print(f"cannot verify: {exc}")
+        return 2
+    print(str(config.PATHS.audit_file))
+    if result["ok"]:
+        print(f"ok: {result['count']} record(s), each linked to the one before it")
+        return 0
+    print(f"BROKEN at record {result['broken']}: {result['reason']}")
+    return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="astra-guard",
+        description="AstraOS's seatbelt: permission levels, the policy, and the audit chain.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    levels = sub.add_parser("levels", help="show the four levels and which actions they hold")
+    levels.set_defaults(func=_levels)
+
+    check = sub.add_parser(
+        "check", help="show what the policy would decide about one action, without running it"
+    )
+    check.add_argument("action", help="the action's name, e.g. run_command")
+    check.add_argument(
+        "--args", dest="args_json", default="{}", help="the action's arguments as JSON"
+    )
+    check.add_argument(
+        "--provenance",
+        choices=("user", "document"),
+        default=guard.TRUSTED_PROVENANCE,
+        help="where the request came from (a document may only reach observe)",
+    )
+    check.add_argument(
+        "--approved", action="store_true", help="pretend the user has already said yes"
+    )
+    check.set_defaults(func=_check)
+
+    audit = sub.add_parser("audit", help="show the recorded decisions, oldest first")
+    audit.add_argument("--limit", type=int, default=None, help="show only the newest N")
+    audit.add_argument("--json", action="store_true", help="one JSON object per line")
+    audit.set_defaults(func=_audit)
+
+    verify = sub.add_parser("verify", help="check that the audit chain is unbroken")
+    verify.set_defaults(func=_verify)
+
+    args = parser.parse_args(argv)
+    return int(args.func(args))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

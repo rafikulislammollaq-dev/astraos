@@ -56,8 +56,64 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   include tree), one holding the stored-ISO workflow to the same script, flags, runner
   and artifact so the two cannot drift apart.
 
-- **The engine now comes in the two CPU variants the machines actually need (source; the
-  first two-variant CI run is pending).** `docs/ROADMAP.md`, Stage 2 asks for engine
+- **Astra Guard: four permission levels, a refusal of untrusted instructions, and an
+  audit chain (source; 13 tests, 2026-10-19).** `docs/ROADMAP.md`, Stage 3 asks for a
+  policy engine outside the model and a record that can be inspected afterwards.
+  `astraos/ai/guard.py` supplies both. Every action in the catalog is classified
+  `observe` (reads), `prepare` (reversible changes to the session), `modify` (can change
+  or lose the user's work) or `privileged` (changes the machine or runs a command) in a
+  literal dictionary, and a test compares it with `actions.ACTIONS`: adding an action
+  without deciding its level fails the suite, and an unclassified action is refused at
+  run time rather than guessed at. `evaluate()` denies anything above `prepare` unless a
+  human has approved it, and names the resolved arguments and the effect — "type_text is
+  modify ... and needs your yes", never "allow the assistant to type". `actions.execute()`
+  is the single enforcement point, so the command line, the web page and the worker
+  cannot take different paths around it.
+
+  Retrieved documents are treated as data. `scan_untrusted()` recognises the shapes of
+  an instruction smuggled into text the assistant read (ignore-the-previous,
+  role-change, "run this command", "open this URL", exfiltration), the worker marks
+  such a request `document`, and the guard refuses everything above `observe` for it —
+  audited as a denial, with the reason a person can read. The fixtures order the
+  assistant to open an exfiltration URL, run a command and type over a document; each is
+  refused, a normal document is not, and the end-to-end test replaces the subprocess
+  seam and asserts that the refused plan ran nothing.
+
+  Every decision and outcome is appended to
+  `$XDG_STATE_HOME/astraos/guard/audit.jsonl` as one JSON line carrying the digest of
+  the record before it. `astra-guard audit` prints the ledger, `astra-guard verify` names
+  the first edited or removed record, and tests prove both are caught. A privileged
+  action whose record cannot be appended is refused, so the actions that matter never
+  run unlogged. The chain is tamper-*evident*, not signed: someone who can write the
+  file can rebuild the whole chain.
+
+  `type_text` and `press_key` moved into the confirmation set as part of this: typing
+  into the focused window can change a document or run a command in a terminal. The
+  previous note in `actions.py` argued the other way — that asking for every phrase
+  would make the feature useless — and the reversal, and why, is recorded there. The
+  person is asked once per plan, with the exact text, not once per phrase.
+
+  Not done, and named so it is not assumed: no sandbox (bubblewrap/Landlock), no undo or
+  snapshots, and no security audit. The audit log protects against an edited line, not
+  against an account that can rewrite the file.
+
+- **The machine's profile now chooses the engine build and the ladder rung (tests,
+  2026-10-19).** `docs/ROADMAP.md`, Stage 2's promise is that `astra-ai` picks the build,
+  the quantization and the model rung itself, and the earlier readiness rung stopped at
+  "ready / tight / unsupported" — a useful floor, not a choice. `machine.recommend()`
+  now reads the same measured profile and returns the engine variant (avx2 only when the
+  CPU lists all of avx2, f16c, fma and bmi2; avx otherwise; nothing without avx), the
+  rung it can fill (`full` = executor + middle brain + router, `worker`, `router`, or
+  `none`), the models that rung contains with their resident sizes, and the reason for
+  every step, including the number that said no. The sizes are `docs/AI.md`'s table, not
+  taste: 1.0 GB for the 1.7B, 2.4 GB for the 4B, 0.4 GB for the 360M, plus 1 GiB of free
+  space. The choice is written into the profile JSON and printed by `astra-ai profile`
+  and `astra-ai status`; three tests pin the reference machine to `avx` + `worker` and a
+  Haswell-class 16 GiB machine to `avx2` + `full`, and pin the refusals (no AVX, too
+  little RAM, too little free space) to a named reason rather than a shrug.
+
+- **The engine now comes in the two CPU variants the machines actually need (source;
+  both variants proven in CI, run 39244594257, 2026-10-19).** `docs/ROADMAP.md`, Stage 2 asks for engine
   builds selected from the machine's profile and for never installing an engine the CPU
   cannot run. `astra-ai setup --build` now builds one of two variants: `avx` (the
   default; AVX on, AVX2/F16C/FMA/BMI2/AVX512 off - the Sandy Bridge this release is

@@ -189,9 +189,37 @@ that.
 
 ---
 
-## 8. What is not done
+## 8. Astra Guard: the assistant's permissions and its ledger
 
-- No audit, no penetration test, no fuzzing.
+The assistant is opt-in and has no account, no service and no root. What it can do is
+decided outside the model by `astraos/ai/guard.py`, and every decision is recorded.
+
+- Four levels: `observe` (reads), `prepare` (reversible session changes: apps, focus,
+  sound, brightness, the radios), `modify` (typing, key presses, closing a window) and
+  `privileged` (suspend, reboot, shutdown, `run_command`). Anything above `prepare`
+  requires the person's yes, and the yes names the resolved arguments and the effect.
+- The model cannot approve its own action: `actions.execute()` takes `approved` from the
+  caller's `confirmed`, which only the command line, the web page or the worker's
+  confirmation callback can supply - never the JSON the model writes.
+- Retrieved documents are untrusted input. If one contains instruction-shaped text, the
+  request is marked `document`, and only `observe` actions are allowed for it; the rest
+  are refused and the refusal is recorded. This is tested with fixtures that order the
+  agent to exfiltrate.
+- The ledger is `$XDG_STATE_HOME/astraos/guard/audit.jsonl`, one JSON line per decision
+  and outcome, each carrying the previous record's SHA-256. `astra-guard verify` walks
+  the chain and names the first edited or removed record.
+
+What this does not do: it does not sandbox the model server (no bubblewrap or Landlock
+yet), it has no undo or snapshots, and the chain is not a signature - an account that
+can write the file can rebuild the chain. It raises the cost of a silent action and
+leaves evidence; it is not a defence against a compromised account.
+
+---
+
+## 9. What is not done
+
+- No security audit, no penetration test, no fuzzing. Astra Guard's action log (section
+  8) is an audit trail of the assistant, not an audit of this system's security.
 - No integrity measurement or verified boot.
 - No mandatory access control (no AppArmor or SELinux profile set beyond Debian's defaults).
 - No AstraOS package signing.

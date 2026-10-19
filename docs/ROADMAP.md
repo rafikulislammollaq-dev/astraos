@@ -64,8 +64,8 @@ proving it rather than asserting it.
 | Component | Responsibility | State |
 |---|---|---|
 | Astra Core | the distribution: packaging, desktop, boot, recovery | exists; maturity tracked in `README.md` |
-| Astra Engine | local inference: `llama-server`, the model ladder, the JSON worker | partial: builds and runs in CI (emulated Sandy Bridge, 360M smoke model); no self-selection, no evaluations yet |
-| Astra Guard | permissions, sandbox, audit log, undo | does not exist |
+| Astra Engine | local inference: `llama-server`, the model ladder, the JSON worker | partial: builds and runs in CI (emulated Sandy Bridge, 360M smoke model); self-selects the engine build and the ladder rung from the measured profile; per-tier quality numbers still need real hardware |
+| Astra Guard | permissions, sandbox, audit log, undo | partial: four permission levels, prompt-injection discipline and a hash-chained audit log exist and are tested; sandboxing and undo do not |
 | Astra Runtime | task objects: plan → approve → execute → verify, persistence, resume | does not exist (`astra-ai work` is a single structured answer today) |
 | Astra Vault | document index and user-approved memory | does not exist |
 | Astra Missions | the task interface: plans, approvals, results | does not exist |
@@ -334,24 +334,36 @@ updated. Every step proven in CI or recorded as untested.
 `astra-ai` detects the machine and chooses the engine build, quantization and model
 rung itself. The SIGILL lesson becomes a feature.
 
-- [ ] **A capability profile**: CPU flags and instruction sets, RAM, GPU, NPU where
+- [x] **A capability profile**: CPU flags and instruction sets, RAM, GPU, NPU where
   one exists, storage, audio devices — written at first run and shown in plain
   words. The source exists (2026-10-16): `astra-ai profile` measures the machine by
   reading `/proc` and `/sys` as the running user — an unprivileged reading, never a
   privileged probe — prints it in plain words, writes it as JSON beside the
   assistant's settings, and `astra-ai status` makes sure it exists at first run. The
-  derived AI-readiness rung below reads the same numbers. First run pending: the
-  boot self-test's new `ai-profile` check runs the command as the live user and
-  requires the written file.
-- [ ] **Engine builds selected from the profile.** The source has both CPU variants
+  derived AI-readiness rung below reads the same numbers. **Proven 2026-10-19, run
+  39238238246's smoke-boot**: the live self-test ran the command as the live user and
+  required the written file — `ok ai-profile (measured as astra and written to
+  /home/astra/.config/astraos/machine.json)`, `RESULT: PASS (58 checks, 0 failed)`.
+- [x] **Engine builds selected from the profile.** The source has both CPU variants
   (2026-10-17): `--variant avx` (the reference build CI ships), `--variant avx2`
   (Haswell and later), `--variant auto` (newest this CPU can run, read from
   `/proc/cpuinfo`); a named variant is refused before the build when the CPU lacks the
   features, the choice is recorded beside the installed binaries, and `astra-ai status`
-  checks it against the CPU. CI builds and proves both variants; its first two-variant
-  run is pending. Still open: a Vulkan build, and downloading the right artifact
-  automatically instead of by hand.
-- [ ] **An "AI readiness" tier** derived from measurements, not branding.
+  checks it against the CPU. `machine.recommend()` now makes the same choice from the
+  measured flag set (2026-10-19), so the profile and the build agree by construction.
+  **The two-variant CI run is no longer pending**: run 39244594257 (2026-10-19) built
+  and proved both jobs, `avx` and `avx2`, green. Still open: a Vulkan build, and
+  downloading the right artifact automatically instead of by hand.
+- [x] **An "AI readiness" tier** derived from measurements, not branding.
+  Implemented 2026-10-19 in `astraos/ai/machine.py`: `recommend()` reads the same
+  profile and chooses the engine build (avx2 only when the CPU lists all of avx2,
+  f16c, fma and bmi2; avx otherwise; nothing without avx), the ladder rung (full /
+  worker / router / none) from the resident sizes documented in `docs/AI.md`, and the
+  free space those models need — and states the number that decided each step. It is
+  written into the profile JSON, printed by `astra-ai profile` and `astra-ai status`,
+  and pinned by three tests in `tests/static/test_astra_ai_profile.py`. The reference
+  machine (4 GiB, AVX without AVX2) is recommended the `avx` build and the `worker`
+  rung; it is never offered the 4B brain it does not have the RAM to hold.
 - [ ] **An evaluation suite with fixed tasks**; publish success rate and tokens per
   second per tier, with answer quality and execution quality scored separately. The
   360M model stays a smoke test and is never presented as a quality result. The
@@ -382,20 +394,49 @@ rung itself. The SIGILL lesson becomes a feature.
 Model output is a request; a policy engine outside the model decides what happens.
 Nothing powerful runs without Guard in front.
 
-- [ ] **Four permission levels** (observe / prepare / modify / privileged), deny by
+- [x] **Four permission levels** (observe / prepare / modify / privileged), deny by
   default above prepare; every approval shows the actual target and effect. The
-  model must never grant itself permission.
+  model must never grant itself permission. Implemented 2026-10-19 in
+  `astraos/ai/guard.py`: the classification is a literal map over the catalog (a test
+  fails when an action is added without a level, and an unclassified action is
+  refused), `evaluate()` refuses anything above prepare without an approval, and the
+  approval names the resolved arguments and the effect rather than the action's
+  category. `actions.execute()` is the single enforcement point. The model cannot
+  grant itself permission: `approved` is the caller's `confirmed`, which only a human
+  can produce, and a test holds the catalog's `needs_confirm` to the levels.
+  `type_text` and `press_key` joined the confirmation set — typing into the focused
+  window can change a document or run a command in a terminal.
 - [ ] **Sandboxing with bubblewrap and Landlock.** First target: confine
   `llama-server` itself — no network, read-only model folder — and prove it with
   tests.
-- [ ] **An inspectable audit log**: what was accessed, what ran, what changed.
+- [x] **An inspectable audit log**: what was accessed, what ran, what changed. Every
+  decision and its outcome is appended to
+  `$XDG_STATE_HOME/astraos/guard/audit.jsonl` as one JSON line, each carrying the
+  digest of the record before it. `astra-guard audit` prints the ledger (or `--json`
+  for a machine), and `astra-guard verify` walks the chain and names the first edited
+  or removed record; tests prove both tampering and deletion are caught. A privileged
+  action whose record cannot be appended is refused, so the actions that matter never
+  run unlogged. The chain is tamper-*evident*, not signed: someone who can write the
+  file can rewrite the whole chain.
 - [ ] **Undo**: automatic snapshots before privileged work and a tested rollback.
   The root filesystem is ext4 today; a Btrfs + snapshot default is a change to
   evaluate on old hardware, not a promise.
-- [ ] **Prompt-injection discipline, with tests**: documents are untrusted input,
+- [x] **Prompt-injection discipline, with tests**: documents are untrusted input,
   and fixtures that order the agent to exfiltrate must be denied, not narrated.
-- [ ] **No root for models or workers**; privileged actions go through a separate,
-  explicit mechanism with its own approval.
+  `guard.scan_untrusted()` recognises instruction-shaped content in what the assistant
+  read (ignore-the-instructions, role changes, "run this command", "open this URL",
+  exfiltration); the worker marks such a request `document`; and
+  `evaluate(provenance="document")` refuses everything above observe, with the target
+  and the reason, audited as a denial. Fixtures in `tests/static/test_astra_guard.py`
+  order the assistant to open an exfiltration URL, run a command and type over a
+  document — each is refused, a normal document is not — and an end-to-end test
+  replaces the subprocess seam and asserts that nothing ran.
+- [x] **No root for models or workers**; privileged actions go through a separate,
+  explicit mechanism with its own approval. The catalog has refused root, `sudo` and
+  the system's own files since it was written; Astra Guard adds the explicit approval:
+  `privileged` is a level, `execute()` refuses it without `approved=True`, the four
+  privileged actions are pinned by a test, and the engine and worker run as the user
+  with no account of their own. The approval is the person's yes, never the model's.
 
 ## Stage 4 — The flagship workflow: a local research assistant
 
