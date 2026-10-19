@@ -19,6 +19,25 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **A driver fix no longer pays for an ISO rebuild: the exercise can run against a stored
+  ISO (source; `.github/workflows/install-test.yml`).** The install exercise is
+  host-side — `config/live-build/config/includes.chroot` carries only `etc` and `usr`, so
+  nothing under `scripts/` is ever inside the image, and a change to the driver, to its
+  tests or to these documents does not change one byte of the ISO. The workflow takes the
+  `astraos-iso` artifact a previous `build-iso.yml` run already archived (fourteen days),
+  from the run named by `run_id` or the newest run that has one, and runs exactly the
+  exercise the `install-boot` job runs — same script, same flags, same runner, same
+  ceiling, same evidence artifact — with no build in front of it. That removes roughly
+  eighteen minutes of packaging from every attempt at a loop expected to run many times:
+  run 39103628321 spent 25m27s to reach a 5m32s verdict, and run 39105685521 spent
+  1h10m11s, in both cases behind a build the previous attempt had already paid for. The
+  rule it encodes: rebuild when the image's contents change (packages, hooks, branding,
+  the Calamares modules, the live configuration); test against the stored ISO when only
+  the driver changed. Pinned by two tests in `tests/static/test_install_boot.py` — one
+  holding the claim that justifies the shortcut (the driver is not inside the image's
+  include tree), one holding the stored-ISO workflow to the same script, flags, runner
+  and artifact so the two cannot drift apart.
+
 - **The engine now comes in the two CPU variants the machines actually need (source; the
   first two-variant CI run is pending).** `docs/ROADMAP.md`, Stage 2 asks for engine
   builds selected from the machine's profile and for never installing an engine the CPU
