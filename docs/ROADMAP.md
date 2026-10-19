@@ -9,7 +9,8 @@ failure is handled — recorded with its cause, not hidden.
 
 The blueprints for the promised experiences — the first boot, profiles, one
 store, roll-backable updates, the phone link, the system assistant, privacy,
-reach, creator packs and the community rails — are in
+reach, creator packs, the community rails, what the computer connects to and what
+it does by itself — are in
 [`docs/blueprints/`](blueprints/README.md). They are plans too. The long-horizon
 pillars behind this direction — the mesh, the timeline, the canvas and the graph —
 are designed there as well, beyond the stages.
