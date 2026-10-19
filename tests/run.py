@@ -37,9 +37,23 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import io
+import os
 import sys
+import tempfile
 import traceback
 from pathlib import Path
+
+# The assistant appends every action decision to Astra Guard's ledger under
+# XDG_STATE_HOME. A test run must not write into the real user's ledger - and a
+# record from a test must not be mistaken for a record of something that
+# happened on the machine - so the suite gets its own state directory. This
+# runner does not read pytest's conftest.py, which is why the isolation lives
+# here as well as there; guard.audit_path() reads the environment at call time.
+_TEST_STATE = Path(tempfile.mkdtemp(prefix="astraos-tests-state-"))
+os.environ.setdefault("XDG_STATE_HOME", str(_TEST_STATE))
+os.environ.setdefault(
+    "ASTRAOS_GUARD_AUDIT", str(_TEST_STATE / "astraos" / "guard" / "audit.jsonl")
+)
 
 TESTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TESTS_DIR.parent

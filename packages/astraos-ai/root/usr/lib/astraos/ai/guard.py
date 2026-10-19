@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -288,6 +289,19 @@ def scan_untrusted(text: str) -> list[str]:
     return [name for name, pattern in INJECTION_PATTERNS if pattern.search(sample)]
 
 
+def audit_path() -> Path:
+    """Where the ledger lives, read at call time.
+
+    The environment override is read here rather than only when config.PATHS is
+    imported because a test run has to be able to point the ledger somewhere
+    safe *after* astraos.ai has been imported - and a suite that appends to the
+    real user's ledger is a suite that leaves evidence of tests in a place where
+    evidence is supposed to mean something.
+    """
+    override = os.environ.get("ASTRAOS_GUARD_AUDIT")
+    return Path(override) if override else Path(_config.PATHS.audit_file)
+
+
 def _clip(text: str, limit: int = 400) -> str:
     text = str(text)
     return text if len(text) <= limit else text[: limit - 3] + "..."
@@ -334,7 +348,7 @@ def record(
     means; actions.execute() refuses privileged work in that case, because an action
     that leaves no record must not be the one nobody can see.
     """
-    target_path = Path(path) if path is not None else Path(_config.PATHS.audit_file)
+    target_path = Path(path) if path is not None else audit_path()
     try:
         target_path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -365,7 +379,7 @@ def record(
 
 def read(*, limit: int | None = None, path: Path | str | None = None) -> list[dict]:
     """The audit records, oldest first, or the newest `limit` of them."""
-    target_path = Path(path) if path is not None else Path(_config.PATHS.audit_file)
+    target_path = Path(path) if path is not None else audit_path()
     try:
         lines = target_path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
@@ -389,7 +403,7 @@ def read(*, limit: int | None = None, path: Path | str | None = None) -> list[di
 
 def verify(path: Path | str | None = None) -> dict:
     """Walk the chain. `ok` only when every record fits the one before it."""
-    target_path = Path(path) if path is not None else Path(_config.PATHS.audit_file)
+    target_path = Path(path) if path is not None else audit_path()
     try:
         lines = target_path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError as exc:

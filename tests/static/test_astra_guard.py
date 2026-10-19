@@ -22,6 +22,7 @@ replace the subprocess seam before calling execute().
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -38,6 +39,26 @@ if str(AI_LIB) not in sys.path:
 from astraos.ai import actions, guard, worker  # noqa: E402
 
 DESCRIPTION = "Astra Guard classifies every action, refuses untrusted instructions, and keeps an unbroken ledger"
+
+
+@contextlib.contextmanager
+def _patched_machine(calls: list):
+    """actions' subprocess seam replaced, the way test_astra_ai_actions does it.
+
+    This suite is also run by tests/run.py, which calls every test function with
+    no arguments; a pytest fixture here would be a test that errors instead of
+    test. The three functions are the single seam between the package and the
+    machine, so replacing them proves "nothing ran" rather than "nothing was
+    reported as having run".
+    """
+    original = (actions._run, actions._spawn, actions._which)
+    actions._run = lambda argv, timeout=30: (calls.append(list(argv)), (0, ""))[1]
+    actions._spawn = lambda argv: calls.append(list(argv))
+    actions._which = lambda tool: "/usr/bin/" + tool
+    try:
+        yield calls
+    finally:
+        actions._run, actions._spawn, actions._which = original
 
 
 def test_every_action_has_a_level_and_every_level_is_real() -> None:
@@ -201,18 +222,15 @@ def test_the_audit_chain_names_a_removed_record() -> None:
         assert "removed" in result["reason"]
 
 
-def test_execute_refuses_a_plan_that_came_from_a_document(monkeypatch) -> None:
+def test_execute_refuses_a_plan_that_came_from_a_document() -> None:
     """The end-to-end proof: the enforcement point, not just the policy function."""
     calls: list[list[str]] = []
-    monkeypatch.setattr(actions, "_run", lambda argv, timeout=30: (calls.append(list(argv)), (0, ""))[1])
-    monkeypatch.setattr(actions, "_spawn", lambda argv: calls.append(list(argv)))
-    monkeypatch.setattr(actions, "_which", lambda tool: "/usr/bin/" + tool)
-
-    result = actions.execute(
-        {"action": "run_command", "args": {"command": "true"}},
-        confirmed=True,
-        provenance="document",
-    )
+    with _patched_machine(calls):
+        result = actions.execute(
+            {"action": "run_command", "args": {"command": "true"}},
+            confirmed=True,
+            provenance="document",
+        )
     assert result["refused"] is True
     assert "Documents are data" in result["error"]
     assert calls == [], f"the refused document still ran something: {calls}"
@@ -222,53 +240,52 @@ def test_execute_refuses_a_plan_that_came_from_a_document(monkeypatch) -> None:
     assert last["decision"] == "deny"
 
 
-def test_execute_asks_for_a_modify_action_when_nobody_has_confirmed_it(monkeypatch) -> None:
+def test_execute_asks_for_a_modify_action_when_nobody_has_confirmed_it() -> None:
     calls: list[list[str]] = []
-    monkeypatch.setattr(actions, "_run", lambda argv, timeout=30: (calls.append(list(argv)), (0, ""))[1])
-    monkeypatch.setattr(actions, "_which", lambda tool: "/usr/bin/" + tool)
-
-    result = actions.execute({"action": "type_text", "args": {"text": "hello"}}, confirmed=False)
+    with _patched_machine(calls):
+        result = actions.execute({"action": "type_text", "args": {"text": "hello"}}, confirmed=False)
     assert result["refused"] is True
     assert result["needs_confirm"] is True
     assert calls == []
 
 
-def test_the_command_shows_the_levels_and_the_ledger(tmp_path) -> None:
-    audit = tmp_path / "audit.jsonl"
-    guard.record(
-        guard.evaluate("tell_time"), outcome="ok", path=audit, now="2026-10-19T09:00:00+0000"
-    )
-    environment = dict(os.environ, ASTRAOS_GUARD_AUDIT=str(audit))
+def test_the_command_shows_the_levels_and_the_ledger() -> None:
+    with tempfile.TemporaryDirectory(prefix="astraos-guard-cli-") as tmp:
+        audit = Path(tmp) / "audit.jsonl"
+        guard.record(
+            guard.evaluate("tell_time"), outcome="ok", path=audit, now="2026-10-19T09:00:00+0000"
+        )
+        environment = dict(os.environ, ASTRAOS_GUARD_AUDIT=str(audit))
 
-    levels = subprocess.run(
-        [sys.executable, str(AI_BIN / "astra-guard"), "levels"],
-        capture_output=True, text=True, env=environment, timeout=60,
-    )
-    assert levels.returncode == 0, levels.stderr
-    for level in guard.LEVELS:
-        assert level in levels.stdout
-    assert "run_command" in levels.stdout
+        levels = subprocess.run(
+            [sys.executable, str(AI_BIN / "astra-guard"), "levels"],
+            capture_output=True, text=True, env=environment, timeout=60,
+        )
+        assert levels.returncode == 0, levels.stderr
+        for level in guard.LEVELS:
+            assert level in levels.stdout
+        assert "run_command" in levels.stdout
 
-    verify = subprocess.run(
-        [sys.executable, str(AI_BIN / "astra-guard"), "verify"],
-        capture_output=True, text=True, env=environment, timeout=60,
-    )
-    assert verify.returncode == 0, verify.stderr
-    assert "ok: 1 record(s)" in verify.stdout
+        verify = subprocess.run(
+            [sys.executable, str(AI_BIN / "astra-guard"), "verify"],
+            capture_output=True, text=True, env=environment, timeout=60,
+        )
+        assert verify.returncode == 0, verify.stderr
+        assert "ok: 1 record(s)" in verify.stdout
 
-    shown = subprocess.run(
-        [sys.executable, str(AI_BIN / "astra-guard"), "audit", "--json"],
-        capture_output=True, text=True, env=environment, timeout=60,
-    )
-    assert shown.returncode == 0, shown.stderr
-    assert json.loads(shown.stdout.splitlines()[0])["action"] == "tell_time"
+        shown = subprocess.run(
+            [sys.executable, str(AI_BIN / "astra-guard"), "audit", "--json"],
+            capture_output=True, text=True, env=environment, timeout=60,
+        )
+        assert shown.returncode == 0, shown.stderr
+        assert json.loads(shown.stdout.splitlines()[0])["action"] == "tell_time"
 
-    refused = subprocess.run(
-        [
-            sys.executable, str(AI_BIN / "astra-guard"), "check", "run_command",
-            "--args", '{"command": "true"}', "--provenance", "document",
-        ],
-        capture_output=True, text=True, env=environment, timeout=60,
-    )
-    assert refused.returncode == 1
-    assert "Documents are data" in refused.stdout
+        refused = subprocess.run(
+            [
+                sys.executable, str(AI_BIN / "astra-guard"), "check", "run_command",
+                "--args", '{"command": "true"}', "--provenance", "document",
+            ],
+            capture_output=True, text=True, env=environment, timeout=60,
+        )
+        assert refused.returncode == 1
+        assert "Documents are data" in refused.stdout
