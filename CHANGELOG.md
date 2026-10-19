@@ -392,6 +392,67 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- **Every installation this project ever attempted died one job short of finishing, and the
+  cause was a configuration file that did not exist rather than one that was wrong.** Run
+  39233194012 was the first run to install anything at all — the wizard walked every page,
+  `unpackfs` filled the filesystems, twenty-five jobs wrote to the disk — and then job 26 of
+  27 stopped:
+
+  ```
+  Starting job "bootloader" ( 26 / 27 )
+  [PYTHON JOB]: "Bootloader: grub (bios)"
+      .. Running QList("grub-install", "--target=i386-pc", "--recheck", "--force", "/dev/vda")
+  grub-install: error: cannot find a device for /boot/grub (is /dev mounted?)
+  ERROR: Installation failed: "Bootloader installation error"
+  ```
+
+  GRUB was not the problem, and neither was the bootloader config in the entry below.
+  Calamares named the cause two steps earlier, in the same log:
+
+  ```
+  WARNING: No config file for "mount" found anywhere at
+  "/src/modules/mount/mount.conf"
+  "/etc/calamares/modules/mount.conf"
+  "/usr/share/calamares/modules/mount.conf"
+  ```
+
+  Nothing in the image supplied any of the three. The `mount` module ran with an **empty**
+  configuration, and its `extraMounts` list is the only thing that mounts `/dev`, `/proc`,
+  `/sys` and `/run` inside the target before the destructive phase runs. Without them the
+  target is not a chroot, and `grub-install` cannot find a device for `/boot/grub` in a tree
+  with no `/dev`.
+
+  Why no packaged fallback existed is the choice recorded in
+  `config/package-lists/60-installer.list.chroot`: this image installs upstream's `calamares`
+  and deliberately **not** `calamares-settings-debian`, which is where Debian's own
+  `/etc/calamares` tree comes from. That choice is right — AstraOS *is* the Calamares
+  configuration for this image — but its consequence had not been understood, and it is the
+  same defect as the missing `grubInstall` one layer up: **a module config this repository
+  does not ship is not Debian's default, it is nothing.** `installer/calamares/modules/mount.conf`
+  now ships, as Calamares 3.3.14's own file unmodified, along with `fstab.conf` — whose absent
+  default was a plain `luks` crypttab entry, where Calamares' own file names
+  `luks,keyscript=/bin/cat` as the value Debian and Debian-based distributions need.
+
+  The build hook gained the assertion whose absence let this through. It had validated
+  `partition.conf`'s disk-safety policy, `users.conf`'s password policy and the branding, and
+  said nothing about the module that makes the target a chroot at all — so an image in which
+  that module had *no configuration* was built, booted, and handed to the exercise that died
+  on it. Two comments that described a packaged fallback as though one existed, in that hook
+  and in `bootloader.conf`, now say what the run measured: on this image, that path is empty.
+
+- **The install exercise deliberately does not seed those two files, although the seed was
+  the obvious place for them and it would have been a one-line change.** The guest that
+  applies the seed lives *inside* the ISO, so a config seeded to a medium that lacks it can
+  never be applied by that medium: a mechanism that cannot do anything, which is this
+  project's recurring defect and the exact one described in the entry below. It would also
+  fail in the wrong direction — seeding an image's own config over the top makes *"this medium
+  cannot install anything"* indistinguishable from a passing run, and that indistinguishability
+  is how the original defect survived two exercises. The guest instead records which of the
+  four configs the medium already carried, hashes and all, in `modules-in-image.txt`; the host
+  fails the run with *"this is a medium older than the fix, not a failed installation"* if one
+  was absent, and the file goes into the evidence. `configs.sha256` now covers the four module
+  configs as well, so what Calamares was actually given is recorded rather than inferred.
+
 - **The installer already installed a bootloader config that Calamares cannot read, so every
   installation of every AstraOS image has died at job 26 of 27.** Run 39230792183 got further
   than any run before it — the wizard walked every page, `unpackfs` filled the filesystems —
