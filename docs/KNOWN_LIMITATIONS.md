@@ -46,8 +46,12 @@ hardware.** What has happened, with the record:
   `astra-live login:` prompt. Evidence artifacts: `astraos-boot-self-test`,
   `astraos-boot-menus`.
 - **2026-10-16, CI boot self-test (run 38881934636, commit 8f81e3d): PASS.** The built ISO
-  booted under `qemu-system-x86_64` on a GitHub runner that provides no KVM — the CPU was
-  emulated — and the image's own self-test reported `RESULT: PASS (39 checks, 0 failed)`:
+  booted under `qemu-system-x86_64` on a GitHub runner — under CPU emulation, because the
+  exercise's `[ -w /dev/kvm ]` test failed: the device is `root:kvm` and the runner user
+  is not in the `kvm` group. The "runner provides no KVM" that stood here came from the
+  script's own fallback message rather than from a measurement, and was corrected
+  2026-10-19 (run 39222797247 was the first to boot with it). The image's own self-test
+  reported `RESULT: PASS (39 checks, 0 failed)`:
   the console login prompt 143.7 s into the guest boot, LightDM active, an Xfce session
   (xfwm4) running as the live user, every `astraos-*` package at its expected version, the
   hardware, codec and compatibility tools, the Flathub remote, NetworkManager active with
@@ -65,7 +69,7 @@ hardware.** What has happened, with the record:
 An automated end-to-end exercise now exists in the source (2026-10-16):
 `scripts/install-boot-test.sh`, run by CI as the `install-boot` job, installs the ISO
 onto a blank disk by driving the ISO's own Calamares UI over the QEMU monitor and then
-boots that disk alone. It has run seven times and **has not yet completed an
+boots that disk alone. It has run eight times and **has not yet completed an
 installation**. Each failure so far has been a different, named defect rather than a
 recurring one: startup failures first; then a wizard that never advanced because the
 driver pressed Return at a Calamares that marks no default button (run 39024106426);
@@ -78,13 +82,21 @@ walks the consoles and the fixed text console `-vga std` creates has no `device`
 property to find (run 39103628321); then a walk that aimed in units the tablet does not
 use — an `input-send-event` `abs` value is a fraction of `0x7FFF`, not a pixel — whose
 button presses QEMU handed to the PS/2 mouse rather than the tablet, with the exercise's
-own stall detector quiet because it was hashing from the wrong edge (run 39105685521).
+own stall detector quiet because it was hashing from the wrong edge (run 39105685521);
+and then a wizard that had advanced as far as the partitions page and stopped dead there,
+because the CI seed's partitioning choice was spelled `eraseDisk` — a name that is not in
+Calamares' `installChoiceNames()` table at all, so `find()` silently returned the table's
+first entry (`none`, meaning no choice), the partitions page arrived with neither radio
+selected, and its disabled Next button swallowed forty-four minutes of clicks that QEMU
+accepted without complaint (run 39222797247 — the first exercise whose screendumps could
+be read past the first page, and the first on the runner's own KVM, whose `/dev/kvm` had
+been there all along, unreadable by the runner user).
 The driver now speaks QMP, scales its coordinates to the absolute range, makes the
 tablet the current input handler with `mouse_set` and records the machine's pointer
-routing with `query-mice`, and hashes the client area from its real left edge before and
-after its click walk, so that this class of failure is reported in minutes rather than
-after the whole budget — which is how run 39103628321 failed in 5m32s with a named cause
-where 39049818027 spent 45 minutes without one. Until a green run exists, nothing in
+routing with `query-mice`, judges every step of its walk by the client area's bytes before
+and after that step — so a step that does not move ends the walk naming the page it could
+not leave, instead of reporting that the walk registered — and clicks the partitions
+page's Erase disk row on the page itself. Until a green run exists, nothing in
 this section changes.
 
 **Consequence:** statements about the live system booting in a virtual machine, and about

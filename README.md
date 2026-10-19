@@ -40,8 +40,12 @@ Tested by hand on 2026-10-15 in Oracle VirtualBox on a Windows 11 host
 
 Proven by CI on 2026-10-16 (boot self-test, run 38919644411, commit 8e40d99):
 
-- The built ISO boots in CI's QEMU — the runner provides no KVM, so the CPU is
-  emulated — and the image's own self-test reports `RESULT: PASS (52 checks,
+- The built ISO boots in CI's QEMU — under CPU **emulation** in that run, because the
+  exercise's own `[ -w /dev/kvm ]` test failed: the runner's `/dev/kvm` is `root:kvm` and
+  the runner user is not in the `kvm` group. Corrected 2026-10-19; run 39222797247 was
+  the first to use the runner's own virtualisation (`install-boot: KVM acceleration
+  enabled` in its transcript), which is what that device is there for — and the image's
+  own self-test reports `RESULT: PASS (52 checks,
   0 failed)`: the console login prompt appears by the 141 s mark, LightDM is
   active, an Xfce session (xfwm4) runs as the live user, every `astraos-*`
   package is present at its expected version, the hardware, codec and

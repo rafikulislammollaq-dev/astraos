@@ -104,7 +104,10 @@ updated. Every step proven in CI or recorded as untested.
   25/25 checks, `structural=PASS`, 2,432,696,320 bytes. Live boot by hand in
   VirtualBox, 2026-10-15.
 - [x] **CI boot self-test green.** 2026-10-16, run 38881934636 (commit 8f81e3d): the
-  built ISO booted under QEMU **emulation** — the runner has no KVM — and the image's
+  built ISO booted under QEMU **emulation** — because the runner's `/dev/kvm` is
+  `root:kvm` and the runner user is not in the `kvm` group, so the exercise's own
+  writability test said no; corrected 2026-10-19, when run 39222797247 became the first
+  to use the runner's own virtualisation — and the image's
   self-test reported `PASS (39 checks, 0 failed)`: console login prompt at 143.7 s,
   LightDM active, the Xfce session as user `astra`, the full `astraos-*` package set,
   the hardware and codec stack, the Flathub remote, NetworkManager and — as one of its
@@ -165,9 +168,34 @@ updated. Every step proven in CI or recorded as untested.
     absolute=True`), and the driver now makes the tablet current with HMP's `mouse_set`
     over `human-monitor-command` and records the result back. Third, the digest hashed
     from x=0 instead of the client area's left edge, so its verdict turned on the
-    desktop's left column rather than the wizard. The exec loop also nudges the pointer
-    before each screendump now, because X blanked the screen from `19-exec` onward into
-    uniform 282-byte dumps with no evidence in them.
+    desktop's left column rather than the wizard. The exec loop also nudged the pointer
+    before each screendump, because X blanked the screen from `19-exec` onward into
+    uniform 282-byte dumps with no evidence in them — **and that did not work**, which the
+    next run's evidence shows: run 39222797247 went black at the same frame with the same
+    move before every dump, so the wake input is a bare Shift now and a pointer *move* is
+    not trusted to reset the blanking timer.
+  - Run 39222797247 (2026-10-19) is the first exercise whose evidence could be read past
+    the first page, and it shows the walk never left the partitions page. The CI seed
+    asked for `initialPartitioningChoice: eraseDisk`, which is **not a value Calamares
+    has**: `Config::installChoiceNames()` holds `none, nochoice, alongside, erase,
+    replace, manual`, and `installChoiceNames().find()` returns the *first* entry of that
+    table — `none`, meaning no choice — for a name it does not know, silently for this key
+    (unlike the swap key three lines below it in `Config.cpp`). The partitions page
+    therefore arrived with neither radio selected, Calamares disables Next until one is,
+    and every click after that was a no-op QEMU accepted without complaint: frames
+    `04-partition` through `18-exec` are that same page, and `19-exec` onward are black.
+    Four things carried that spelling — the seed in `scripts/install-boot-test.sh`, the
+    disk-safety assertion in `0300-installer.hook.chroot`, and the two test pins holding
+    that assertion — and the hook's was the worst of them: it refused the build when the
+    file *contained* `eraseDisk`, while the value that actually authorises erasure
+    (`erase`) would have gone straight through, so the safety net guarded nothing. It now
+    requires the shipped value to *be* `none`. Beyond the seed: every step of the walk is
+    judged by the client area's bytes before and after, so a step that does not move ends
+    the walk naming the page it could not leave; the Erase disk row is clicked on the page
+    itself, which does not depend on the seed being right; and the window is waited for by
+    looking rather than by sleeping a fixed 60 seconds, which was the emulated answer. The
+    same run is the first on the runner's own KVM, and the first read without a build
+    behind it (the stored-ISO exercise).
 
   The manual procedure in `docs/INSTALLATION_VIRTUALBOX.md` stays either way.
 - [x] **Boot menu paths exercised in CI**: syslinux (BIOS) and GRUB-EFI, not only

@@ -325,7 +325,10 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   blocked-port probe timed out.
 
 - **The first green boot self-test.** 2026-10-16, run 38881934636 (commit 8f81e3d): the
-  built ISO booted under QEMU on a runner with no KVM — pure CPU emulation — and the
+  built ISO booted under QEMU in pure CPU emulation — the runner's `/dev/kvm` is `root:kvm`
+  and the runner user is not in the `kvm` group, so the exercise's own writability test
+  fell back to TCG (corrected 2026-10-19; run 39222797247 was the first to boot with it) —
+  and the
   image's own self-test reported `RESULT: PASS (39 checks, 0 failed)`. The guest reached
   the console login prompt 143.7 s in; the checks confirm LightDM active, an Xfce session
   (xfwm4) running as the live user, every `astraos-*` package at its expected version,
@@ -388,6 +391,89 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   `libdvdnav4` pulls the read library at the soname the release actually ships.
 
 ### Fixed
+
+- **The install exercise was emulating on a machine that has hardware virtualisation, and
+  the reason was invisible in every log.** A throwaway probe run on `ubuntu-24.04` reported
+  the whole cause in one line:
+
+  ```
+  crw-rw---- 1 root kvm 10, 232 /dev/kvm
+  uid=1001(runner) groups=runner,adm,users,docker,systemd-journal
+  NOT-WRITABLE
+  ```
+
+  The device is there, the CPU advertises `svm`, `kvm_amd` is loaded — and the runner user
+  is not in the `kvm` group, so `scripts/install-boot-test.sh`'s `[ -w /dev/kvm ]` said no
+  and QEMU fell back to TCG emulation. That fallback is the whole reason this exercise has
+  always been budgeted in tens of minutes: run 39105685521 spent 48 minutes installing, and
+  run 39222797247 — the first to use the device — spent 35. Nothing else in either run said
+  so; the script's own message ("no usable KVM; booting under QEMU emulation (slower)") was
+  accurate and was read past for as long as it has existed. `smoke-boot.sh` carries the same
+  writability test, so the boot self-test has been emulating too.
+
+  The three workflows that install QEMU (`smoke-boot`, `boot-menus`, `install-boot`, plus
+  the stored-ISO `install-test`) now grant the device before running it, and the script
+  distinguishes three states instead of two — readable and writable, present but not
+  usable, absent — naming the user, printing the device's real ownership, and printing the
+  cure (`sudo chmod 666 /dev/kvm`) when it exists but cannot be opened. The README,
+  `docs/ROADMAP.md`, `docs/KNOWN_LIMITATIONS.md` and the 2026-10-16 boot-self-test entry
+  below all claimed "the runner provides no KVM"; that came from this fallback message
+  rather than from a measurement, and they are corrected.
+
+- **The installer's partitioning choice was spelled as a value Calamares does not have, so
+  the partitions page arrived with nothing selected and its disabled Next button absorbed
+  forty-four minutes of clicks.** Run 39222797247 (2026-10-19) is the first exercise whose
+  evidence could be read past the first page — thanks to the KVM entry above — and what it
+  shows is that the walk never left the partitions page: `ui/04-partition.png` through
+  `ui/18-exec.png` are that same page, `ui/19-exec.png` onward are 282-byte black frames,
+  and `ui/09-install.png`, named for the page the walk believed it had reached, is the
+  partitions page with both radio buttons empty. Calamares' own log agrees, and says why:
+
+  ```
+  InstallChoice Config::NoChoice "none"
+  bool ChoicePage::calculateNextEnabled() const
+  No partitioning choice has been made yet
+  ```
+
+  `Config.cpp`'s `installChoiceNames()` holds exactly `none, nochoice, alongside, erase,
+  replace, manual`, and `installChoiceNames().find()` returns the **first** entry of that
+  table — `none`, meaning no choice — for a name it does not know, silently for this key
+  (the swap key three lines below it warns). The CI seed asked for `eraseDisk`, so the
+  choice was never made, and every click after it was a no-op QEMU accepted without
+  complaint.
+
+  Four things carried that spelling: the seed in `scripts/install-boot-test.sh`, the
+  disk-safety assertion in `0300-installer.hook.chroot`, and the two static pins holding
+  that assertion (`tests/static/test_hook_assertions.py`, `tests/static/test_repository.py`).
+  The hook was the worst of them — it refused the build when `partition.conf` *contained*
+  `eraseDisk` and would have passed the value that actually authorises erasure (`erase`),
+  so the disk-safety net guarded nothing; it now requires the shipped value to **be**
+  `none`.
+
+  The driver takes no config file's word for anything either. Every step of the walk is
+  judged by the client area's bytes before and after that step, so a step that does not move
+  ends the walk naming the page it could not leave, in `ui.log` where the host already reads
+  it — the old check compared the welcome page against the *end* of the walk and nothing
+  else, which is precisely the comparison that cannot see a walk stuck in the middle. The
+  partitions page's *Erase disk* row is clicked on the page itself, which does not depend on
+  the seed being right, because a radio button that is already selected stays selected when
+  it is clicked again. Both halves of this fix live outside the ISO, so the stored-ISO
+  exercise can prove them without a rebuild.
+
+- **The exec loop's wake-up input did not wake anything, and the first window was waited
+  for by sleeping.** Both were measured rather than guessed. The live session blanks its
+  screen after ten minutes of quiet and a pointer *move* does not reset that timer: runs
+  39105685521 and 39222797247 each went uniformly black at `19-exec` and stayed black for
+  every frame after it, with a move sent immediately before every single dump. The loop now
+  sends a bare `Shift` — `send-key` presses and releases its list together, so one qcode is
+  a complete keystroke that types nothing and leaves no modifier held — and waits for the
+  guest to repaint before taking the dump. It also says plainly when a frame is too small to
+  be a page at all, rather than leaving that to be read later as a hung install, and gives
+  up after fifteen minutes of a byte-identical progress page instead of running the clock
+  out. Separately, the driver waited a fixed 60 seconds for Qt's first window — the
+  emulated answer, and run 39103628321 shot a bare desktop at exactly that mark — and now
+  polls for the client area to appear where a 1024x520 window's belongs, which under the
+  runner's KVM is a second or two.
 
 - **The pointer was aimed on a scale that is not pixels, and the button was pressed by a
   different device than the one that moved — so the wizard advanced nowhere and the
