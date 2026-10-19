@@ -310,9 +310,7 @@ def test_the_driver_has_a_usb_controller_to_click_with() -> None:
 
 
 def test_the_clicks_are_absolute_and_not_addressed_to_a_named_device() -> None:
-    """The human monitor cannot say where the pointer is; naming a device kills QEMU.
-
-    Two separate runs, two separate traps:
+    """Three runs, three traps, all within three lines of QMP.
 
     * Run 39049818027 drove the walk with HMP's mouse_move, which is a *relative* move
       (hmp_mouse_move queues qemu_input_queue_rel) delivered to whichever pointer
@@ -320,15 +318,19 @@ def test_the_clicks_are_absolute_and_not_addressed_to_a_named_device() -> None:
       follows the absolute usb-tablet. Every coordinate went out as a thousand-pixel
       delta, the pointer pinned itself to a screen corner, and the wizard never left
       its Welcome page for a full 45 minutes.
-    * Run 39103628321 had moved the driver to QMP and reached the first click, and
-      QEMU aborted there: naming the device on an input event walks the consoles, and
-      the fixed text console `-vga std` creates has no "device" property to find
+    * Run 39103628321 moved the driver to QMP and reached the first click, where QEMU
+      aborted: naming the device on an input event walks the consoles, and the fixed
+      text console `-vga std` creates has no "device" property to find
       ("Property 'qemu-fixed-text-console.device' not found", qemu1.out).
+    * Run 39105685521 dropped the device name, and every screendump from 02 to 09 still
+      shows the Welcome page. Two reasons, both in QEMU's own source: an absolute axis
+      is addressed in 0..0x7FFF rather than in pixels, and an event's device is chosen
+      per event as the first handler whose mask intersects - the PS/2 mouse for "btn",
+      because it registers before the tablet and claims BTN as well.
 
-    So: QMP, absolute axes, and no "device". An omitted device is not vagueness -
-    QEMU admits only devices with no input routing, and the tablet is this machine's
-    only absolute pointer, so an "abs" event has one possible home. Which device that
-    is must be read from QEMU, not assumed, so the driver asks query-mice.
+    So: QMP, absolute axes, no "device", values scaled into the pointer's own units, and
+    the tablet made current before the first click. Which device that is must be read
+    from QEMU rather than assumed, so the driver asks query-mice and acts on the answer.
     """
     code = _code(HOST_SCRIPT)
     assert '"type": "abs"' in code, (
@@ -343,17 +345,82 @@ def test_the_clicks_are_absolute_and_not_addressed_to_a_named_device() -> None:
         "what kept the wizard on its first page for 45 minutes"
     )
     assert '"device":' not in code, (
-        "naming a device on an input event aborts QEMU on -vga std (run 39103628321); "
-        "the tablet is the only absolute pointer, so an abs event has one home"
+        "naming a device on an input event aborts QEMU on -vga std (run 39103628321)"
     )
     assert "query-mice" in code, (
         "which pointer is absolute, and which is current, must be read from QEMU and "
         "written to the evidence rather than assumed"
     )
+    assert "select_tablet()" in code and "mouse_set" in code, (
+        "the tablet must be made the current pointer before a click: QEMU routes each "
+        'event to the first handler whose mask intersects, and for "btn" that is the '
+        "PS/2 mouse - run 39105685521 aimed with one device and pressed with another"
+    )
     assert '-qmp "unix:$WORK/monitor1.sock' in code, (
         "the phase-1 monitor socket must be a QMP one; HMP cannot express an absolute "
         "position. (Phase 2 keeps the human monitor on purpose: it only screendumps "
         "the greeter and never touches the pointer.)"
+    )
+
+
+def test_the_pointer_is_addressed_in_the_pointer_s_own_units() -> None:
+    """Pixels are not a position the tablet can be given; 0..0x7FFF is.
+
+    Run 39105685521 sent the pixel column and row as raw "abs" values. QEMU passes an
+    abs value through untouched (qmp_input_send_event) and the tablet takes it as its
+    own logical coordinate (hw/input/hid.c, "e->xdx = evt->abs.value"), whose range is
+    0..0x7FFF (include/ui/input.h). So 1002 and 670 meant about 3% and 2% of the screen:
+    the pointer sat at roughly 39x16, every click hit the wallpaper, and nothing
+    anywhere said so, because the commands were accepted and the replies were valid. A
+    GUI scales before the event leaves it (qemu_input_scale_axis does the arithmetic);
+    a QMP client has to do the same itself.
+    """
+    code = _code(HOST_SCRIPT)
+    assert "ABS_MAX = 0x7FFF" in code, (
+        "the absolute pointer's range is QEMU's, not the screen's, and belongs where "
+        "the scaling happens"
+    )
+    assert "def to_abs(" in code, (
+        "pixel coordinates must be converted to the pointer's units at one boundary"
+    )
+    assert '{"axis": "x", "value": to_abs(x, size["w"])}' in code, (
+        "the x axis must be scaled by the framebuffer's own width, taken from the "
+        "screendump rather than assumed"
+    )
+    assert '{"axis": "y", "value": to_abs(y, size["h"])}' in code, (
+        "the y axis must be scaled by the framebuffer's own height"
+    )
+    assert '"value": x}' not in code and '"value": y}' not in code, (
+        "a raw pixel value on an abs axis is exactly what run 39105685521 sent: QEMU "
+        "cannot tell it from a scaled one, and the pointer lands in a corner"
+    )
+
+
+def test_the_click_walk_hashes_the_wizard_and_not_the_desktop() -> None:
+    """A digest that reaches x=0 is not measuring the wizard.
+
+    Run 39105685521's welcome reference was taken while the wallpaper was still
+    unpainted, and by the end of the walk it had been painted. The digest started at
+    x=0, so it compared a wallpaper as well as a page: it announced that the clicks had
+    registered, and the run then spent its full 45 minutes watching a wizard still on
+    Welcome - the one failure this check exists to report in about two minutes.
+    client_rect() had the left edge all along and simply did not return it.
+    """
+    code = _code(HOST_SCRIPT)
+    assert 'return {"top": top, "bottom": bottom, "left": left, "right": right}' in code, (
+        "the located region must carry its left edge; without it the digest falls back "
+        "to the screen's, which includes the desktop"
+    )
+    assert 'left, right = max(0, rect["left"]), min(rect["right"], width)' in code, (
+        "the digest must start at the located left edge"
+    )
+    assert "left, right = 0," not in code, (
+        "a digest from x=0 compares the desktop's wallpaper, which is not the wizard; "
+        "that is what made run 39105685521 report a walk that never happened"
+    )
+    assert '"left": 126' in code, (
+        "the recorded fallback region must exclude the desktop as well - it is the "
+        "window's left edge on the layout those values were measured from"
     )
 
 

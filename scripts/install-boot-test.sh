@@ -378,16 +378,39 @@ cat > "$WORK/drive-ui.py" <<'PY'
 # the window manager's to decide.
 #
 # WHY QMP AND NOT HMP
-#   The pointer is driven with absolute axes through input-send-event, addressed to the
-#   named usb-tablet. The human monitor cannot express that: HMP's mouse_move is a
-#   RELATIVE move (hmp_mouse_move queues qemu_input_queue_rel) delivered to whichever
-#   pointer registered first - the i8042 PS/2 mouse, which this machine also has and
-#   which the live session's X server does not read, because libinput prefers the
-#   absolute tablet. Run 39049818027 spent its whole 45-minute budget that way: every
-#   "absolute" coordinate went out as a thousand-pixel delta, the pointer pinned itself
-#   to a screen corner, and the wizard never left its Welcome page. The evidence is the
-#   screenshots - 02 through 09 are the same page with a different clock. So the
-#   transport is QMP, every command's reply is checked, and the walk proves it moved.
+#   The pointer is driven with absolute axes through input-send-event. The human monitor
+#   cannot express an absolute position at all: HMP's mouse_move is a RELATIVE move
+#   (hmp_mouse_move queues qemu_input_queue_rel) delivered to whichever pointer
+#   registered first - the i8042 PS/2 mouse, which this machine also has - so run
+#   39049818027's every coordinate went out as a thousand-pixel delta, the pointer pinned
+#   itself to a screen corner, and the wizard never left its Welcome page for the whole
+#   budget. The evidence was the screenshots: 02 through 09, the same page with a
+#   different clock. So the transport is QMP and every command's reply is checked.
+#
+#   Three things about QMP's input path then have to be right, and each was wrong once.
+#   None of them failed loudly, because QEMU accepts all three:
+#
+#     * An absolute axis is NOT in pixels. The pointer addresses the surface in
+#       0..0x7FFF (include/ui/input.h's INPUT_EVENT_ABS_MIN/MAX), qmp_input_send_event
+#       passes an "abs" value through unscaled, and hw/input/hid.c assigns it straight to
+#       the pointer. Run 39105685521 sent pixels; the tablet read them as fractions of a
+#       screen and put the pointer about 39x16 from the top-left corner while the driver
+#       believed it was aiming at a button. to_abs() does the scaling a GUI would do.
+#     * The device is chosen per event, as the first handler whose mask intersects the
+#       event's type (ui/input.c). "abs" reaches the tablet because only it claims ABS.
+#       "btn" reaches the PS/2 mouse, which registers first and claims BTN as well - so a
+#       click needs the tablet made current first. HMP's mouse_set does exactly that, and
+#       select_tablet() reaches it through human-monitor-command so this monitor can
+#       stay a QMP one.
+#     * Naming a device on the event itself is not the way to do it: it aborts QEMU. Run
+#       39103628321 reached its first click and died there on "Property
+#       'qemu-fixed-text-console.device' not found", because resolving a device walks the
+#       consoles and -vga std's fixed text console has no such property.
+#
+#   The walk also has to prove it moved, and that proof has to hash the wizard rather
+#   than the desktop. Run 39105685521's check started at x=0, so its verdict turned on a
+#   wallpaper that finished painting between the two dumps: it announced that the clicks
+#   had registered, and then watched a wizard stuck on Welcome for 45 minutes.
 import hashlib
 import json
 import os
@@ -496,15 +519,10 @@ if qmp("qmp_capabilities") is None:
     sys.exit(0)
 say("QMP ready (tablet %s)" % TABLET)
 
-# Every pointer QEMU knows about, before the first click: which one is absolute, and
-# which one is currently receiving events. Two runs of this exercise have turned on
-# which device the guest actually follows, and a fact that decides whether a click can
-# work belongs in the evidence rather than in somebody's memory of QEMU's input
-# routing. query-mice is read-only and costs nothing.
-for entry in qmp("query-mice") or []:
-    say("mouse index=%s name=%s current=%s absolute=%s"
-        % (entry.get("index"), entry.get("name"),
-           entry.get("current"), entry.get("absolute")))
+# Which pointer QEMU delivers events to, and the units its absolute axes speak, are both
+# read from QEMU later - by select_tablet(), once the screendumps have established the
+# screen size those units are relative to. Both belong in the evidence rather than in
+# somebody's memory of QEMU's input routing; see that function for what guessing costs.
 
 
 def serial_text():
@@ -549,15 +567,24 @@ def shot(name):
 
 
 def client_rect(path):
-    """Locate the Calamares client area in a screendump (a P6 PPM).
+    """Locate the Calamares page body in a screendump (a P6 PPM).
 
-    The window's content is the only large light region on the screen: the desktop,
-    the title bar and the installer's sidebar are all dark. The longest run of light
-    pixels is measured per row; the first and last rows whose run exceeds 500 pixels
-    bound the client area vertically, and the largest run's end is its right edge (the
-    sidebar covers the left part of every row, so the run never reaches the client's
-    left edge). Returns {"top", "bottom", "right"} with bottom/right one pixel past
-    the edge, or None when nothing qualifies.
+    The page body is the only large light region on the screen: the desktop, the title
+    bar and the installer's sidebar are all dark. The longest run of light pixels is
+    measured per row; the first and last rows whose run exceeds 500 pixels bound the
+    body vertically, and the largest run's start and end are its left and right edges
+    (the sidebar covers the left part of every row, so the run begins after the window's
+    own left edge). Returns {"top", "bottom", "left", "right"} with bottom/right one
+    pixel past the edge, or None when nothing qualifies.
+
+    "left" is not decoration. It was missing until run 39105685521, and the digest that
+    judges the click walk defaulted it to 0 - which swallowed the desktop as well as the
+    page. That run's welcome reference was taken 25 seconds after Qt first drew, while
+    the wallpaper was still unpainted; by the time the walk ended the wallpaper had been
+    painted, so the two digests differed for a reason that had nothing to do with the
+    wizard, the driver announced the clicks had registered, and the run then spent its
+    full 45 minutes watching a wizard that never left its first page. This function knew
+    the left edge all along and simply did not return it.
     """
     try:
         with open(path, "rb") as handle:
@@ -579,7 +606,7 @@ def client_rect(path):
         return None
     pos += 1  # the single whitespace byte that follows maxval
     stride = width * 3
-    top = bottom = right = None
+    top = bottom = left = right = None
     for y in range(height):
         row = data[pos + y * stride:pos + (y + 1) * stride]
         best = run = 0
@@ -599,18 +626,25 @@ def client_rect(path):
             bottom = y + 1
             if right is None or end + 1 > right:
                 right = end + 1
+            begin = end - best + 1
+            if left is None or begin < left:
+                left = begin
     if top is None:
         return None
-    return {"top": top, "bottom": bottom, "right": right}
+    return {"top": top, "bottom": bottom, "left": left, "right": right}
 
 
 def client_digest(path, rect):
-    """A fingerprint of the client area alone (a P6 PPM), or None if it cannot be read.
+    """A fingerprint of the page body alone (a P6 PPM), or None if it cannot be read.
 
     The region the wizard occupies, hashed: two dumps that agree on this are the same
     page, however much the desktop around them (the clock, a blinking cursor) has moved
     on. That is the difference between "the clicks did nothing" and "the screen is not
     frozen", which a whole-screen byte comparison cannot tell apart.
+
+    The region starts at rect["left"], not at zero, and that is the whole point: the
+    desktop is not the wizard. Hashing from zero made this the check that lied in run
+    39105685521 - see client_rect() for what that cost.
     """
     try:
         with open(path, "rb") as handle:
@@ -632,7 +666,7 @@ def client_digest(path, rect):
         return None
     pos += 1
     stride = width * 3
-    left, right = 0, min(rect["right"], width)
+    left, right = max(0, rect["left"]), min(rect["right"], width)
     top = max(0, rect["top"])
     bottom = min(rect["bottom"], height)
     digest = hashlib.sha256()
@@ -642,11 +676,78 @@ def client_digest(path, rect):
     return digest.hexdigest()
 
 
-def pointer_to(x, y):
-    """Put the pointer at a screen position, absolutely.
+# The tablet's own units. QEMU's absolute pointers address the surface in 0..0x7FFF -
+# include/ui/input.h's INPUT_EVENT_ABS_MIN/MAX - and not in pixels.
+ABS_MAX = 0x7FFF
 
-    These are the coordinates the driver means: the pixel column and row. Sent as
-    "abs" they mean on the wire what they mean here.
+
+def to_abs(pixels, extent):
+    """A pixel column or row, as the absolute pointer's own units.
+
+    A GUI does this scaling before the event leaves it (qemu_input_queue_abs calls
+    qemu_input_scale_axis with the surface size). A QMP client has to do it itself:
+    qmp_input_send_event copies an "abs" value through untouched, and hw/input/hid.c
+    assigns it straight to the pointer - hid_pointer_event's "e->xdx = evt->abs.value".
+
+    This was wrong until run 39105685521, and wrong quietly. That run sent the pixel
+    coordinates 1002 and 670 as raw logical units, and the tablet reads those as
+    1002/32767 and 670/32767 of the screen: the top-left corner, about 39x16. Every
+    click landed on the wallpaper while the driver believed it had aimed at a button -
+    the same shape of mistake as the HMP one it replaced, and just as invisible, because
+    the commands were accepted and the replies were valid.
+    """
+    return max(0, min(ABS_MAX, pixels * ABS_MAX // extent))
+
+
+def select_tablet():
+    """Make the absolute tablet the pointer QEMU delivers input events to.
+
+    qmp_input_send_event routes each event on its own. With no device named it takes the
+    first handler whose mask *intersects* the event's type (ui/input.c's
+    qemu_input_find_handler), so "btn" goes to whichever device registered first and
+    claims BTN - and that is the PS/2 mouse, not the USB tablet. The tablet's own mask is
+    INPUT_EVENT_MASK_BTN | INPUT_EVENT_MASK_ABS (hw/input/hid.c), so it can carry a whole
+    click by itself, but only from the front of the list.
+
+    HMP's mouse_set is exactly that reordering: qemu_mouse_set() calls
+    qemu_input_handler_activate(), which moves the named handler to the head. It is
+    reached through human-monitor-command so the phase-1 monitor can stay a QMP one.
+
+    Run 39105685521 is why this exists. Its query-mice line reads
+    "QEMU PS/2 Mouse current=True" beside "QEMU HID Tablet current=False", and its
+    clicks were therefore button events on the PS/2 mouse while every position went to
+    the tablet - two devices, one click, and no complaint from either.
+    """
+    mice = qmp("query-mice") or []
+    for entry in mice:
+        say("mouse index=%s name=%s current=%s absolute=%s"
+            % (entry.get("index"), entry.get("name"),
+               entry.get("current"), entry.get("absolute")))
+    for entry in mice:
+        if not entry.get("absolute"):
+            continue
+        if entry.get("current"):
+            say("%s is already the current pointer" % entry.get("name"))
+            return True
+        if qmp("human-monitor-command",
+               {"command-line": "mouse_set %d" % entry["index"]}) is None:
+            say("could not make %s the current pointer; its clicks will be missed"
+                % entry.get("name"))
+            return False
+        say("%s is now the current pointer (mouse_set %d)"
+            % (entry.get("name"), entry["index"]))
+        return True
+    say("QEMU reports no absolute pointer at all; clicks can only land wherever the "
+        "relative one happens to have left the pointer")
+    return False
+
+
+def pointer_to(x, y):
+    """Put the pointer at a pixel position, absolutely.
+
+    x and y are pixel columns and rows - what the geometry above measures and what a
+    screendump shows - and they are converted to the pointer's units here, at the
+    boundary, so that nothing above has to think about them.
 
     The events deliberately carry no "device". Naming the tablet is the obvious way to
     be explicit and it aborts QEMU: run 39103628321 reached the first click and died
@@ -656,18 +757,16 @@ def pointer_to(x, y):
         Property 'qemu-fixed-text-console.device' not found
 
     Resolving a device walks the consoles, and the fixed text console -vga std creates
-    has no "device" property to find. Omitting the device is not a retreat: QEMU's
-    rule for an omitted one is that only devices with no input routing are admissible,
-    and the tablet is this machine's only absolute pointer, so an "abs" event has
-    exactly one possible home. Which device that is, and whether it is the current one,
-    is written to ui.log by query-mice before the first click.
+    has no "device" property to find. Targeting is done by select_tablet() instead,
+    which moves the tablet to the front of the handler list rather than naming it on
+    every event.
     """
     return qmp(
         "input-send-event",
         {
             "events": [
-                {"type": "abs", "data": {"axis": "x", "value": x}},
-                {"type": "abs", "data": {"axis": "y", "value": y}},
+                {"type": "abs", "data": {"axis": "x", "value": to_abs(x, size["w"])}},
+                {"type": "abs", "data": {"axis": "y", "value": to_abs(y, size["h"])}},
             ]
         },
         pause=0.4,
@@ -675,11 +774,16 @@ def pointer_to(x, y):
 
 
 def click(x, y):
-    """Move, then press, then release - three commands, as the tablet wants them.
+    """Move, then press, then release.
 
     The press and the release are separate so the guest is given a real interval
     between them; a single batch arrives as one transition and some toolkits read a
     zero-length press as no press at all.
+
+    All three have to be delivered by the same device, which is why select_tablet()
+    runs first. Batching them into one call would not achieve that: input-send-event
+    routes each event individually, so a batch of {abs, btn} still sends the abs to one
+    device and the btn to another.
     """
     if pointer_to(x, y) is None:
         return False
@@ -745,10 +849,14 @@ if not plausible(client):
     client = client_rect(shot_path(welcome_shot))
 
 if plausible(client):
-    say("client area: top %(top)d bottom %(bottom)d right %(right)d" % client)
+    say("page body: top %(top)d bottom %(bottom)d left %(left)d right %(right)d" % client)
 else:
-    say("client-area detection still implausible (%s); using the recorded values" % client)
-    client = {"top": 170, "bottom": 690, "right": 1153}
+    say("page-body detection still implausible (%s); using the recorded values" % client)
+    # 126 is the window's left edge on the layout these values were measured from, so
+    # the fallback region is the whole window rather than the page body alone. What
+    # matters is only that it excludes the desktop: a digest that reaches x=0 is not
+    # measuring the wizard at all (see client_rect).
+    client = {"top": 170, "bottom": 690, "left": 126, "right": 1153}
 
 # The wizard's buttons are anchored to the client area's bottom-right corner: Next
 # spans its 59x23 there, and (right-151, bottom-20) is its centre. Every offset below
@@ -761,6 +869,11 @@ say("Next button target: %d,%d" % next_at)
 # against, so that "the clicks did nothing" is a measurement rather than an assumption.
 # It is hashed from whichever welcome screendump the geometry above came from.
 welcome_digest = client_digest(shot_path(welcome_shot), client)
+
+# Before a single click: which device QEMU will deliver them to. Both previous runs
+# failed here without QEMU ever complaining, so this is the one step whose absence is
+# invisible - and it is the reason a "btn" event is not enough on its own.
+select_tablet()
 
 # Pages whose defaults are already correct are simply clicked through. The partition
 # page arrives with the one blank disk already selected and Erase pre-selected
@@ -822,13 +935,21 @@ say("the wizard moved off the welcome page; the click walk registered")
 # The installation itself (unpacking the image onto an emulated disk) is the long part.
 # One screendump per minute until the guest writes its report; the report, not the
 # pictures, is the pass condition. No clicks are sent while the exec page is up: there
-# is nothing there to press, and a stray click could cancel the install.
+# is nothing there to press, and a stray click could cancel the install. The pointer is
+# moved back to the same spot before each dump for the reason given there.
 number = 10
 deadline = time.time() + 55 * 60
 while time.time() < deadline:
     if os.path.exists(done_path):
         break
     time.sleep(60)
+    # A no-op move, and the only input this loop sends: the live session blanks its own
+    # screen after ten minutes of quiet, and any pointer motion resets that timer. Run
+    # 39105685521's exec page went uniformly black at 19-exec and stayed black for the
+    # thirty shots after it, which is why nothing in that run could be read past the
+    # first ten minutes of installing. No button is pressed, so nothing can be clicked
+    # by accident.
+    pointer_to(*next_at)
     shot("%02d-exec" % number)
     number += 1
 

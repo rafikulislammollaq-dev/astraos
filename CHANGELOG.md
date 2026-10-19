@@ -370,6 +370,41 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- **The pointer was aimed on a scale that is not pixels, and the button was pressed by a
+  different device than the one that moved — so the wizard advanced nowhere and the
+  exercise's own stall detector was fooled into silence.** Run 39105685521 (2026-10-18)
+  burned its whole 48-minute budget, and every screendump from `02-locale` to `18-exec` is
+  the **Welcome** page again. `ui.log`'s `query-mice` output is the confession:
+  `QEMU PS/2 Mouse current=True absolute=False` next to `QEMU HID Tablet current=False
+  absolute=True` — the pointer that would *press* was not the pointer that would *aim*.
+
+  Three defects, each one read out of QEMU's source rather than guessed at:
+
+  - **An `input-send-event` `abs` value is not a pixel.** QEMU's `INPUT_EVENT_ABS_MIN`
+    and `INPUT_EVENT_ABS_MAX` are `0x0000` and `0x7FFF`; `qmp_input_send_event` passes the
+    value through unscaled, and `hw/input/hid.c`'s `hid_pointer_event` assigns it directly
+    (`e->xdx = evt->abs.value`) to the tablet's axes. The driver's (1002, 670) therefore
+    landed near (39, 16) of 32767 — not on the Next button, not even on the same wall of
+    the screen. Pixels are now scaled to `0x7FFF` before they go on the wire.
+  - **QEMU gave every button press to the mouse, not the tablet.** `qemu_input_find_handler`
+    returns the *first* handler whose mask intersects the event, and it is evaluated per
+    event. The i8042 PS/2 mouse registers first with mask `BTN|REL`, so it took every
+    `btn`; only `hid_tablet_handler` takes `abs`, with mask `BTN|ABS`. An `abs` move aimed
+    with the tablet while the press went to the mouse. The driver now makes the tablet the
+    current input handler with HMP's `mouse_set` — `qemu_mouse_set` →
+    `qemu_input_handler_activate`, which moves the handler to the head of the list — sent
+    over `human-monitor-command`, and reads the routing back with `query-mice` before the
+    first click.
+  - **The stall detector hashed the wrong frame.** `client_digest` began at x=0 rather
+    than the client area's `left`, so its verdict turned on the desktop's left column
+    instead of the wizard — which is how a walk that never advanced still reported a
+    changed page. The digest now starts where the client area does.
+
+  The exec loop also nudges the pointer (no button) before each screendump: from
+  `19-exec` onward this run's dumps were uniform 282-byte PNGs because X had blanked the
+  screen, which removes the evidence exactly when the interesting part is happening.
+  Pinned by two more tests in `tests/static/test_install_boot.py`.
+
 - **The install exercise's clicks went to the wrong pointer, in the wrong units, so the
   wizard sat untouched for 45 minutes and the verdict could only say "no report
   arrived".** Run 39049818027 (2026-10-17) clicked Next eleven times — through locale,

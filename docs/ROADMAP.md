@@ -148,6 +148,25 @@ updated. Every step proven in CI or recorded as untested.
     routing in `ui.log` before the first click. The same run showed the welcome
     screendump being taken before Qt had drawn anything, so the client-area detection
     now looks again once before falling back.
+  - Run 39105685521 (2026-10-18) spent the whole 48-minute budget, and its screendumps
+    from `02-locale` to `18-exec` are the same **Welcome** page again. The digest that is
+    supposed to catch a pointer which never moved stayed quiet, because it was reading the
+    wrong pixels. Three defects came out of that evidence, each one read out of QEMU's own
+    source. First, an `input-send-event` `abs` value is **not a pixel**: QEMU's
+    `INPUT_EVENT_ABS_MIN`/`MAX` are `0x0000`/`0x7FFF`, `qmp_input_send_event` passes the
+    value through unscaled, and `hw/input/hid.c`'s `hid_pointer_event` assigns it straight
+    to the tablet's axes — so the driver's (1002, 670) landed near (39, 16); the
+    coordinates are now scaled to `0x7FFF`. Second, `qemu_input_find_handler` returns the
+    *first* handler whose mask intersects the event, and the i8042 PS/2 mouse (`BTN|REL`)
+    registers before the tablet (`BTN|ABS`), so `abs` moves went to the tablet and every
+    button press went to the mouse; `query-mice` in `ui.log` recorded exactly that
+    (`PS/2 Mouse current=True absolute=False` beside `HID Tablet current=False
+    absolute=True`), and the driver now makes the tablet current with HMP's `mouse_set`
+    over `human-monitor-command` and records the result back. Third, the digest hashed
+    from x=0 instead of the client area's left edge, so its verdict turned on the
+    desktop's left column rather than the wizard. The exec loop also nudges the pointer
+    before each screendump now, because X blanked the screen from `19-exec` onward into
+    uniform 282-byte dumps with no evidence in them.
 
   The manual procedure in `docs/INSTALLATION_VIRTUALBOX.md` stays either way.
 - [x] **Boot menu paths exercised in CI**: syslinux (BIOS) and GRUB-EFI, not only

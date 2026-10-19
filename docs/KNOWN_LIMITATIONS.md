@@ -65,7 +65,7 @@ hardware.** What has happened, with the record:
 An automated end-to-end exercise now exists in the source (2026-10-16):
 `scripts/install-boot-test.sh`, run by CI as the `install-boot` job, installs the ISO
 onto a blank disk by driving the ISO's own Calamares UI over the QEMU monitor and then
-boots that disk alone. It has run six times and **has not yet completed an
+boots that disk alone. It has run seven times and **has not yet completed an
 installation**. Each failure so far has been a different, named defect rather than a
 recurring one: startup failures first; then a wizard that never advanced because the
 driver pressed Return at a Calamares that marks no default button (run 39024106426);
@@ -75,12 +75,17 @@ the wizard sat untouched for 45 minutes (run 39049818027 — every screendump fr
 onward was the same Welcome page); then, after the move to QMP and absolute pointer
 events, QEMU aborting on the first click because naming a device on an input event
 walks the consoles and the fixed text console `-vga std` creates has no `device`
-property to find (run 39103628321). The driver now speaks QMP, sends absolute pointer
-events with no device named, records the machine's pointer routing with `query-mice`,
-and hashes the client area before and after its click walk so that this class of
-failure is reported in minutes rather than after the whole budget — which is how run
-39103628321 failed in 5m32s with a named cause where 39049818027 spent 45 minutes
-without one. Until a green run exists, nothing in this section changes.
+property to find (run 39103628321); then a walk that aimed in units the tablet does not
+use — an `input-send-event` `abs` value is a fraction of `0x7FFF`, not a pixel — whose
+button presses QEMU handed to the PS/2 mouse rather than the tablet, with the exercise's
+own stall detector quiet because it was hashing from the wrong edge (run 39105685521).
+The driver now speaks QMP, scales its coordinates to the absolute range, makes the
+tablet the current input handler with `mouse_set` and records the machine's pointer
+routing with `query-mice`, and hashes the client area from its real left edge before and
+after its click walk, so that this class of failure is reported in minutes rather than
+after the whole budget — which is how run 39103628321 failed in 5m32s with a named cause
+where 39049818027 spent 45 minutes without one. Until a green run exists, nothing in
+this section changes.
 
 **Consequence:** statements about the live system booting in a virtual machine, and about
 the live session's networking, are now backed by recorded runs. Everything about
