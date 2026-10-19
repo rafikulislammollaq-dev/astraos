@@ -153,10 +153,18 @@ log "slideshow files present: $(printf '%s' "${SLIDESHOW_FILES}" | tr '\n' ' ')"
 PARTITION_CONF=/etc/calamares/modules/partition.conf
 [ -f "$PARTITION_CONF" ] || fail "partition.conf is missing; the installer would have no partitioning policy"
 
-if grep -qsE '^initialPartitioningChoice:[[:space:]]*eraseDisk' "$PARTITION_CONF"; then
-    fail "partition.conf defaults to eraseDisk; the default must not authorise erasure"
+# The pattern is `none`, and that is a correction rather than a preference. Calamares
+# 3.3's Config::installChoiceNames() knows exactly
+#     none, nochoice, alongside, erase, replace, manual
+# and installChoiceNames().find() falls back to the FIRST entry of that table - "none" -
+# for a name it does not know, silently for this key. An assertion looking for the string
+# `eraseDisk` could therefore never fire: that spelling is not a choice Calamares is able
+# to make, so a partition.conf carrying it erases nothing. The value that authorises
+# erasure is `erase`. Requiring `none` catches that one, and every other spelling with it.
+if ! grep -qsE '^initialPartitioningChoice:[[:space:]]*none[[:space:]]*$' "$PARTITION_CONF"; then
+    fail "partition.conf's default partitioning choice is not 'none'; the installer must not pre-authorise erasing a disk"
 fi
-printf '%s ok    the default partitioning choice does not erase a disk\n' "$PREFIX"
+printf '%s ok    the default partitioning choice is none: nothing is erased without a choice\n' "$PREFIX"
 
 if grep -qsE '^alwaysShowPartitionLabels:[[:space:]]*true' "$PARTITION_CONF"; then
     printf '%s ok    partition labels are always shown to the user\n' "$PREFIX"

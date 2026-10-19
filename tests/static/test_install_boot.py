@@ -18,6 +18,13 @@ half-hour QEMU run:
     not into the seed, not into a log, not into this repository;
   * the wizard is advanced by clicks, never by Return: Calamares 3.3 marks no default
     button, and run 39024106426 spent a whole walk finding that out;
+  * a partitioning choice the CI seed states must be one Calamares knows: the partitions
+    page disables Next until a choice is made, and `eraseDisk` is not in
+    Config::installChoiceNames(), so it falls back to "no choice" in silence and run
+    39222797247 spent forty-four minutes clicking a disabled button;
+  * every step of the walk is judged by the page body's bytes before and after, so a step
+    that does not move names the page it could not leave instead of spending the budget
+    clicking at it;
   * every click target is an offset from the client area the driver finds in its own
     screendump - the window is always Calamares' 1024x520 minimum (a smaller branding
     size is clamped up to it), and the users page's two password fields sit side by
@@ -162,7 +169,7 @@ def test_the_ci_seed_cannot_repeat_a_shipped_key() -> None:
         "the commented-out shipped lines must say why they were replaced"
     )
     for appended in (
-        "initialPartitioningChoice: eraseDisk",
+        "initialPartitioningChoice: erase",
         "initialSwapChoice: none",
         "value: \"AstraOS CI\"",
         "value: \"astraos-ci\"",
@@ -222,6 +229,52 @@ def test_the_wizard_is_advanced_by_clicks_and_the_targets_are_found_on_screen() 
             "run 39024106426's screenshots and reproduced against a local Calamares "
             "3.3.14; %s left the driver" % offset
         )
+
+
+def test_every_step_of_the_walk_is_proven_rather_than_assumed() -> None:
+    """Run 39222797247 spent forty-four minutes clicking a button that could not be clicked.
+
+    The partitions page arrives with no partitioning choice made; Calamares disables Next
+    until one is made; and a click on a disabled button is a no-op that QEMU accepts
+    without a word of complaint. The driver reported that the click walk had registered,
+    because the only thing it compared was the welcome page against the END of the walk -
+    and those do differ. Its frame 09-install, named for the page the walk believed it had
+    reached, is the partitions page with both radio buttons empty, and 18-exec nine minutes
+    later is that same page.
+
+    Four things keep that from recurring, and each is pinned here: the seed states a value
+    Calamares recognises, the choice is made on the page itself, every step is judged by
+    the page body's bytes, and the exec loop wakes the screen with a key rather than with
+    the pointer move that provably does not reset the blanking timer.
+    """
+    host = _text(HOST_SCRIPT)
+    code = _code(HOST_SCRIPT)
+
+    assert "initialPartitioningChoice: erase\n" in host, (
+        "the CI seed must state a partitioning choice Calamares can make: `eraseDisk` is "
+        "not in Config::installChoiceNames() and falls back to `none` in silence, which "
+        "leaves the partitions page's Next button disabled"
+    )
+    assert "def walk_next(" in code and "walk_reached.append" in code, (
+        "each step of the walk must be judged by the page it left behind"
+    )
+    assert 'erase_at = (client["left"] + 311, client["top"] + 69)' in code, (
+        "the partitions page's Erase disk row must be clicked on the page itself: that "
+        "page's Next is disabled until a partitioning choice has been made"
+    )
+    assert "the wizard is still showing %s after two clicks on Next" in code, (
+        "a step that does not move must end the walk and name the page it could not leave, "
+        "rather than spending the rest of the budget clicking at it"
+    )
+    assert '"data": "shift"' in code, (
+        "the exec loop must wake the live session with a key: a pointer move does not reset "
+        "its blanking timer, and runs 39105685521 and 39222797247 both went uniformly black "
+        "at 19-exec with a move sent before every dump"
+    )
+    assert "pointer_to(*next_at)" not in code, (
+        "the exec loop's wake input must not be a pointer move; it does not reset the "
+        "blanking timer, and it is the input both black-screen runs used"
+    )
 
 
 def test_the_guest_driver_never_partitions_or_formats_anything() -> None:
@@ -430,16 +483,27 @@ def test_the_driver_reports_an_unresponsive_pointer_instead_of_waiting() -> None
     """A wizard that did not move must be named in minutes, not after the whole budget.
 
     The 45 minutes of run 39049818027 were spent watching an untouched Welcome page
-    because nothing could tell the host the walk had failed. The driver now hashes the
-    client area of its first and last screendump, and the host stops waiting when the
-    driver gives up - so the next failure of this kind costs about two minutes.
+    because nothing could tell the host the walk had failed. The driver hashed the client
+    area then, and the host stops waiting when the driver gives up - but it hashed the
+    client area only ONCE, at the end of the walk, and compared it with the welcome page.
+    So run 39222797247 could still announce that the click walk had registered while
+    sitting on the partitions page for forty-four minutes: the page it ended on was not the
+    page it started on, and that was the whole of the measurement.
+
+    Each step is compared with the step before it now, and the step that does not move
+    names the page it could not leave, so the next failure of this kind costs about two
+    minutes rather than a whole budget.
     """
     code = _code(HOST_SCRIPT)
     assert "def client_digest(" in code, (
         "the walk must be able to measure whether the client area changed at all"
     )
-    assert "the clicks did not register" in code, (
-        "an unchanged client area across the whole walk must be named as what it is"
+    assert "def walk_next(" in code and "after != before" in code, (
+        "every step of the walk must compare the page body before it with the page body "
+        "after it, rather than measuring the walk once at the end"
+    )
+    assert "the wizard is still showing %s after two clicks on Next" in code, (
+        "the step that did not move must name the page it could not leave"
     )
     host = _text(HOST_SCRIPT)
     assert "kill -0 \"$UI_DRIVER_PID\"" in host, (

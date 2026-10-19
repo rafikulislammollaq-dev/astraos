@@ -42,15 +42,20 @@ HOOKS_DIR = REPO_ROOT / "config" / "live-build" / "config" / "hooks" / "live"
 
 # (hook file, pattern the hook must use, repository source, installed path, must match)
 #
-# `must match` is False for the assertions that refuse the build when the pattern IS found:
-# "the default partitioning choice must not be eraseDisk" is written that way.
+# Every entry is a pattern the hook searches FOR in a file it must find it in, so
+# `must match` is True for all of them now. The disk-safety assertion used to be the one
+# written the other way round - refusing the build when `eraseDisk` was present - and that
+# is the shape that let run 39222797247 happen: `eraseDisk` is not a value Calamares has
+# (an unknown name falls back to the first entry of Config::installChoiceNames(), which is
+# `none`, silently), so the assertion could never fire and the choice it guarded was never
+# made. The hook now requires the value to BE `none`.
 HOOK_ASSERTIONS: list[tuple[str, str, str, str, bool]] = [
     (
         "0300-installer.hook.chroot",
-        r"^initialPartitioningChoice:[[:space:]]*eraseDisk",
+        r"^initialPartitioningChoice:[[:space:]]*none",
         "installer/calamares/modules/partition.conf",
         "/etc/calamares/modules/partition.conf",
-        False,
+        True,
     ),
     (
         "0300-installer.hook.chroot",

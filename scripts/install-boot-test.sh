@@ -255,10 +255,25 @@ cat >> "$WORK/seed/modules/partition.conf" <<'EOF'
 
 # --- appended by scripts/install-boot-test.sh (present only in CI) ---
 # The exercise has exactly one disk and no one to ask; the choice a person would make
-# (select the disk, then Erase) is made once, up front. The shipped statement for each
-# of these keys - where present - was commented out above, so each key appears exactly
-# once in this copy.
-initialPartitioningChoice: eraseDisk
+# (select the disk, then Erase) is stated here. The shipped statement for each of these
+# keys was commented out above, so each key appears exactly once in this copy.
+#
+# `erase`, and not `eraseDisk`. Calamares 3.3's Config::installChoiceNames() holds
+# exactly
+#     none, nochoice, alongside, erase, replace, manual
+# and installChoiceNames().find() returns the FIRST entry of that table for a name that
+# is not in it - "none", meaning no choice - and for this key, unlike the swap key three
+# lines below it in Config.cpp, the fallback is silent. So `eraseDisk` was accepted
+# without a word and meant "nothing is selected", which is what run 39222797247's own
+# Calamares log records:
+#
+#     InstallChoice Config::NoChoice "none"
+#     bool ChoicePage::calculateNextEnabled() const
+#     No partitioning choice has been made yet
+#
+# A partition page with no choice made is a partition page whose Next button is
+# disabled, and that run spent forty-four minutes clicking it.
+initialPartitioningChoice: erase
 initialSwapChoice: none
 EOF
 
@@ -822,11 +837,6 @@ if not wait_for("ASTRAOS-INSTALL: starting calamares", 1500, "the driver's start
     say("giving up; the serial console keeps whatever happened")
     sys.exit(0)
 
-# Qt's first window on an emulated CPU takes a while; the driver prints its marker
-# before the process starts, so wait past startup rather than racing it.
-time.sleep(60)
-shot("01-welcome")
-
 # The client area carries every click target. Locate it in the welcome screendump
 # rather than assuming a screen position: the window manager decides where the window
 # goes. Calamares itself fixes the size - its own minimum is 1024x520 and the branding
@@ -841,21 +851,29 @@ def plausible(rect):
             and abs(rect["top"] - 170) <= 40)
 
 
+# Qt's first window takes a while, and how long depends on the CPU the guest was given.
+# The driver prints its marker before that process starts, so the window has to be waited
+# for - but a fixed wait is the wrong instrument in both directions. Run 39103628321 shot
+# 60 seconds after the marker and got a bare desktop (a 6 KB screendump, no light region
+# at all), and the recorded fallback then supplied geometry with nothing in the evidence
+# to check it against, which is the state this detection exists to avoid. Under the
+# runner's own KVM the same window is up in a second or two, and a fixed minute is spent
+# watching a page that has been ready all along. So look for it, and believe it only when
+# it is where a 1024x520 window belongs.
+#
+# 01-welcome keeps the first look, because a bare desktop there is the evidence for why
+# the wait happened at all; every retry overwrites 01b, so what survives under that name
+# is the look the geometry was measured from.
 welcome_shot = "01-welcome"
-client = client_rect(shot_path(welcome_shot))
-if not plausible(client):
-    # Run 39103628321 shot 60 seconds after the driver's marker and got a bare desktop
-    # (a 6 KB screendump, no light region at all): the window was not drawn yet. The
-    # fallback then supplied the geometry with nothing in the evidence to check it
-    # against, which is the state this design exists to avoid. Qt's first window on an
-    # emulated CPU is simply not there yet at a fixed 60 seconds; look again shortly
-    # rather than believing the first answer.
-    say("client-area detection implausible in %s (%s); waiting and looking again"
-        % (welcome_shot, client))
-    time.sleep(25)
-    welcome_shot = "01b-welcome-retry"
+client = None
+for attempt in range(9):
+    time.sleep(5.0 if attempt else 20.0)
+    if attempt:
+        welcome_shot = "01b-welcome-retry"
     shot(welcome_shot)
     client = client_rect(shot_path(welcome_shot))
+    if plausible(client):
+        break
 
 if plausible(client):
     say("page body: top %(top)d bottom %(bottom)d left %(left)d right %(right)d" % client)
@@ -884,16 +902,74 @@ welcome_digest = client_digest(shot_path(welcome_shot), client)
 # invisible - and it is the reason a "btn" event is not enough on its own.
 select_tablet()
 
-# Pages whose defaults are already correct are simply clicked through. The partition
-# page arrives with the one blank disk already selected and Erase pre-selected
-# (initialPartitioningChoice in the CI seed), and the summary page has no confirmation
-# prompt to tick (SummaryViewStep::isNextEnabled is unconditionally true in the pinned
-# Calamares).
-for name, settle in (("02-locale", 10.0), ("03-keyboard", 10.0),
-                     ("04-partition", 12.0), ("05-users", 12.0)):
-    click(*next_at)
-    time.sleep(settle)
-    shot(name)
+# The walk. Pages whose defaults are already correct are clicked straight through, and
+# the summary page has no confirmation prompt to tick (SummaryViewStep::isNextEnabled is
+# unconditionally true in the pinned Calamares) - but the partition page does not arrive
+# with its choice made and cannot be clicked through at all. See the two notes below.
+#
+# Nothing here is believed on the strength of having been clicked: walk_next() judges
+# every step by the page body's bytes, before against after.
+walk_reached = [(welcome_shot, welcome_digest)]
+
+
+def walk_next(name, settle):
+    """Click Next, and return True only if the page afterwards is not the page before.
+
+    Run 39222797247 is why this is not simply "click and hope". It is the first run whose
+    evidence could be read past the first page, and it shows the walk never left the
+    partitions page: that page arrived with no partitioning choice made, Calamares
+    disables Next until one is made, and a click on a disabled button is a no-op that
+    QEMU accepts without a word of complaint. The driver believed it had walked the whole
+    wizard, and said so, because the only comparison it ever made was the welcome page
+    against the END of the walk - and those do differ. Its frame 09-install, named for the
+    page the walk thought it had reached, is the partitions page with both radio buttons
+    empty; 18-exec, nine minutes later, is that same page; 19-exec onward are black.
+
+    One extra click is allowed, for a page that is slow to draw. After that the walk stops
+    and names the page it could not leave, because that is worth far more than the rest of
+    the budget spent clicking at a wizard nobody can move.
+    """
+    before_name, before = walk_reached[-1]
+    for attempt in (1, 2):
+        click(*next_at)
+        time.sleep(settle)
+        shot(name)
+        after = client_digest(shot_path(name), client)
+        if after is not None and after != before:
+            walk_reached.append((name, after))
+            return True
+        say("%s: the page body is unchanged after a click on Next; clicking once more in "
+            "case the page is slow to draw" % name)
+    say("%s: the wizard is still showing %s after two clicks on Next - either that page's "
+        "Next is disabled, or the click is not reaching it" % (name, before_name))
+    return False
+
+
+for name, settle in (("02-locale", 10.0), ("03-keyboard", 10.0), ("04-partition", 12.0)):
+    if not walk_next(name, settle):
+        sys.exit(0)
+
+# The partitions page is the one page that cannot be clicked through, so its choice is
+# made here, on the row itself. Nothing about it depends on the seed being right: a radio
+# button that is already selected stays selected when it is clicked again, so this is the
+# same action whether or not `initialPartitioningChoice` took effect - which is the point,
+# because that key silently meant "no choice" for as long as it read `eraseDisk`.
+#
+# The target is the row's LABEL, not its little radio circle: Calamares' ChoicePage makes
+# each choice a QRadioButton and sets the icon on it, so the indicator, the icon and the
+# text are one widget and every part of the row activates it - and the label is the part
+# with room around it. The offsets are from the client area's top-left corner, measured on
+# this run's own 1280x800 screendump: the 20-pixel-tall "Erase disk" row at y=239, its text
+# beginning at x=413, the corner itself at 129,170.
+erase_at = (client["left"] + 311, client["top"] + 69)
+pointer_to(*erase_at)
+shot("04a-pointer-erase")
+click(*erase_at)
+time.sleep(2.0)
+shot("04b-erase-chosen")
+
+if not walk_next("05-users", 12.0):
+    sys.exit(0)
 
 # The users page: identity fields are preset and protected; the password fields are the
 # only thing that needs typing. Both sit on one row, side by side (upstream's
@@ -917,49 +993,71 @@ click(*confirm_at)
 type_text(password)
 shot("07-confirm-typed")
 
-click(*next_at)
-time.sleep(12.0)
-shot("08-summary")
+if not walk_next("08-summary", 12.0):
+    sys.exit(0)
 
 # The summary page's Next is relabelled Install; the button grows leftwards from its
-# fixed right edge, so the same target still lands inside it.
-click(*next_at)
-time.sleep(15.0)
-shot("09-install")
-
-# PROVE THE POINTER MOVED, instead of assuming it did. Run 39049818027 clicked eleven
-# times and the wizard was still on Welcome when the budget ran out; the driver had no
-# way to notice, so the verdict could only be "the installer never wrote its report".
-# The panel's clock is inside the compared region and changes every minute, so the
-# whole-screen bytes never match; the client area's are hashed instead, and that region
-# is the wizard itself. Unchanged across the whole walk means the clicks changed
-# nothing - so stop now, name it, and let the host judge it in seconds.
-walk_digest = client_digest(shot_path("09-install"), client)
-if walk_digest is not None and walk_digest == welcome_digest:
-    say("the wizard's client area is unchanged from the welcome page after the whole "
-        "walk: the clicks did not register (pointer input is not reaching the guest)")
+# fixed right edge, so the same target still lands inside it. This step gets the longest
+# settle of the walk: what follows the click that starts an installation is a page the
+# job queue has to build.
+if not walk_next("09-install", 20.0):
     sys.exit(0)
-say("the wizard moved off the welcome page; the click walk registered")
 
-# The installation itself (unpacking the image onto an emulated disk) is the long part.
-# One screendump per minute until the guest writes its report; the report, not the
-# pictures, is the pass condition. No clicks are sent while the exec page is up: there
-# is nothing there to press, and a stray click could cancel the install. The pointer is
-# moved back to the same spot before each dump for the reason given there.
+# Whether the pointer reached the guest at all used to be one hopeful comparison here -
+# the welcome page against the end of the walk - and run 39222797247 showed how much that
+# could miss. Every transition is proven as it happens now, so there is nothing left to
+# check at this point: the walk cannot reach this line without having left every page it
+# clicked. What the single comparison could not do was name the page it was stuck on;
+# walk_next() does that, and writes it to ui.log where the host reads it.
+
+# The installation itself is the long part - minutes rather than seconds even on the
+# runner's own KVM, because it writes a 2.4 GB image onto a fresh disk and then
+# configures everything it wrote. One screendump per minute until the guest writes its
+# report; the report, not the pictures, is the pass condition. No clicks are sent while
+# the exec page is up: there is nothing there to press, and a stray click could cancel
+# the install.
+#
+# The one input this loop does send is a bare Shift - send-key presses and releases its
+# list together, so a single "shift" is a complete keystroke that types nothing and
+# leaves no modifier held. It is a KEY, and not the pointer move the previous version
+# sent, for a reason the evidence gives twice: the live session blanks its own screen
+# after ten minutes of quiet, a pointer MOVE does not reset that timer, and runs
+# 39105685521 and 39222797247 each had their exec page go uniformly black at 19-exec and
+# stay black for every frame after it - with a move sent before every single dump. Four
+# hundred bytes of "the screen is off" is not evidence, and both runs lost the second
+# half of what they were paid for. The pause afterwards is for the guest, which has to
+# repaint before a dump is worth taking.
 number = 10
 deadline = time.time() + 55 * 60
+exec_page = walk_reached[-1][1]
+unchanged = 0
 while time.time() < deadline:
     if os.path.exists(done_path):
         break
     time.sleep(60)
-    # A no-op move, and the only input this loop sends: the live session blanks its own
-    # screen after ten minutes of quiet, and any pointer motion resets that timer. Run
-    # 39105685521's exec page went uniformly black at 19-exec and stayed black for the
-    # thirty shots after it, which is why nothing in that run could be read past the
-    # first ten minutes of installing. No button is pressed, so nothing can be clicked
-    # by accident.
-    pointer_to(*next_at)
+    qmp("send-key", {"keys": [{"type": "qcode", "data": "shift"}]}, pause=0.3)
+    time.sleep(2.0)
     shot("%02d-exec" % number)
+    size = os.path.getsize(shot_path("%02d-exec" % number))
+    digest = client_digest(shot_path("%02d-exec" % number), client)
+    if size < 20000:
+        # A real page of this wizard is about 3.4 MB of PPM; a bare desktop was 6 KB in
+        # run 39103628321 and a blanked screen about 300 bytes. Anything this small is not
+        # a page, so it is said plainly rather than being read later as a hung install.
+        say("%02d-exec is only %d bytes: the guest is drawing no page at all"
+            % (number, size))
+    elif digest == exec_page:
+        unchanged += 1
+        if unchanged == 8:
+            say("the installer's page has been byte-identical for eight minutes; the "
+                "installation is not making progress")
+        elif unchanged == 15:
+            say("the installer's page has been byte-identical for fifteen minutes; "
+                "giving up on it rather than spending the rest of the budget")
+            break
+    else:
+        unchanged = 0
+        exec_page = digest
     number += 1
 
 if os.path.exists(done_path):

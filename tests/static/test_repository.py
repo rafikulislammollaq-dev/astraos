@@ -132,8 +132,14 @@ def test_calamares_configuration_has_the_safety_properties() -> None:
     assert re.search(r"^alwaysShowPartitionLabels:\s*true", partition, re.M), (
         "partition.conf must always show which partitions are affected"
     )
-    assert not re.search(r"^initialPartitioningChoice:\s*eraseDisk", partition, re.M), (
-        "partition.conf must not default to erasing a disk"
+    # `none` exactly, and not "not eraseDisk". `eraseDisk` is not a value Calamares has at
+    # all: Config::installChoiceNames() lists none, nochoice, alongside, erase, replace,
+    # manual, and an unknown name falls back to the first entry of that table - `none` -
+    # without a warning. So the old assertion could never fail, and pinning a spelling
+    # Calamares treats as "no choice" pinned nothing (run 39222797247).
+    assert re.search(r"^initialPartitioningChoice:\s*none\s*$", partition, re.M), (
+        "partition.conf must not preselect a partitioning choice: nothing may be erased "
+        "before the user has chosen it"
     )
     assert re.search(r"^defaultFileSystemType:\s*\"?ext4\"?", partition, re.M), (
         "the default root filesystem must be ext4 (plan §11)"
