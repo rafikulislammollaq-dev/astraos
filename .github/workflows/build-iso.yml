@@ -311,6 +311,14 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qemu-system-x86 imagemagick
 
+          # /dev/kvm ships on these runners as root:kvm, and the runner user is not in
+          # the kvm group -- so a writability test fails and QEMU silently falls back to
+          # TCG emulation, which is the difference between a boot in seconds and a boot
+          # in minutes. Nothing here needs to be a security boundary: the device is a
+          # shared runner's own hardware virtualisation.
+          sudo chmod 666 /dev/kvm 2>/dev/null || true
+          ls -l /dev/kvm 2>/dev/null || echo "no /dev/kvm on this runner"
+
       - name: Boot the ISO and run its self-test
         run: |
           ls -la iso/
@@ -367,6 +375,11 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf
+
+          # See the note in the smoke-boot job: /dev/kvm is root:kvm and the runner user
+          # is not in kvm, so QEMU would fall back to emulation without this.
+          sudo chmod 666 /dev/kvm 2>/dev/null || true
+          ls -l /dev/kvm 2>/dev/null || echo "no /dev/kvm on this runner"
 
       - name: Boot through the syslinux menu (BIOS)
         run: ./scripts/boot-menu-test.sh --medium bios --out menus-bios iso/*.iso
@@ -457,6 +470,12 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils imagemagick
+
+          # See the note in the smoke-boot job. This is the exercise that pays for the
+          # fallback: run 39105685521 spent 48 minutes installing under TCG emulation
+          # where the runner's own /dev/kvm was sitting right there, unreadable.
+          sudo chmod 666 /dev/kvm 2>/dev/null || true
+          ls -l /dev/kvm 2>/dev/null || echo "no /dev/kvm on this runner"
 
       - name: Install the ISO and boot the installed system
         run: |

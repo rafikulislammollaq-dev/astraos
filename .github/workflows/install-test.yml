@@ -87,6 +87,13 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils imagemagick
 
+          # /dev/kvm ships on these runners as root:kvm, and the runner user is not in the
+          # kvm group, so QEMU falls back to TCG emulation unless it is granted here. That
+          # fallback is what made the exercise take ~45 minutes; with the device readable
+          # the same install is a few minutes.
+          sudo chmod 666 /dev/kvm 2>/dev/null || true
+          ls -l /dev/kvm 2>/dev/null || echo "no /dev/kvm on this runner"
+
       - name: Install the ISO and boot the installed system
         run: |
           ls -la iso/

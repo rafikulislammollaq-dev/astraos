@@ -324,12 +324,21 @@ APPEND="$APPEND quiet splash"
 APPEND="$APPEND console=ttyS0,115200n8 astraos.ci.install=1"
 
 # --- 4. QEMU, phase 1 ------------------------------------------------------------------
+# Ask about KVM and say what the answer was. A silent fallback to emulation is
+# expensive: run 39105685521 spent 48 minutes installing where the machine's own
+# hardware virtualisation was available the whole time, and the only reason it was not
+# used is that /dev/kvm is root:kvm while the runner user is not in the kvm group, so a
+# plain writability test said no. Name the cause, and name the cure.
 ACCEL=(-cpu max)
-if [ -w /dev/kvm ]; then
+if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
     ACCEL=(-enable-kvm -cpu host)
     say "KVM acceleration enabled"
+elif [ -e /dev/kvm ]; then
+    say "KVM exists but is not usable by $(id -un) ($(ls -ld /dev/kvm 2>/dev/null));"
+    say "  booting under QEMU emulation, which is several times slower."
+    say "  On a CI runner, 'sudo chmod 666 /dev/kvm' before this script makes it usable."
 else
-    say "no usable KVM; booting under QEMU emulation (slower)"
+    say "no /dev/kvm on this machine; booting under QEMU emulation (slower)"
 fi
 
 say "creating a blank 20 GiB disk"
