@@ -325,7 +325,13 @@ class Assistant:
         yield {"type": "done"}
 
     def confirm(self, plan: dict) -> dict:
-        """Execute a confirmed plan, after the whitelist check. Never raises."""
+        """Execute a confirmed plan, after the whitelist check. Never raises.
+
+        The page's plan comes from the user's own request: this server does not
+        retrieve documents, so the provenance is the trusted one. The Worker's
+        document path is the one that marks a request untrusted, and it refuses
+        untrusted plans above `observe` before they can reach a confirm card.
+        """
         refusal = plan_refusal(plan)
         if refusal:
             return {"ok": False, "detail": refusal}

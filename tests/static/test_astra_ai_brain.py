@@ -61,10 +61,19 @@ TIER_NAMES = ("worker", "brain", "router")
 # The tier that must have a model for the assistant to do anything at all.
 REQUIRED_TIER = "worker"
 
-# The five actions that can lose work or power the machine off. The same set
-# test_astra_ai_actions.py pins, and the reason Worker._needs_confirmation()
-# exists.
-IRREVERSIBLE = {"run_command", "shutdown", "reboot", "suspend", "close_window"}
+# The actions that must not run without a human's yes. The catalog's
+# needs_confirm flag is the mechanism; Astra Guard's levels are the policy, and
+# test_astra_guard.py pins the two together. This list is spelled out rather
+# than derived so an upgrade that quietly drops a flag fails here.
+NEEDS_CONFIRMATION = {
+    "close_window",
+    "press_key",
+    "type_text",
+    "suspend",
+    "reboot",
+    "shutdown",
+    "run_command",
+}
 
 # The eight skills the package ships. Spelled out rather than derived, for the
 # same reason: a skill that silently disappears from `astra-ai skills` is a
@@ -847,7 +856,7 @@ def test_the_worker_grammars_are_closed() -> None:
 
 def test_question_for_names_the_action_and_its_arguments() -> None:
     """The human is asked about a specific thing, not a category of thing."""
-    for action in sorted(IRREVERSIBLE):
+    for action in sorted(NEEDS_CONFIRMATION):
         sentence = worker.question_for(action, {})
         assert sentence.strip(), f"{action}: the confirmation sentence is empty"
         assert "assistant wants" in sentence, (
@@ -869,7 +878,7 @@ def test_only_the_irreversible_actions_need_confirmation() -> None:
     with tempfile.TemporaryDirectory(prefix="astraos-ai-brain-") as home:
         with _open_book(Path(home)) as book:
             runner = worker.Worker(_StubPool(), journal=book)
-            for action in sorted(IRREVERSIBLE):
+            for action in sorted(NEEDS_CONFIRMATION):
                 assert runner._needs_confirmation(action, {}) is True, (
                     f"{action} no longer needs the human's yes, which is the "
                     "whole confirmation model")
@@ -992,7 +1001,7 @@ def test_an_unconfirmed_irreversible_action_never_runs() -> None:
         with _recorded_execute(calls):
             with _open_book(Path(home)) as book:
                 runner = worker.Worker(_StubPool(), journal=book)
-                for action in sorted(IRREVERSIBLE):
+                for action in sorted(NEEDS_CONFIRMATION):
                     args = {"command": "df -h"} if action == "run_command" else {}
                     evidence = runner._run_step({"action": action, "args": args},
                                                 1, "t")

@@ -6,12 +6,20 @@ ACTIONS, and execute() never guesses what an unknown name might have meant.
 
 Why the destructive actions are separated out:
 
-    Five actions cannot be undone or cannot be undone cheaply - closing a
+    Some actions cannot be undone, or cannot be undone cheaply: closing a
     window that has unsaved work in it, suspending, restarting, powering off,
-    and running an arbitrary command. They carry dangerous=True *and*
+    running an arbitrary command, and - since Astra Guard classified it - typing
+    text into the focused window and pressing a key, because a terminal makes
+    both of those a way to run a command. They carry dangerous=True *and*
     needs_confirm=True, and execute() refuses them unless the caller passes
     confirmed=True. The refusal names the action it refused, so the message
     can be shown to the user as-is.
+
+    Astra Guard's four levels (observe / prepare / modify / privileged) are the
+    general form of the same rule, and guard.evaluate() is the enforcement;
+    these flags are how the worker knows to ask before it gets that far. A test
+    holds the two together, so an action that joins one without the other fails
+    the suite instead of shipping.
 
     "Passes confirmed=True" is not something the model can do. The plan comes
     from the model, the confirmation comes from a human in front of the
