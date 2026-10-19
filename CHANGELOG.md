@@ -392,6 +392,73 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- **The installer already installed a bootloader config that Calamares cannot read, so every
+  installation of every AstraOS image has died at job 26 of 27.** Run 39230792183 got further
+  than any run before it — the wizard walked every page, `unpackfs` filled the filesystems —
+  and then stopped:
+
+  ```
+  ERROR: Error while running: KeyError: 'grubInstall'
+    /usr/lib/x86_64-linux-gnu/calamares/modules/bootloader/main.py(654): run_grub_install
+    main.py(717): install_grub <- main.py(897): prepare_bootloader <- main.py(927): run
+  ERROR: Installation failed: "Bad main script file"
+  ```
+
+  Calamares reads **one** config per module — the copy at `/etc/calamares/modules/` — and
+  falls back to the packaged copy under `/usr/share/calamares/modules/` only when there is
+  no file there at all. `installer/calamares/modules/bootloader.conf` is installed to that
+  first path, so it *replaces* Calamares' own rather than extending it: every key the module
+  reads without a default must be stated in it, and a key that is absent is not a default but
+  the `KeyError` above. `grubInstall` was the one that fired; `grubMkconfig`, `grubCfg`,
+  `grubProbe` and `efiBootMgr` are the next four hard lookups on the same code path
+  (main.py lines 779, 719, 748, 459) and would have fired in turn, one per attempt. All five
+  are now stated, copied verbatim from Calamares 3.3.14's own `bootloader.conf` — the
+  configuration upstream tests.
+
+  Two comments in that file were lying as well. "`efiauto` detects UEFI versus legacy BIOS"
+  described a value that is not in the file (it reads `grub`) and is not one this module
+  accepts — on a UEFI machine `efiauto` falls past every branch to a *debug* line and
+  installs no bootloader at all, so the stale comment was a loaded gun aimed at whoever
+  "restored" it. And two keys that nothing in the module reads have been removed:
+  `kernel: "/vmlinuz-linux"` named Arch's kernel path in a module that has no `kernel` key,
+  and `timeout: 10` described a GRUB menu timeout that lives in `/etc/default/grub` on the
+  installed system. **A key that is dead is worse than a key that is absent, because it reads
+  like a decision** — and `vmlinuz-linux` is the same shape of Arch copy-paste as the
+  `initialPartitioningChoice: eraseDisk` in the entry above, from the same class of mistake.
+
+  The gap that let it through was in the build hook, which validates `partition.conf`'s
+  disk-safety policy, `users.conf`'s password policy and the branding, and said **nothing at
+  all** about `bootloader.conf`: an image whose copy had lost a key its module requires was
+  built, and booted, and shipped to the exercise that then died on it. The hook now refuses
+  such an image, and `tests/static/test_install_boot.py` pins both halves — the six keys in
+  the shipped file, and the hook's check for them.
+
+- **The install exercise's pass condition read a file that was never written, so it could not
+  have passed however well the installation went.** The verdict greps the *structured session
+  log* for `unpackfs` and `bootloader`. Calamares writes that file to
+  `$HOME/.cache/calamares/session.log`, and the live system's installer unit runs without a
+  login shell: `HOME` was empty, so the file landed at `//.cache/calamares/session.log` — its
+  own log line says that path verbatim — which is neither of the two places the guest's
+  collector looked. Run 39230792183 reported `unpackfs bootloader` missing from a file that
+  did not exist, while both names were sitting in the console transcript beside it. The unit
+  now exports `HOME=/root`, the collector also accepts the empty-`HOME` path, and the host
+  says a missing log is a missing log instead of naming modules that never ran.
+
+  The comment beside that check claimed `rc=0` could only follow a success, "because a failed
+  job stops the queue on its error page, nobody clicks anything in CI, and this script's
+  deadline catches it". The evidence says otherwise: after the bootloader failure Calamares
+  put up its error page and **exited 0 by itself within seconds**. The log is therefore the
+  only evidence that the queue reached its end — which is exactly why the log being findable
+  matters, and why that fallback was added rather than the check being weakened.
+
+- **A test exercised `size` and a local variable overwrote it, killing the driver one minute
+  into a healthy install.** `drive-ui.py` keeps the screen dimensions in a module-level `size`
+  that `shot()` fills in and `to_abs()` reads; the new exec loop assigned
+  `size = os.path.getsize(...)`, so the very next screendump died with
+  `TypeError: 'int' object does not support item assignment`. The host then reported "the
+  wizard driver stopped before the installer reported", which is what it is for — and which
+  is how a driver crash and an install failure were told apart in the first place. Renamed.
+
 - **The install exercise was emulating on a machine that has hardware virtualisation, and
   the reason was invisible in every log.** A throwaway probe run on `ubuntu-24.04` reported
   the whole cause in one line:

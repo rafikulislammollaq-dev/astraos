@@ -196,6 +196,26 @@ updated. Every step proven in CI or recorded as untested.
     looking rather than by sleeping a fixed 60 seconds, which was the emulated answer. The
     same run is the first on the runner's own KVM, and the first read without a build
     behind it (the stored-ISO exercise).
+  - Run 39230792183 (2026-10-19) is the first run to walk the whole wizard and *install
+    something*: every frame is a different page (`04-partition`, `04a-pointer-erase`,
+    `04b-erase-chosen`, `05-users`, `08-summary`, `09-install`), and `10-exec` shows the
+    Install page with its progress bar at 13%, *"Filling up filesystems"*. It then stopped at
+    job 26 of 27 — `ERROR: Error while running: KeyError: 'grubInstall'`. Calamares reads one
+    config per module (the copy at `/etc/calamares/modules/`), and this repository's
+    `bootloader.conf` is installed to that path, so it *replaces* Calamares' own instead of
+    extending it: the five keys that module reads with no default (`grubInstall`,
+    `grubMkconfig`, `grubCfg`, `grubProbe`, `efiBootMgr`) were simply not in it. Three more
+    defects came out of the same evidence. The verdict's pass condition greps the structured
+    session log for `unpackfs` and `bootloader` — and that file is written to
+    `//.cache/calamares/session.log` because the installer unit runs with an empty `HOME`,
+    which is neither of the two places the guest's collector looked, so **the exercise could
+    not have passed however well the installation went**. The script's claim that `rc=0`
+    implies the queue finished is false: after the bootloader failure Calamares put up its
+    error page and exited 0 by itself in seconds. And a local `size` in the new exec loop
+    overwrote the module's screen-dimension dict, killing the driver a minute into a healthy
+    install. This one *did* need the ISO rebuilt — the Calamares config is installed into the
+    image by the build hook and the installer script lives in `includes.chroot`, unlike
+    everything in the two runs above.
 
   The manual procedure in `docs/INSTALLATION_VIRTUALBOX.md` stays either way.
 - [x] **Boot menu paths exercised in CI**: syslinux (BIOS) and GRUB-EFI, not only

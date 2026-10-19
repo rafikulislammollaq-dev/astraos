@@ -69,7 +69,7 @@ hardware.** What has happened, with the record:
 An automated end-to-end exercise now exists in the source (2026-10-16):
 `scripts/install-boot-test.sh`, run by CI as the `install-boot` job, installs the ISO
 onto a blank disk by driving the ISO's own Calamares UI over the QEMU monitor and then
-boots that disk alone. It has run eight times and **has not yet completed an
+boots that disk alone. It has run nine times and **has not yet completed an
 installation**. Each failure so far has been a different, named defect rather than a
 recurring one: startup failures first; then a wizard that never advanced because the
 driver pressed Return at a Calamares that marks no default button (run 39024106426);
@@ -90,7 +90,12 @@ first entry (`none`, meaning no choice), the partitions page arrived with neithe
 selected, and its disabled Next button swallowed forty-four minutes of clicks that QEMU
 accepted without complaint (run 39222797247 — the first exercise whose screendumps could
 be read past the first page, and the first on the runner's own KVM, whose `/dev/kvm` had
-been there all along, unreadable by the runner user).
+been there all along, unreadable by the runner user); and then, in the first run to reach
+the end of the queue at all, an installation that filled the filesystems and died at job 26
+of 27 on `KeyError: 'grubInstall'` — Calamares reads one config per module, this project's
+`bootloader.conf` is installed to the path that *replaces* Calamares' own rather than being
+merged with it, and the five keys that module reads with no default were not in it (run
+39230792183).
 The driver now speaks QMP, scales its coordinates to the absolute range, makes the
 tablet the current input handler with `mouse_set` and records the machine's pointer
 routing with `query-mice`, judges every step of its walk by the client area's bytes before
