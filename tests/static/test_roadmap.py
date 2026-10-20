@@ -77,8 +77,11 @@ def test_the_roadmap_keeps_the_security_invariants() -> None:
 
 def test_the_roadmap_keeps_model_independence() -> None:
     text = _text(ROADMAP)
-    assert "no model installed" in text, (
-        "the roadmap no longer says the system works with no model installed"
+    assert "work fully without" in text and "the assistant" in text, (
+        "the roadmap no longer says the desktop works without the assistant"
+    )
+    assert "nothing downloads a model silently" in text, (
+        "the roadmap no longer promises that a model arrives only by explicit choice"
     )
     assert "no telemetry by default" in text, (
         "the roadmap no longer promises no telemetry by default"

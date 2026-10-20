@@ -93,6 +93,7 @@ class PATHS:
 
         share_dir    read-only content shipped by the package (prompts, docs)
         models_dir   downloaded model files, one .gguf or .bin per model
+        system_models_dir  model files the image ships, read-only
         bin_dir      locally built binaries (llama-server, whisper-cli)
         config_file  the settings file written by save_settings()
         profile_file the machine capability profile written by `astra-ai profile`
@@ -106,6 +107,14 @@ class PATHS:
     share_dir = Path(os.environ.get("ASTRAOS_AI_SHARE_DIR") or "/usr/share/astraos/ai")
     models_dir = Path(
         os.environ.get("ASTRAOS_AI_MODELS_DIR") or (_data_home() / "astraos" / "ai" / "models")
+    )
+    # The model files the image itself ships. Read-only, and searched after the
+    # user's directory: a download with the same name must shadow the shipped
+    # copy, not be shadowed by it. An image without a bundle simply has no
+    # directory here, which is why every reader treats it as optional.
+    system_models_dir = Path(
+        os.environ.get("ASTRAOS_AI_SYSTEM_MODELS_DIR")
+        or "/usr/share/astraos/ai/models"
     )
     bin_dir = Path(
         os.environ.get("ASTRAOS_AI_BIN_DIR") or (_data_home() / "astraos" / "ai" / "bin")
@@ -149,6 +158,12 @@ DEFAULTS: dict = {
     "temperature": 0.3,
     "max_tokens": 512,
     "stream": True,
+    # "auto" confines the model server when bubblewrap/firejail can actually
+    # run here; "on" refuses to start without a sandbox; "off" runs it bare.
+    "sandbox": "auto",
+    # 0 means no address-space cap. A positive value is applied to the model
+    # server process, not to the assistant or the desktop.
+    "memory_cap_mb": 0,
 }
 
 
@@ -221,34 +236,86 @@ def save_settings(d: dict) -> None:
     os.replace(temporary, target)
 
 
+def model_dirs() -> list[Path]:
+    """Every directory a model file may be in, in resolution order.
+
+    The user's directory comes first so a downloaded file wins over a copy the
+    image shipped. The image's directory is read-only and may not exist on a
+    system where the assistant was installed from packages rather than an ISO.
+    """
+    directories = [PATHS.models_dir]
+    system = Path(PATHS.system_models_dir)
+    if system != PATHS.models_dir:
+        directories.append(system)
+    return directories
+
+
+def find_model(name: str) -> Path | None:
+    """The first existing file called *name*, in the user's directory then the image's.
+
+    An absolute path is checked as itself: a setting may point at a model on
+    another disk. A bare name is looked up in each directory, which is how the
+    tier code passes catalog file names.
+    """
+    text = str(name or "").strip()
+    if not text:
+        return None
+    candidate = Path(text).expanduser()
+    if candidate.is_absolute():
+        return candidate if candidate.is_file() else None
+    for directory in model_dirs():
+        path = directory / candidate
+        if path.is_file():
+            return path
+    return None
+
+
+def installed_models() -> dict[str, Path]:
+    """Every model file visible, by file name; the user's copy wins on a tie.
+
+    A dictionary rather than a list because the same file may exist in both
+    directories, and counting it twice would make `model_file()` report "two
+    models, choose one" after a user downloaded a model the image already had.
+    """
+    found: dict[str, Path] = {}
+    for directory in model_dirs():
+        try:
+            entries = sorted(directory.iterdir())
+        except OSError:
+            continue
+        for path in entries:
+            try:
+                if path.is_file() and path.name not in found:
+                    found[path.name] = path
+            except OSError:
+                continue
+    return found
+
+
 def model_file(settings: dict | None = None) -> Path | None:
     """The model file to load, or None when no model has been installed.
 
     Resolution order:
-      1. settings["model"], as an absolute path or as a file name in models_dir
-      2. the only *.gguf file in models_dir, when there is exactly one
+      1. settings["model"], as an absolute path or as a file name in a model
+         directory (the user's first, then the one the image ships)
+      2. the only *.gguf file visible, when there is exactly one
 
     The second rule exists so that `astra-ai setup --model NAME` followed by
-    `astra-ai ask ...` works without a second command to select the model. Two
-    or more models and no setting means None: guessing between them would make
-    the answer depend on directory order, which is not a decision the user made.
+    `astra-ai ask ...` works without a second command to select the model, and
+    so the model the image ships is used on first boot with no setup at all.
+    Two or more models and no setting means None: guessing between them would
+    make the answer depend on directory order, which is not a decision the user
+    made.
     """
     settings = settings if isinstance(settings, dict) else load_settings()
 
     chosen = str(settings.get("model") or "").strip()
     if chosen:
-        candidate = Path(chosen).expanduser()
-        if candidate.is_file():
-            return candidate
-        candidate = PATHS.models_dir / candidate
-        if candidate.is_file():
-            return candidate
-        return None
+        return find_model(chosen)
 
-    try:
-        found = sorted(PATHS.models_dir.glob("*.gguf"))
-    except OSError:
-        return None
+    found = [
+        path for name, path in installed_models().items() if name.lower().endswith(".gguf")
+    ]
     return found[0] if len(found) == 1 else None
 
 

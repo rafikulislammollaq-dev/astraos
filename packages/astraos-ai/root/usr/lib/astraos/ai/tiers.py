@@ -93,11 +93,15 @@ class TierUnavailable(RuntimeError):
 
 
 def _installed_models() -> list[str]:
-    """Every .gguf file name installed, newest naming first."""
-    try:
-        return sorted(p.name for p in _config.PATHS.models_dir.glob("*.gguf"))
-    except OSError:
-        return []
+    """Every .gguf file name visible, the user's directory and the image's.
+
+    The image ships the executor and the user may download a second model; the
+    same name in both places is one model, which is what config.installed_models()
+    guarantees.
+    """
+    return sorted(
+        name for name in _config.installed_models() if name.lower().endswith(".gguf")
+    )
 
 
 def pick_model(tier: str, settings: dict | None = None) -> str | None:

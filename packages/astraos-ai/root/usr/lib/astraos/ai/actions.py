@@ -66,6 +66,7 @@ import datetime
 import json
 import os
 import platform
+import posixpath
 import re
 import shlex
 import shutil
@@ -668,6 +669,304 @@ def read_file(path: str = "") -> str:
     if b"\x00" in raw[:4096]:
         raise ActionError(f"{path} looks like a binary file, not text")
     return raw.decode("utf-8", "replace")
+
+
+# ---------------------------------------------------------------------------
+# Writing into the workspace
+# ---------------------------------------------------------------------------
+
+WORKSPACE_ENV = "ASTRAOS_WORKSPACE"
+DEFAULT_WORKSPACE = "~/.local/share/astraos/workspace"
+
+
+def _workspace_root() -> Path:
+    raw = os.environ.get(WORKSPACE_ENV) or DEFAULT_WORKSPACE
+    return Path(raw).expanduser()
+
+
+def _workspace_authorized(path: str) -> Path:
+    given = (path or "").strip()
+    if not given:
+        raise ActionError("a path is needed")
+    wanted = Path(given).expanduser()
+    if not wanted.is_absolute():
+        wanted = _workspace_root() / wanted
+    try:
+        resolved = wanted.resolve(strict=False)
+    except OSError as exc:
+        raise ActionError(f"{given} cannot be resolved: {exc}") from exc
+    root = _workspace_root().resolve(strict=False)
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        raise ActionError(
+            f"{given} is outside the workspace ({root}); the assistant writes only "
+            "into its own workspace"
+        ) from None
+    return resolved
+
+
+def write_file(path: str = "", content: str = "") -> str:
+    target = _workspace_authorized(path)
+    text = "" if content is None else str(content)
+    data = text.encode("utf-8")
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    except OSError as exc:
+        raise ActionError(f"{path} could not be written: {exc}") from exc
+    return f"wrote {len(data)} bytes to {target}"
+
+
+write_to_workspace = write_file
+save_file = write_file
+write_document = write_file
+
+
+# ---------------------------------------------------------------------------
+# Reading a PDF
+# ---------------------------------------------------------------------------
+def read_pdf(path: str = "") -> str:
+    target = _authorized(path)
+    if not target.exists():
+        raise ActionError(f"no such file: {path}")
+    if not target.is_file():
+        raise ActionError(f"{path} is not a file")
+    pdftotext = _which("pdftotext")
+    if not pdftotext:
+        raise ActionError(
+            "not installed: pdftotext - install it with: astra install poppler-utils"
+        )
+    code, output = _run([pdftotext, "-layout", str(target), "-"])
+    if code != 0:
+        raise ActionError(
+            f"pdftotext failed on {path}: "
+            + ((output.splitlines() or ["no output"])[0])
+        )
+    if not output.strip():
+        return f"{path} has no text layer (it may be a scanned PDF)"
+    return output
+
+
+extract_pdf = read_pdf
+extract_pdf_text = read_pdf
+pdf_text = read_pdf
+
+
+# ---------------------------------------------------------------------------
+# Comparing two documents
+# ---------------------------------------------------------------------------
+def compare_files(path_a: str = "", path_b: str = "") -> str:
+    import difflib
+
+    left_path = _authorized(path_a)
+    right_path = _authorized(path_b)
+    for path in (left_path, right_path):
+        if not path.exists():
+            raise ActionError(f"no such file: {path}")
+        if not path.is_file():
+            raise ActionError(f"{path} is not a file")
+    try:
+        left = left_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        right = right_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as exc:
+        raise ActionError(f"could not read a file: {exc}") from exc
+    diff = list(
+        difflib.unified_diff(
+            left, right, fromfile=str(left_path), tofile=str(right_path), lineterm=""
+        )
+    )
+    if not diff:
+        return f"{left_path} and {right_path} are identical"
+    return "\n".join(diff)
+
+
+compare_documents = compare_files
+diff_files = compare_files
+diff_documents = compare_files
+
+
+# ---------------------------------------------------------------------------
+# Citation verification
+# ---------------------------------------------------------------------------
+CITATION_PATTERN = re.compile(r'"([^"\n]{4,})"\s*(?:\(([^)\n]+)\))?')
+
+
+def verify_citation(citation: str = "", source: str = "") -> dict:
+    """Check one quoted passage against one source.
+
+    `source` is a path inside the user's folders or the source text itself.
+    A source that cannot be read is a failed citation, not a crash: the caller
+    is asking whether the quote resolves, and "the file is not there" is one of
+    the honest answers.
+    """
+    quote = (citation or "").strip()
+    if not quote:
+        raise ActionError("a citation (the quoted text) is needed")
+    try:
+        text = read_file(source) if source and _is_path_like(source) else (source or "")
+    except ActionError as exc:
+        return {"ok": False, "citation": quote, "source": source, "error": str(exc)}
+    return {"ok": bool(text) and quote in text, "citation": quote, "source": source}
+
+
+def _source_text(value: object) -> str | None:
+    """The text of one source: a readable file's contents, or the value itself."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if _is_path_like(text):
+        try:
+            return read_file(text)
+        except ActionError:
+            return None
+    return text
+
+
+def _source_set(sources: object) -> list[tuple[str, str]]:
+    """Turn the `sources` argument into labelled texts.
+
+    A string is a path, a JSON object/list, or literal text. A list is a set of
+    sources, and a dict maps a name to a path or text - the shape that lets a
+    report cite "the budget" without repeating a 40-character path.
+    """
+    if sources is None:
+        return []
+    if isinstance(sources, str):
+        stripped = sources.strip()
+        if not stripped:
+            return []
+        if stripped[:1] in "[{":
+            try:
+                parsed = json.loads(stripped)
+            except ValueError:
+                parsed = None
+            if parsed is not None:
+                return _source_set(parsed)
+        if _is_path_like(stripped):
+            try:
+                return [(stripped, read_file(stripped))]
+            except ActionError:
+                return []
+        return [("", stripped)]
+    if isinstance(sources, dict):
+        found: list[tuple[str, str]] = []
+        for label, value in sources.items():
+            text = _source_text(value)
+            if text is not None:
+                found.append((str(label), text))
+        return found
+    if isinstance(sources, (list, tuple, set)):
+        found = []
+        for item in sources:
+            if isinstance(item, dict):
+                found.extend(_source_set(item))
+                continue
+            text = _source_text(item)
+            if text is not None:
+                found.append((str(item), text))
+        return found
+    return []
+
+
+def _named_sources(name: str, supplied: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """The sources a citation's parenthesised name points at.
+
+    The name may be a path, the label of a supplied source, or its base name.
+    A path that cannot be read yields no candidates, and the citation fails with
+    the reason rather than being checked against unrelated text.
+    """
+    name = (name or "").strip().strip('"')
+    if not name:
+        return supplied
+    if _is_path_like(name):
+        try:
+            return [(name, read_file(name))]
+        except ActionError:
+            return []
+    wanted = name.lower()
+    wanted_base = posixpath.basename(wanted.replace("\\", "/"))
+    matches = []
+    for label, text in supplied:
+        label_lower = label.lower()
+        label_base = posixpath.basename(label_lower.replace("\\", "/"))
+        if label_lower == wanted or label_base == wanted_base:
+            matches.append((label, text))
+    if not matches:
+        # A single unlabelled source (literal text, or a bare path) is the whole
+        # source set; the name in the citation is a convenience, not a selector.
+        matches = [(label, text) for label, text in supplied if not label]
+    return matches
+
+
+def verify_citations(artifact: str = "", sources: object = None) -> list:
+    """Check every quoted passage in an artifact against the supplied sources.
+
+    Citations are written as `"the passage" (source)`. The source may be a path,
+    or a name that matches one of `sources`. `sources` may be a path, a list of
+    paths, a mapping of names to paths/text, or literal text. Every result says
+    which source was checked, so a failure names what to fix.
+    """
+    text = artifact or ""
+    supplied = _source_set(sources)
+    results: list[dict] = []
+
+    for match in CITATION_PATTERN.finditer(text):
+        quote = match.group(1).strip()
+        name = (match.group(2) or "").strip()
+        candidates = _named_sources(name, supplied)
+        if not candidates:
+            results.append(
+                {
+                    "ok": False,
+                    "citation": quote,
+                    "source": name,
+                    "error": (
+                        f"no source named {name!r} was supplied"
+                        if name
+                        else "no sources were supplied, so the quote cannot be checked"
+                    ),
+                }
+            )
+            continue
+        matched = ""
+        found = False
+        for label, body in candidates:
+            if quote in body:
+                found = True
+                matched = label or "the supplied text"
+                break
+        results.append(
+            {
+                "ok": found,
+                "citation": quote,
+                "source": name,
+                "matched": matched,
+                **({} if found else {"error": "the quote was not found in the source"}),
+            }
+        )
+
+    if not results:
+        return [{"ok": True, "citation": "", "source": "", "note": "no citations found"}]
+    return results
+
+
+def _is_path_like(value: str) -> bool:
+    value = (value or "").strip()
+    if not value:
+        return False
+    if "\n" in value or len(value) > 260:
+        return False
+    last = value.split("/")[-1]
+    return ("/" in value or "\\" in value or value.startswith("~")) and "." in last
+
+
+
+check_citation = verify_citation
+check_citations = verify_citations
+citation_verifier = verify_citations
 
 
 # ---------------------------------------------------------------------------
@@ -1332,10 +1631,14 @@ def run_command(command: str = "") -> str:
         )
 
     for word in argv:
-        candidate = Path(word.strip("'\"")).expanduser()
-        if not str(candidate).startswith("/"):
+        candidate = word.strip("'\"")
+        # The command runs on Linux, so an absolute path is judged as a POSIX
+        # path even when this test suite is running on Windows. os.path.normpath
+        # would turn "/etc" into "\\etc" there and let every forbidden prefix
+        # through, which is why the check uses posixpath.
+        if not candidate.startswith("/"):
             continue
-        normalised = os.path.normpath(str(candidate))
+        normalised = posixpath.normpath(candidate)
         for prefix in FORBIDDEN_PREFIXES:
             if normalised == prefix or normalised.startswith(prefix + "/"):
                 raise ActionError(
@@ -1425,6 +1728,29 @@ ACTIONS: dict[str, Action] = {
         "read_file", "read a text file from one of the user's folders",
         {"path": _string("the file's path, as shown by search_files")},
         False, False, read_file,
+    ),
+    "read_pdf": Action(
+        "read_pdf", "extract the text of a PDF from one of the user's folders",
+        {"path": _string("the PDF's path, as shown by search_files")},
+        False, False, read_pdf,
+    ),
+    "compare_files": Action(
+        "compare_files", "compare two text files from the user's folders, line by line",
+        {"path_a": _string("the first file's path"),
+         "path_b": _string("the second file's path")},
+        False, False, compare_files,
+    ),
+    "write_file": Action(
+        "write_file", "write text into the assistant's own workspace",
+        {"path": _string("a path inside the workspace"),
+         "content": _string("the text to write", required=False)},
+        True, True, write_file,
+    ),
+    "verify_citations": Action(
+        "verify_citations", "check that the citations in an artifact resolve to their sources",
+        {"artifact": _string("the text containing citations"),
+         "sources": _string("optional sources, as paths or text", required=False)},
+        False, False, verify_citations,
     ),
     # Sound
     "volume_up": Action(

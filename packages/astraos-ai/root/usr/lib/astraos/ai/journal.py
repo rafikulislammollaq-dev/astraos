@@ -104,7 +104,11 @@ CREATE TABLE IF NOT EXISTS approvals (
 # whereas one that treats asking as failing guesses instead.
 STATUSES = (
     "pending",
+    "planning",
+    "awaiting approval",
+    "awaiting_approval",
     "running",
+    "verifying",
     "paused",
     "ok",
     "failed",
@@ -339,7 +343,8 @@ class Journal:
         # and the answer that was given.
         rows = self._connect().execute(
             "SELECT * FROM tasks"
-            " WHERE status IN ('pending','running','paused','needs_human')"
+            " WHERE status IN ('pending','planning','awaiting approval','awaiting_approval',"
+            " 'running','verifying','paused','needs_human')"
             " ORDER BY created_ts"
         ).fetchall()
         return [dict(row) for row in rows]
@@ -350,14 +355,18 @@ class Journal:
 
     def ask(self, action: str, question: str, task_id: str = "") -> int:
         """Record that a human was asked. Returns the approval row's id."""
-        self._connect().execute(
+        cursor = self._connect().execute(
             "INSERT INTO approvals (ts, run_id, task_id, action, question)"
             " VALUES (?,?,?,?,?)",
             (_now(), self.run_id, task_id, action, question),
         )
+        # Read the row id before _event() inserts into events: last_insert_rowid()
+        # is per connection, so asking after the event would return the event's id
+        # and answer() would update no approval at all.
+        approval_id = int(cursor.lastrowid)
         self._connection.commit()
         self._event("approval_asked", task_id, {"action": action, "question": question})
-        return self._connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return approval_id
 
     def answer(self, approval_id: int, answer: str) -> None:
         """Record what the human said."""

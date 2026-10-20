@@ -40,8 +40,9 @@ proving it rather than asserting it.
 
 - **Local-first.** The default experience runs on this machine; cloud inference is
   optional, explicit, and says what would leave the computer.
-- **Model-independent.** The desktop, networking and applications work fully with
-  no model installed. The ISO ships none; nothing downloads one silently.
+- **Model-independent.** The desktop, networking and applications work fully without
+  the assistant. The image ships an executor and a speech model so the assistant works
+  offline; nothing downloads a model silently at run time.
 - **Hardware-adaptive.** Engine build, quantization and model rung are chosen from
   a measured capability profile. Old CPUs are the target, not a fallback.
 - **Trust before power.** Permissions, sandboxing, auditing and undo exist before
@@ -65,10 +66,10 @@ proving it rather than asserting it.
 |---|---|---|
 | Astra Core | the distribution: packaging, desktop, boot, recovery | exists; maturity tracked in `README.md` |
 | Astra Engine | local inference: `llama-server`, the model ladder, the JSON worker | partial: builds and runs in CI (emulated Sandy Bridge, 360M smoke model); self-selects the engine build and the ladder rung from the measured profile; per-tier quality numbers still need real hardware |
-| Astra Guard | permissions, sandbox, audit log, undo | partial: four permission levels, prompt-injection discipline and a hash-chained audit log exist and are tested; sandboxing and undo do not |
-| Astra Runtime | task objects: plan → approve → execute → verify, persistence, resume | partial: the journal persists plans, attempts, step index and provenance, and `astra-ai resume` continues a stopped task; approval and verification are still phases inside a step rather than task states |
+| Astra Guard | permissions, sandbox, audit log, undo | partial: four permission levels, prompt-injection discipline, a hash-chained audit log and an opt-in filesystem sandbox for the model server exist and are tested; the actions themselves are not sandboxed, and undo is a tested snapshot library that no action calls yet |
+| Astra Runtime | task objects: plan → approve → execute → verify, persistence, resume | partial: the journal persists plans, attempts, step index and provenance, records `planning`, `awaiting approval` and `verifying` as task states with events, and `astra-ai resume` continues a stopped task |
 | Astra Vault | document index and user-approved memory | does not exist |
-| Astra Missions | the task interface: plans, approvals, results | does not exist |
+| Astra Missions | the task interface: plans, approvals, results | partial: `astra-ai missions` reads the journal and shows real step progress, open states and pending approvals; there is no GUI |
 | Astra Voice | dictation, wake word, read-aloud | does not exist (`whisper-cli` builds in the engine artifact) |
 | Astra Link | phone pairing: notifications, clipboard, file transfer, camera and microphone, photo backup | does not exist |
 | Astra Skills | manifest-declared, permissioned capabilities | static skills and knowledge files exist; manifests and isolation do not |
@@ -88,8 +89,9 @@ day one — that is Stage 5.
 Already true, and stays true through every stage:
 
 - The engine runs on CPUs without FMA, BMI2 or F16C (the SIGILL lesson).
-- The assistant is opt-in: the ISO ships no model, and the desktop is complete
-  without one.
+- The assistant starts only when the user opens it, and the desktop is complete
+  without it. The image ships an executor and a speech model so that opening it
+  works offline.
 - The worker's JSON grammar is enforced even when a model is told to answer in
   prose (proven in CI).
 - The maturity table and the test evidence stay honest: unproven things say so.
@@ -406,9 +408,18 @@ Nothing powerful runs without Guard in front.
   can produce, and a test holds the catalog's `needs_confirm` to the levels.
   `type_text` and `press_key` joined the confirmation set — typing into the focused
   window can change a document or run a command in a terminal.
-- [ ] **Sandboxing with bubblewrap and Landlock.** First target: confine
-  `llama-server` itself — no network, read-only model folder — and prove it with
-  tests.
+- [ ] **Sandboxing with bubblewrap and Landlock.** **Partly implemented 2026-10-20**:
+  `sandbox.py` builds a bubblewrap (or firejail) command for `llama-server` with the
+  whole root and the model folder read-only, a private `/tmp` and `/dev/shm`, and
+  `--die-with-parent`. `llm.Engine` uses it when `sandbox` is `auto` (the default),
+  refuses to start without it when `sandbox` is `on`, and reports the fallback reason
+  when no wrapper can run. `probe()` distinguishes "installed" from "can start here",
+  and `astra-ai status` prints the result. Thirteen tests in
+  `tests/static/test_astra_ai_sandbox.py` prove the command and the refusal. Still
+  missing: Landlock, a network-isolated engine — the server is reached over
+  `127.0.0.1`, so a private network namespace would make it unreachable; that needs a
+  Unix socket or a proxy — and a run on a booted image. The actions themselves are
+  still not sandboxed.
 - [x] **An inspectable audit log**: what was accessed, what ran, what changed. Every
   decision and its outcome is appended to
   `$XDG_STATE_HOME/astraos/guard/audit.jsonl` as one JSON line, each carrying the
@@ -419,8 +430,13 @@ Nothing powerful runs without Guard in front.
   run unlogged. The chain is tamper-*evident*, not signed: someone who can write the
   file can rewrite the whole chain.
 - [ ] **Undo**: automatic snapshots before privileged work and a tested rollback.
-  The root filesystem is ext4 today; a Btrfs + snapshot default is a change to
-  evaluate on old hardware, not a promise.
+  **Partly implemented 2026-10-20**: `undo.py` copies files and directories into
+  `$XDG_STATE_HOME/astraos/undo` with a manifest, restores exact contents, removes
+  paths that did not exist before, refuses a snapshot id that is a path, and does not
+  delete a path whose capture failed. Six tests in
+  `tests/static/test_astra_ai_undo.py`. Still missing: nothing takes a snapshot
+  automatically before a privileged action, there is no `astra-ai undo` command, and
+  the root filesystem remains ext4 with no Btrfs snapshot default.
 - [x] **Prompt-injection discipline, with tests**: documents are untrusted input,
   and fixtures that order the agent to exfiltrate must be denied, not narrated.
   `guard.scan_untrusted()` recognises instruction-shaped content in what the assistant
@@ -443,41 +459,64 @@ Nothing powerful runs without Guard in front.
 The first complete task: "find the documents about X, compare them, produce a
 report with citations, save it, and show me what changed."
 
-- [ ] **Task objects with a lifecycle** (queued → planning → awaiting approval →
+- [x] **Task objects with a lifecycle** (queued → planning → awaiting approval →
   running → verifying → completed, plus paused / failed / cancelled /
-  needs-attention), persisted and resumable across a reboot. **Partly implemented
-  2026-10-19**: the journal persists the plan before the first step runs, every
-  attempt, the step index and the plan's provenance, and `astra-ai resume` continues
-  a stopped task at the step that did not succeed (nine tests in
-  `tests/static/test_astra_ai_resume.py`). The statuses pending / running / paused /
-  ok / failed / needs_human / cancelled exist. Still missing: `planning`,
-  `awaiting approval` and `verifying` are phases inside a step rather than states of
-  the task, so a task waiting for a human is not distinguishable in the journal from
-  one that is running.
-- [ ] **A small, reliable tool set for v0**: search and read authorized folders,
+  needs-attention), persisted and resumable across a reboot. **Implemented
+  2026-10-20**: the journal persists the plan before the first step runs, every
+  attempt, the step index and the plan's provenance, and `astra-ai resume`
+  continues a stopped task at the step that did not succeed (nine tests in
+  `tests/static/test_astra_ai_resume.py`). The worker now writes the phases the
+  task is actually in: `planning` while the middle brain is borrowed,
+  `awaiting approval` while the confirmation question is open, and `verifying`
+  while the action is checked. Pending / running / paused / ok / failed /
+  needs_human / cancelled complete the set, and every transition is an event in
+  the journal (four lifecycle tests in `tests/static/test_astra_ai_budget.py`).
+- [x] **A small, reliable tool set for v0**: search and read authorized folders,
   extract text (PDF), compare documents, write into a workspace — and a verifier
   that checks the artifact exists, is well-formed, and that every citation
-  resolves to a real passage. **Partly implemented 2026-10-19**: `search_files`
-  finds a file by name in the user's Documents, Desktop, Downloads, Pictures, Music
-  and Videos, and `read_file` returns a text file from those folders. The roots are
-  checked on the resolved path, so a symlink out of them is refused; binaries and
-  files over 1 MB are refused, and both tools are `observe` in Guard, so every read
-  is in the audit log. The tests are `tests/static/test_astra_ai_files.py`. Still
-  missing: PDF text extraction, comparing documents, writing into a workspace, and
-  the citation verifier.
+  resolves to a real passage. **Implemented 2026-10-20**: `search_files` and
+  `read_file` work in the user's Documents, Desktop, Downloads, Pictures, Music
+  and Videos; `read_pdf` extracts text with `pdftotext`; `compare_files` returns
+  a unified diff; `write_file` writes only inside `~/.local/share/astraos/workspace`;
+  and `verify_citations` checks each quoted passage against a path, list,
+  mapping, or text it was given. The roots are checked on the resolved path, so
+  a symlink out of them is refused; binaries and files over 1 MB are refused.
+  The first three are `observe` in Guard, `write_file` is `modify` and needs the
+  user's yes. The worker verifies a write by reading the bytes back and a
+  citation check by requiring every result to be true. Tests are
+  `tests/static/test_astra_ai_files.py` and
+  `tests/static/test_astra_ai_workspace.py`; the PDF path is tested against a
+  replaced subprocess seam, not a real PDF, so a CI machine without
+  `poppler-utils` still proves the refusal and the extraction contract.
 - [ ] **The task interface** (Missions) showing real progress from executed steps,
   approvals with targets, artifacts, and unresolved limitations — never invented
-  percentages.
+  percentages. **Partly implemented 2026-10-20**: `missions.py` derives every number
+  from the journal's executed step index (clamped to the plan), lists open states and
+  counts pending approvals, and `astra-ai missions [--json]` prints it; eight tests in
+  `tests/static/test_astra_ai_missions.py`. There is no GUI, and the view does not
+  list artifacts or unresolved limitations yet.
 - [ ] **A benchmark of representative tasks** with published pass rates. Success
   targets are set from measured results, not aspiration; the suite starts smaller
-  than the review's suggested one hundred cases and grows.
+  than the review's suggested one hundred cases and grows. **Partly implemented
+  2026-10-20**: `benchmark.py` names three research tasks (time, battery, find a
+  document), runs them through `Worker.handle`, and reports pass/fail with the
+  worker's own reason and per-task seconds; a crash is one failed task, not a failed
+  suite. Seven tests in `tests/static/test_astra_ai_benchmark.py`. Still missing: a
+  command that runs it, a larger suite, and a pass rate measured on real hardware —
+  the tests use a fake worker.
 - [ ] **Budgets**: time, memory and tool-call limits so a weak model cannot loop
-  forever. **Partly implemented 2026-10-19**: a plan longer than twelve steps is
-  refused before it becomes a task, and a task that spends its 900-second budget is
-  filed `paused` where it stopped — resumable, not failed — through the same check on
-  the collected and the streaming paths (`tests/static/test_astra_ai_budget.py`).
-  Still missing: a memory cap (a cgroup or `setrlimit` around the model server) and a
-  tool-call count (a step is the only unit the catalog has).
+  forever. **Partly implemented 2026-10-20**: a plan longer than twelve steps is
+  refused before it becomes a task; a task that spends its 900-second budget is
+  filed `paused` where it stopped — resumable, not failed — and a task may make at
+  most 100 tool calls (each attempt is one call), after which it is paused with the
+  same resume instruction. The collected and the streaming paths use the same
+  checks (`tests/static/test_astra_ai_budget.py`). A memory cap exists too:
+  `memory_cap_mb` in the settings, off by default (0), applied as `RLIMIT_AS` to the
+  model-server child on Linux; `astra-ai status` prints it and
+  `tests/static/test_astra_ai_limits.py` (eight tests, one skipped where `setrlimit`
+  is absent) proves the parsing and the child limit. Still missing: a cap that is on
+  by default, cgroups (the module reports them as unimplemented), and a run on a
+  booted image.
 
 ## Stage 5 — Come as you are: migration, familiarity and retention
 

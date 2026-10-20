@@ -169,8 +169,8 @@ def _stt_model_path() -> Path | None:
     for candidate in (filename, name, name + ".bin"):
         if not candidate:
             continue
-        path = _config.PATHS.models_dir / candidate
-        if path.is_file():
+        path = _config.find_model(candidate)
+        if path is not None:
             return path
     return None
 

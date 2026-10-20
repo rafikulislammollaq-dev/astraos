@@ -179,9 +179,15 @@ def _audio(root: Path) -> list[str]:
 
 
 def _storage(root: Path) -> dict:
+    statvfs = getattr(os, "statvfs", None)
+    if statvfs is None:
+        # Windows has no statvfs. The suite runs there, and "unknown" is the
+        # honest answer; a profile that reports 0 bytes is handled as tight by
+        # assess() rather than pretending it measured a disk.
+        return {"free_bytes": 0}
     try:
-        stats = os.statvfs(root)
-    except OSError:
+        stats = statvfs(root)
+    except (OSError, ValueError):
         return {"free_bytes": 0}
     return {"free_bytes": stats.f_bavail * stats.f_frsize}
 

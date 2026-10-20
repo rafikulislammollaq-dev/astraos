@@ -19,6 +19,82 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The model server can be caged, a changed file can be restored, and a running task
+  can be watched (source; 42 tests, one skipped on this host, 2026-10-20).** Four
+  Stage 3/4 gaps that earlier entries named as missing now have code and tests:
+
+  * **Sandbox** (`astraos/ai/sandbox.py`): `llama-server` runs under bubblewrap (or
+    firejail) with the whole root and the model folder read-only, private `/tmp` and
+    `/dev/shm`, and `--die-with-parent`. `sandbox` in the settings is `auto` (the
+    default), `on` (refuse to start without one) or `off`; `probe()` separates
+    "installed" from "can start here", `auto` reports the fallback, and
+    `astra-ai status` prints the result. The network stays shared because the parent
+    talks to the server over `127.0.0.1`; a private namespace would make it
+    unreachable. Thirteen tests in `tests/static/test_astra_ai_sandbox.py`.
+  * **Undo** (`astraos/ai/undo.py`): copy-based snapshots with a manifest, exact
+    restore of files and directories, removal of paths that did not exist, refusal of
+    an id that is a path, and no deletion after a failed capture. Six tests in
+    `tests/static/test_astra_ai_undo.py`.
+  * **Missions** (`astraos/ai/missions.py`, `astra-ai missions [--json]`): real
+    progress from the journal's executed step index, open states and pending
+    approvals, never an invented percentage. Eight tests in
+    `tests/static/test_astra_ai_missions.py`.
+  * **Memory cap** (`astraos/ai/memory.py`): `memory_cap_mb` in the settings (default
+    0, no cap) becomes `RLIMIT_AS` on the model-server child through `preexec_fn`;
+    `astra-ai status` prints it. Eight tests, one skipped where `setrlimit` is
+    absent, in `tests/static/test_astra_ai_limits.py`.
+  * **Task benchmark** (`astraos/ai/benchmark.py`): three named tasks run through
+    `Worker.handle` with pass/fail, the worker's own reason and per-task seconds; a
+    crash is one failed task, not a failed suite. Seven tests in
+    `tests/static/test_astra_ai_benchmark.py`.
+
+  What is **not** proven here: the sandbox tests build the command and replace the
+  wrapper, so no test has started a real `llama-server` inside bwrap; the memory cap's
+  child test skips on the Windows development host; no snapshot is taken automatically
+  before a privileged action and there is no `astra-ai undo` command; the benchmark
+  tests use a fake worker and no pass rate has been measured on real hardware; and
+  cgroups are still unimplemented (the module says so). `docs/ROADMAP.md`,
+  `docs/AI.md` and `docs/SECURITY.md` now say what exists and what does not instead of
+  "no sandbox" and "no undo".
+
+- **The image ships a working assistant, and the research tool set it needs
+  (source; 2026-10-20).** The live filesystem now carries the executor model
+  (`Spark-X2.5-1.7B-Q4_K_M.gguf`, 1,107,457,856 bytes), the tiny English speech
+  model (`ggml-tiny.en.bin`, 77,704,715 bytes), both engine variants (AVX and
+  AVX2), the `llama-server`/`whisper-cli` selectors, and the model notices and
+  licences. `0650-ai.hook.chroot` fetches each artifact from a pinned URL, checks
+  its SHA-256 (and the models' byte counts) and refuses to finish the build on a
+  mismatch; `0700-verify.hook.chroot` asserts the installed bytes, and
+  `scripts/validate-iso.sh` now looks for them inside the squashfs rather than
+  trusting the ISO surface. The exact URLs and hashes are in
+  `/etc/astraos/ai-bundle.conf`; the engine release, model revision and hashes
+  were checked against the live artifacts before this entry was written.
+  `docs/AI.md`, `docs/KNOWN_LIMITATIONS.md` and the README no longer describe an
+  empty assistant.
+
+  The same batch completes Stage 4's first two items. The assistant can
+  `read_pdf` (through `pdftotext`), `compare_files` (a unified diff),
+  `write_file` (only inside `~/.local/share/astraos/workspace`, `modify` in
+  Guard, needing the user's yes) and `verify_citations` (each quoted passage
+  checked against a path, list, mapping or literal text). `write_file` is
+  verified by reading the bytes back, and `verify_citations` by requiring every
+  result to be true. A task now records `planning` while the middle brain is
+  borrowed, `awaiting approval` while the confirmation is open, and `verifying`
+  while the action is checked; a 100-tool-call budget pauses a looping task at
+  the same resumable point as the time budget. Tests:
+  `tests/static/test_astra_ai_workspace.py`, the new lifecycle and call-budget
+  cases in `test_astra_ai_budget.py`, and the ISO/manifest checks in
+  `test_astra_ai_bundle.py`.
+
+  What is **not** proven here: the image has not yet been rebuilt with this
+  bundle in this session, so the byte-level claims are pinned-input checks and
+  repository consistency, not a completed ISO run. The build and the boot/install
+  exercise are the next GitHub Actions runs; a green run is what will move the
+  CI-evidence rows. `pdftotext` is exercised through the subprocess seam, not on
+  a real PDF, because the static suite must run where poppler is absent. The
+  memory cap exists but is off by default and its child test skips on this host;
+  see the first entry above.
+
 - **The installer installs AstraOS, and the installed disk boots on its own.** Run
   39242006646 (2026-10-19) is the first green install exercise in this repository's
   history: the ISO booted, its own Calamares UI was driven through every page, all 27 jobs

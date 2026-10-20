@@ -189,6 +189,25 @@ check "no ssh server installed"           sh -c '! test -e /usr/sbin/sshd'
 # --- Service policy -----------------------------------------------------------
 check "a display-manager unit is wired up" sh -c 'test -e /etc/systemd/system/display-manager.service || systemctl is-enabled lightdm >/dev/null 2>&1'
 
+# --- The assistant the image ships ---------------------------------------------
+# These are the bytes the image build fetched and hashed, not "the package is
+# installed". The assistant works on first boot precisely because they are here;
+# a missing model is a build failure, not a smaller image.
+check "the executor model is in the image" \
+    test -s /usr/share/astraos/ai/models/Spark-X2.5-1.7B-Q4_K_M.gguf
+check "the speech model is in the image" \
+    test -s /usr/share/astraos/ai/models/ggml-tiny.en.bin
+check "the avx engine is in the image" \
+    test -x /usr/lib/astraos/ai/engine/avx/llama-server
+check "the avx2 engine is in the image" \
+    test -x /usr/lib/astraos/ai/engine/avx2/llama-server
+check "the engine selector is installed" \
+    test -x /usr/local/bin/llama-server
+check "the speech selector is installed" \
+    test -x /usr/local/bin/whisper-cli
+check "astra-ai is installed"             test -x /usr/bin/astra-ai
+check "astra-guard is installed"          test -x /usr/bin/astra-guard
+
 printf '%s -----------------------------------------\n' "$PREFIX"
 printf '%s checks run: %s\n' "$PREFIX" "$TOTAL"
 if [ "$FAILED" -gt 0 ]; then

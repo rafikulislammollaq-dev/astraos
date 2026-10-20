@@ -1,0 +1,178 @@
+#!/bin/sh
+# 0650-ai.hook.chroot - put a working assistant in the image.
+#
+# WHY THE IMAGE CARRIES A MODEL
+#
+#   The package has always been able to download a model, and the package's
+#   own documentation said the download was opt-in. That was wrong for an ISO:
+#   an assistant that only exists after a 1 GB download is not a feature of the
+#   image, it is an installer for a feature. This hook ships the executor (the
+#   tier the assistant needs to do anything at all) and the tiny speech model,
+#   so the live session and the installed system can answer without a network.
+#
+#   It does not ship the middle brain. That model is 2.4 GB and only upgrades a
+#   working assistant, so it stays a deliberate `astra-ai setup --model` choice.
+#
+# WHY BOTH ENGINE VARIANTS
+#
+#   The engine is compiled for the CPU it will run on, and the image does not
+#   know the target machine. The avx build runs on Sandy Bridge and later; the
+#   avx2 build needs AVX2, F16C, FMA and BMI2. /usr/local/bin/llama-server and
+#   whisper-cli pick the newest variant /proc/cpuinfo actually lists, and say
+#   so instead of dying with SIGILL on a CPU that has neither.
+#
+# WHY NOTHING HERE IS TRUSTED
+#
+#   Every download is checked against the pinned SHA-256 in
+#   /etc/astraos/ai-bundle.conf (and the byte count for the models) before it
+#   is moved into place. A mismatch aborts the build. This is also why the
+#   engine comes from a release asset rather than piping a URL into a shell:
+#   the bytes are the ones the engine workflow proved, not whatever a URL
+#   returns today.
+
+set -eu
+
+PREFIX='[astraos:ai]'
+CONF=/etc/astraos/ai-bundle.conf
+MODELS=/usr/share/astraos/ai/models
+ENGINE=/usr/lib/astraos/ai/engine
+
+[ -r "$CONF" ] || {
+    echo "$PREFIX missing $CONF; refusing to build an image with no assistant" >&2
+    exit 1
+}
+# shellcheck source=/dev/null
+. "$CONF"
+
+for name in \
+    ASTRAOS_AI_ENGINE_AVX_URL ASTRAOS_AI_ENGINE_AVX_SHA256 \
+    ASTRAOS_AI_ENGINE_AVX2_URL ASTRAOS_AI_ENGINE_AVX2_SHA256 \
+    ASTRAOS_AI_MODEL_URL ASTRAOS_AI_MODEL_SHA256 ASTRAOS_AI_MODEL_BYTES \
+    ASTRAOS_AI_WHISPER_URL ASTRAOS_AI_WHISPER_SHA256 ASTRAOS_AI_WHISPER_BYTES
+do
+    eval "value=\${$name:-}"
+    [ -n "$value" ] || {
+        echo "$PREFIX $CONF does not set $name" >&2
+        exit 1
+    }
+done
+
+free_kb="$(df -Pk /usr | awk 'NR == 2 { print $4 }')"
+if [ "${free_kb:-0}" -lt 2200000 ]; then
+    echo "$PREFIX only $(( ${free_kb:-0} / 1024 )) MB free under /usr;" \
+         "the engine and models need about 1.2 GB and the squashfs needs room too" >&2
+    exit 1
+fi
+
+install -d -m 0755 "$MODELS" "$ENGINE/avx" "$ENGINE/avx2"
+
+# fetch URL DESTINATION SHA256 [BYTES]
+#
+# Writes to .part and renames only after the hash matches, so an interrupted
+# download can never be mistaken for a model. Three attempts, because a runner
+# losing one connection should not cost a complete image build.
+fetch() {
+    url="$1"
+    destination="$2"
+    expected="$3"
+    bytes="${4:-}"
+    part="${destination}.part"
+    attempt=1
+    while [ "$attempt" -le 3 ]; do
+        printf '%s fetching %s (attempt %s)\n' "$PREFIX" "${destination##*/}" "$attempt"
+        if curl -fL --retry 2 --connect-timeout 30 --max-time 1200 \
+                --silent --show-error -o "$part" "$url"; then
+            got="$(sha256sum "$part" | cut -d' ' -f1)"
+            if [ "$got" = "$expected" ]; then
+                if [ -n "$bytes" ]; then
+                    actual="$(stat -c %s "$part")"
+                    if [ "$actual" != "$bytes" ]; then
+                        echo "$PREFIX size mismatch for ${destination##*/}:" \
+                             "$actual bytes, expected $bytes" >&2
+                        rm -f "$part"
+                        return 1
+                    fi
+                fi
+                mv "$part" "$destination"
+                printf '%s verified %s (%s bytes)\n' "$PREFIX" \
+                    "${destination##*/}" "$(stat -c %s "$destination")"
+                return 0
+            fi
+            echo "$PREFIX checksum mismatch for ${destination##*/}:" \
+                 "got $got, expected $expected" >&2
+        else
+            echo "$PREFIX download failed: $url" >&2
+        fi
+        rm -f "$part"
+        attempt=$((attempt + 1))
+        if [ "$attempt" -le 3 ]; then
+            sleep 5
+        fi
+    done
+    return 1
+}
+
+for variant in avx avx2; do
+    case "$variant" in
+        avx)
+            url="$ASTRAOS_AI_ENGINE_AVX_URL"
+            sum="$ASTRAOS_AI_ENGINE_AVX_SHA256"
+            ;;
+        avx2)
+            url="$ASTRAOS_AI_ENGINE_AVX2_URL"
+            sum="$ASTRAOS_AI_ENGINE_AVX2_SHA256"
+            ;;
+    esac
+    archive="/tmp/astra-ai-engine-$variant.tar.gz"
+    fetch "$url" "$archive" "$sum"
+    tar -xzf "$archive" -C "$ENGINE/$variant" --no-same-owner
+    chmod 0755 "$ENGINE/$variant/llama-server" "$ENGINE/$variant/whisper-cli"
+    for program in llama-server whisper-cli; do
+        [ -s "$ENGINE/$variant/$program" ] || {
+            echo "$PREFIX $variant archive did not contain $program" >&2
+            exit 1
+        }
+    done
+    rm -f "$archive"
+done
+
+fetch "$ASTRAOS_AI_MODEL_URL" \
+      "$MODELS/Spark-X2.5-1.7B-Q4_K_M.gguf" \
+      "$ASTRAOS_AI_MODEL_SHA256" "$ASTRAOS_AI_MODEL_BYTES"
+fetch "$ASTRAOS_AI_WHISPER_URL" \
+      "$MODELS/ggml-tiny.en.bin" \
+      "$ASTRAOS_AI_WHISPER_SHA256" "$ASTRAOS_AI_WHISPER_BYTES"
+chmod 0644 "$MODELS"/*.gguf "$MODELS"/*.bin
+
+# make_wrapper PROGRAM
+#
+# A here-document with @PROGRAM@ rather than an unquoted heredoc, because "$@"
+# must reach the real engine untouched. The flag test is the same set
+# setup.VARIANT_REQUIREMENTS records for "avx2"; a CPU with AVX2 but without
+# FMA is not a Haswell and must not be handed the avx2 build.
+make_wrapper() {
+    program="$1"
+    sed "s|@PROGRAM@|$program|g" > "/usr/local/bin/$program" <<'WRAPPER'
+#!/bin/sh
+# AstraOS ships two builds of the engine. Pick the newest one this CPU can run.
+if grep -qw avx2 /proc/cpuinfo 2>/dev/null \
+    && grep -qw f16c /proc/cpuinfo 2>/dev/null \
+    && grep -qw fma  /proc/cpuinfo 2>/dev/null \
+    && grep -qw bmi2 /proc/cpuinfo 2>/dev/null; then
+    exec /usr/lib/astraos/ai/engine/avx2/@PROGRAM@ "$@"
+fi
+if grep -qw avx /proc/cpuinfo 2>/dev/null; then
+    exec /usr/lib/astraos/ai/engine/avx/@PROGRAM@ "$@"
+fi
+echo "@PROGRAM@: this CPU has no AVX, so the assistant's engine cannot run on it." >&2
+exit 1
+WRAPPER
+    chmod 0755 "/usr/local/bin/$program"
+}
+
+make_wrapper llama-server
+make_wrapper whisper-cli
+
+printf '%s model:  %s\n' "$PREFIX" "$MODELS/Spark-X2.5-1.7B-Q4_K_M.gguf"
+printf '%s speech: %s\n' "$PREFIX" "$MODELS/ggml-tiny.en.bin"
+printf '%s engine: avx and avx2; /usr/local/bin picks by /proc/cpuinfo\n' "$PREFIX"

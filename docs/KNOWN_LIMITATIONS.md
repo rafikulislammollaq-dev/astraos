@@ -311,32 +311,36 @@ Xfce and Debian both use for defaults that must not fight the packaged files.
 The live session's user and any user the installer creates are both new accounts, so a fresh
 install gets the AstraOS desktop; a pre-existing account does not.
 
-### 3.12 The AI assistant ships without a model
+### 3.12 The AI assistant ships one model, and the bigger one is opt-in
 
-AstraOS now includes an AI assistant (`astraos-ai`, documented in `docs/AI.md`), and the
-limitation that remains is deliberate: **no model and no runtime are installed with the
-image**. The assistant is a command and a local page; the model, `llama.cpp` and the
-speech tools arrive only when the user runs `astra-ai setup`, because a small model is
-about a gigabyte and a distribution should not spend a user's bandwidth and disk on one
-unasked.
+AstraOS includes an AI assistant (`astraos-ai`, documented in `docs/AI.md`). The image
+ships what the assistant needs to answer on first boot: the executor tier
+(`spark-x2.5-1.7b-q4_k_m`, about 1.0 GB), the tiny English speech model
+(`whisper-tiny.en`, about 74 MB), and `llama-server`/`whisper-cli` for both AVX and
+AVX2 CPUs. The image build downloads those exact bytes and verifies their SHA-256
+before installing them, so the assistant is not a page that asks the user to fetch a
+gigabyte.
 
-Three consequences worth stating plainly:
+The middle brain (`spark-x2.5-4b-q4_k_m`, about 2.4 GB) is not shipped. It is an opt-in
+upgrade through `astra-ai setup --model spark-x2.5-4b-q4_k_m`; without it the assistant
+plans one step at a time and says so in the reply. The ISO is about 1.1 GB larger than
+it was without the bundle, and that is the trade: a working offline assistant instead of
+a smaller medium.
 
-* **A fresh install cannot answer anything yet.** The page loads, explains what to run,
-  and the assistant reports "not installed" rather than failing. This is the state every
-  new user meets, and it is a design decision rather than a bug.
-* **The model is chosen for the hardware, not for the leaderboard.** The catalogue is
-  1B–3B Q4 models. A 7B model would be a better assistant on the machine this was
-  developed on only if it finished a sentence in a sitting, and it does not.
-* **Nothing about the assistant is required by anything else.** No boot unit, no login
-  path, no networking, no package management and no recovery tool depends on it, which is
-  the property the plan asked for before any AI feature was allowed in.
+Consequences worth stating plainly:
 
-Speech is split in the same way. Speaking works as soon as a text-to-speech tool is
-present, and `espeak-ng` is installed with the image so the assistant is audible out of
-the box — an older voice, chosen because it is in Debian, needs no model file and answers
-immediately. Recognising speech needs `whisper.cpp`, which is a build, so it is not
-installed by default; a phone on the same network can supply a microphone without it.
+* **A fresh install can answer, one step at a time.** It loads the shipped executor with
+  no network; a complex request that needs the middle brain gets the single-step attempt
+  and the message that names the upgrade.
+* **A CPU without AVX cannot run the engine.** Both builds require AVX; the selector says
+  so instead of dying with SIGILL. `astra-ai profile` reports what the CPU lists before
+  the user tries.
+* **The assistant is still not required by anything else.** No boot unit, no login path,
+  no networking, no package management and no recovery tool depends on it, which is the
+  property the plan asked for before any AI feature was allowed in.
+
+Speech is split: `espeak-ng` is installed and speaks out of the box. Recognition now
+works out of the box too, because `whisper-cli` and `ggml-tiny.en.bin` are in the image.
 A neural voice (Piper and a voice model) is not supported yet.
 
 ### 3.13 Plymouth's theme file is written at image build time

@@ -142,8 +142,8 @@ when: the user wants the contents of a PDF as text or as a summary
 
 ## Steps
 
-1. Find the file. Use open_path with the path the user gave.
-2. Extract the text with run_command: pdftotext "<file>" -
+1. Find the file with search_files, then pass its path to read_pdf.
+2. read_pdf runs pdftotext -layout and returns the extracted text.
 3. Say in three bullets what the document is about, and name the file.
 ```
 
@@ -193,13 +193,19 @@ Five rules, all of them structural rather than advisory:
    shutdown or recovery invokes it, and uninstalling the package leaves the
    system untouched.
 
-5. **Downloads are opt-in.** Nothing is fetched when the package is installed or
-   when the assistant starts. A model or a tool appears only by a setup command
-   that says what it is about to do first: `astra ai setup` (local files and
-   guidance), `astra-ai setup --model NAME` (the catalogue), or
-   `astra-ai setup --build llama` (compile the runtime from source).
-   A machine with the package installed and no model still works: `/api/health`
-   reports not ready, and the page explains how to finish the setup.
+5. **The image ships a working assistant; everything after that is opt-in.**
+   The image ships the executor tier (`spark-x2.5-1.7b-q4_k_m`, about 1.0 GB),
+   the tiny English speech model (`whisper-tiny.en`, about 74 MB) and both
+   engine variants, so a live session and a fresh install answer without a
+   network. The image build fetches those exact bytes once and verifies them
+   against `/etc/astraos/ai-bundle.conf`; nothing is fetched when the assistant
+   starts. The middle brain (`spark-x2.5-4b-q4_k_m`, about 2.4 GB), the other
+   tiers and a runtime built from source remain opt-in and appear only by a
+   setup command that says what it is about to do first: `astra ai setup`
+   (local files and guidance), `astra-ai setup --model NAME` (the catalogue),
+   or `astra-ai setup --build llama` (compile the runtime from source).
+   An image built without the bundle still works: `/api/health` reports not
+   ready, and the page explains how to finish the setup.
 
 One thing that is *not* a boundary: the `--lan` mode. A device that is not the
 computer itself cannot use the page until it pairs - `astra-ai pair` shows a
@@ -253,34 +259,42 @@ envelope, not as measurements.
 
 ---
 
-## 4. Setting it up (opt-in)
+## 4. Setting it up
 
-`astra ai setup` is the guided starting point. It creates the two directories the
-package expects, reports what is already present, and explains the two pieces the
-assistant needs. Neither is bundled, and neither is downloaded automatically:
+The image is not a blank assistant. It ships the executor tier and the tiny
+speech model under `/usr/share/astraos/ai/models`, and both engine variants under
+`/usr/lib/astraos/ai/engine`; `/usr/local/bin/llama-server` picks the newest
+variant the CPU actually lists. A fresh live session or install therefore answers
+without a network and without a setup command. The middle brain is the part that
+is opt-in, because it is 2.4 GB and only upgrades an assistant that already works.
 
-1. **A model** - a GGUF file, 1B-3B, Q4, placed in the model directory that
-   `astra ai setup` prints. If you already have one, import it locally:
+`astra ai setup` remains the guided starting point. It creates the two directories
+the package expects, reports what is already present, and says what is missing:
+
+1. **The middle brain** - `astra-ai setup --model spark-x2.5-4b-q4_k_m`
+   (about 2.4 GB, 6 GB of RAM). Without it the assistant plans one step at a
+   time and says so. A model you already have can be imported locally:
 
    ```bash
    astra ai setup ~/Downloads/some-model-q4_k_m.gguf
    ```
 
-2. **A llama.cpp server** - the `llama-server` binary, on `PATH` or in the
-   assistant's bin directory (again printed by `astra ai setup`). Debian may
-   package it (`llama.cpp`, `llama-cpp`) or you can build it; either way the
-   binary must be executable by your user.
+2. **A runtime you build yourself** - `astra-ai setup --build llama` compiles the
+   pinned source for this CPU. A `llama-server` already on `PATH` or in the
+   assistant's bin directory is used as well.
 
-Optional, but needed for voice features:
+Optional, but needed for the neural voice:
 
-* a text-to-speech tool for the "PC speakers" option. `espeak-ng` is what the
-  image ships and what the assistant prefers; `espeak` and `spd-say` are also
-  used when they are the ones installed. A neural voice (Piper and its model
-  files) is **not** supported yet, and the honest reason is that it is a second
+* text-to-speech for the "PC speakers" option. `espeak-ng` is what the image
+  ships and what the assistant prefers; `espeak` and `spd-say` are also used
+  when they are the ones installed. A neural voice (Piper and its model files)
+  is **not** supported yet, and the honest reason is that it is a second
   download plus a voice to choose before the machine can say anything - the
   assistant has to answer with whatever the machine already has;
-* `whisper.cpp` for transcribing recorded audio that the browser cannot
-  transcribe itself.
+* speech-to-text already works: the image ships `whisper-cli` and
+  `ggml-tiny.en.bin`, so a recording is transcribed with no build and no
+  download. `astra-ai setup --build whisper` replaces the shipped binary for a
+  user who wants to build it.
 
 If you would rather download than supply your own, the package's command line
 tool has a catalogue: `astra-ai setup --list` shows it, `astra-ai setup --model
@@ -295,8 +309,9 @@ runs `astra-ai setup --build all` once per CPU variant - `avx` for the Sandy
 Bridge class, `avx2` for Haswell and later - proves each result (the avx build
 on an emulated Sandy Bridge with a real model; the avx2 build natively, with
 its 256-bit code checked and a guard that the runner really lists AVX2), and
-publishes `astra-ai-engine-linux-x86_64-avx` and
-`astra-ai-engine-linux-x86_64-avx2` as GitHub Actions artifacts. Download the
+publishes the two tarballs as the `ai-engine-2026-10-19` release. The image
+build downloads those release assets, verifies their SHA-256, and installs both
+variants, so the ISO does not depend on a CI artifact that expires.
 one whose name matches the machine, copy `llama-server` and `whisper-cli` into
 `~/.local/share/astraos/ai/bin/`, and `astra-ai status` shows the path it found
 (and complains when the recorded requirements do not match the CPU) - the
@@ -410,8 +425,18 @@ Stated so the omissions are decisions, not surprise gaps:
 * **No arbitrary shell.** The action repertoire is fixed and small. "Run this
   command for me" is answered by explanation, not execution.
 * **No vision, no image input, no attachments.** Text and voice only.
-* **No per-action sandbox.** Actions run as you, with your rights. There is no
+* **The model server can be confined; the actions are not.** When bubblewrap or
+  firejail is installed, the engine runs `llama-server` in a read-only cage (the
+  whole root and the model folder read-only, with private `/tmp` and `/dev/shm`),
+  and `sandbox: on` in the settings refuses to start without one; `auto` is the
+  default and reports the fallback, and `astra-ai status` prints the probe. The
+  network stays shared because the page talks to the server over `127.0.0.1` —
+  a private network namespace would make it unreachable — and Landlock is not
+  used. The actions themselves run as you, with your rights: there is no
   AppArmor profile or container around them.
+* **No automatic undo.** `astraos/ai/undo.py` takes copy-based snapshots and
+  restores them, with tests, but no privileged action takes one yet and there is
+  no `astra-ai undo` command.
 * **No TLS, with pairing as the whole access control**, covered above.
 * **No automatic updates.** Nothing fetches or replaces a model on its own.
   The catalogue downloader (`astra-ai setup --model NAME`) runs only when
@@ -439,6 +464,14 @@ Stated so the omissions are decisions, not surprise gaps:
   are counted apart, tokens per second is the engine's own count or is absent,
   and a machine with no engine gets one actionable line and exit 1 instead of a
   report full of zeroes.
+* `tests/static/test_astra_ai_sandbox.py` - the model server's cage: a read-only
+  root and model folder, private `/tmp` and `/dev/shm`, the loopback the page
+  needs, `probe()` telling "installed" from "can start", and `sandbox: on`
+  refusing to start without one.
+* `tests/static/test_astra_ai_undo.py`, `test_astra_ai_missions.py`,
+  `test_astra_ai_limits.py` and `test_astra_ai_benchmark.py` - snapshots and
+  rollback, progress read from the journal, the model-server memory cap, and the
+  three-task benchmark.
 * `astra ai status` - the on-machine answer to "is it actually working".
 
 The usual rule applies: an unperformed check is never a pass. If the assistant

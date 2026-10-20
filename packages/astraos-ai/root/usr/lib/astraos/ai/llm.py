@@ -80,6 +80,9 @@ class Engine:
         # eval` reads them after each task so its tokens-per-second is the
         # engine's own count rather than a word estimate wearing that name.
         self.last_usage: dict | None = None
+        # What the sandbox decided for the running server: "sandboxed", the
+        # tool, or the reason it was not. Set by start(), reported by status().
+        self.sandbox: dict = {"sandboxed": False, "reason": "not started yet"}
 
     # ------------------------------------------------------------------
     # What is installed
@@ -170,6 +173,50 @@ class Engine:
     def _log_path(self) -> Path:
         return _config.PATHS.models_dir.parent / "llama-server.log"
 
+    def _sandbox_argv(self, argv: list[str]) -> tuple[list[str], dict]:
+        """Confine the server to a read-only cage when a sandbox can run here.
+
+        `sandbox` in the settings is "auto" (the default), "on", or "off".
+        Auto uses a sandbox when one is installed *and* its own probe succeeds,
+        and names the reason when it falls back; "on" refuses to start rather
+        than silently running unsandboxed. The network stays shared because the
+        parent reaches the server over 127.0.0.1 - see sandbox.py.
+        """
+        from . import sandbox as _sandbox
+
+        mode = str(self.settings.get("sandbox", "auto")).strip().lower()
+        required = mode in ("1", "on", "true", "yes", "required")
+        if mode in ("0", "off", "false", "no", "none"):
+            return argv, {"sandboxed": False, "reason": "disabled in settings"}
+
+        if not _sandbox.available():
+            reason = (
+                "no bubblewrap or firejail installed "
+                "(install it with: sudo apt install bubblewrap)"
+            )
+            if required:
+                raise EngineUnavailable(f"a sandbox was required, but {reason}")
+            _log(f"running without a sandbox: {reason}")
+            return argv, {"sandboxed": False, "reason": reason}
+
+        probed = _sandbox.probe()
+        if not probed["ok"]:
+            reason = f"{probed['tool']} cannot start a sandbox here: {probed['reason']}"
+            if required:
+                raise EngineUnavailable(f"a sandbox was required, but {reason}")
+            _log(f"running without a sandbox: {reason}")
+            return argv, {"sandboxed": False, "reason": reason, "tool": probed["tool"]}
+
+        model = self.model()
+        wrapped, info = _sandbox.confine_llama_server(
+            argv, model_dir=model.parent if model is not None else None
+        )
+        _log(
+            f"model server confined with {Path(info['tool']).name} "
+            "(root and model read-only, network shared)"
+        )
+        return wrapped, info
+
     def start(self) -> None:
         """Start llama-server and wait until it is answering. Idempotent.
 
@@ -192,15 +239,20 @@ class Engine:
                 self._logfile = subprocess.DEVNULL
 
             _log(f"starting the model ({self.model().name}) on {self._base_url()}")
-            argv = self._argv()
+            argv, self.sandbox = self._sandbox_argv(self._argv())
             try:
-                self._process = subprocess.Popen(
-                    argv,
+                from . import memory as _memory
+
+                preexec = _memory.preexec(_memory.memory_cap_bytes(self.settings))
+                popen_kwargs = dict(
                     stdin=subprocess.DEVNULL,
                     stdout=self._logfile,
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
                 )
+                if preexec is not None:
+                    popen_kwargs["preexec_fn"] = preexec
+                self._process = subprocess.Popen(argv, **popen_kwargs)
             except OSError as exc:
                 self._process = None
                 raise EngineUnavailable(f"could not run llama-server: {exc}") from exc
@@ -314,6 +366,7 @@ class Engine:
             "model_file": str(model) if model else "",
             "binary": binary or "",
             "pid": self._process.pid if running else 0,
+            "sandbox": dict(self.sandbox),
             "message": "",
         }
 

@@ -109,9 +109,11 @@ pairing arc.
 
 ## What is included
 
-Built from Debian 13 (trixie). The image comes from 351 distinct reviewed package
-selections across 10 package lists plus their dependencies and recommended packages; the built
-live filesystem holds 182,962 files (2,159 MiB extracted).
+Built from Debian 13 (trixie). The image comes from 352 distinct reviewed package
+selections across 10 package lists plus their dependencies and recommended packages. The
+most recent completed build, made before the offline assistant bundle was added, held
+182,962 files (2,159 MiB extracted); the next build's measured figures replace these when
+they exist, rather than being estimated here.
 
 | Component | Choice |
 |---|---|
@@ -120,7 +122,7 @@ live filesystem holds 182,962 files (2,159 MiB extracted).
 | Init | systemd |
 | Desktop | Xfce, configured and branded |
 | Session dashboard | AstraOS HUD (`astraos-hud`): one full-screen window with live CPU, memory, network, disk and temperature panels, an on-screen keyboard and an embedded terminal, started from its menu entry or launcher |
-| Assistant | `astraos-ai`: an opt-in local assistant with a three-tier model ladder and a shipped skills/knowledge library. No model is bundled and nothing runs until one is installed (`docs/AI.md`) |
+| Assistant | `astraos-ai`: a local assistant that ships with an executor model and a speech model, so it works offline on first boot, with Guard permissions/audit, a three-tier model ladder and a shipped skills/knowledge library. The middle brain is an optional download (`docs/AI.md`) |
 | Hardware enablement | VA-API video decode for Intel and AMD (`intel-media-va-driver`, `i965-va-driver`, `mesa-va-drivers`) with `vainfo`; `fwupd` for device firmware updates; `zram-tools` compressed swap; `irqbalance`; `bluez-firmware` |
 | Virtual machines | Guest agents for the hypervisors people try first: `qemu-guest-agent` (QEMU/KVM: clean shutdown, time sync, host queries), `spice-vdagent` (SPICE: clipboard and display resize) and `open-vm-tools` with its desktop plugins (VMware). All start only inside their own hypervisor — udev rules on the virtio ports, or a unit conditioned on VMware. VirtualBox's Guest Additions are not in Debian 13, so in VirtualBox use that application's own Guest Additions ISO (see `docs/TROUBLESHOOTING.md`) |
 | Phones and media over USB | MTP for Android phones and cameras in Thunar (`libmtp-runtime`, `mtp-tools`), `adb` and `fastboot` with udev rules |
@@ -145,10 +147,14 @@ live filesystem holds 182,962 files (2,159 MiB extracted).
 | Root filesystem | ext4 |
 
 Largest contributors to ISO size: kernel about 108 MB, firmware packages about 390 MB in
-total, Wine, Flatpak, the full codec set, Firefox ESR about 80 MB, LibreOffice about
-80 MB, graphics libraries (LLVM, Mesa, WebKitGTK), fonts and speech data.
+total, the assistant's executor model about 1.0 GB, Wine, Flatpak, the full codec set,
+Firefox ESR about 80 MB, LibreOffice about 80 MB, graphics libraries (LLVM, Mesa,
+WebKitGTK), fonts and speech data.
 
-The ISO is about 2.4 GB (2,432,696,320 bytes). Installed size will be larger, because
+The next ISO is expected to be about 3.5 GB: the last measured image was 2,432,696,320
+bytes, and the assistant's executor, speech model and engine add about 1.1 GB. No ISO
+has been rebuilt with the bundle yet, so that figure is arithmetic, not a measurement;
+the first green build records the exact size. Installed size will be larger, because
 the ISO stores the system as a compressed squashfs.
 
 ---

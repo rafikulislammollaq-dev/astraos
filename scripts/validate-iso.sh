@@ -244,6 +244,17 @@ if command -v unsquashfs >/dev/null 2>&1 && command -v xorriso >/dev/null 2>&1; 
         check_in_squashfs "the AstraOS HUD application"     'squashfs-root/usr/lib/astraos-hud/astraos_hud/__init__.py'
         check_in_squashfs "the assistant command"           'squashfs-root/usr/bin/astra-ai'
         check_in_squashfs "the assistant knowledge corpus"  'squashfs-root/usr/share/astraos/ai/knowledge'
+        # The offline bundle. A build that skipped the fetch hook would pass every
+        # check above and still ship an assistant that cannot answer; these are the
+        # exact bytes 0650-ai.hook.chroot verified before the squashfs was made.
+        check_in_squashfs "the pinned AI bundle manifest"    'squashfs-root/etc/astraos/ai-bundle.conf'
+        check_in_squashfs "the executor model"               'squashfs-root/usr/share/astraos/ai/models/Spark-X2.5-1.7B-Q4_K_M.gguf'
+        check_in_squashfs "the speech model"                 'squashfs-root/usr/share/astraos/ai/models/ggml-tiny.en.bin'
+        check_in_squashfs "the AVX engine"                   'squashfs-root/usr/lib/astraos/ai/engine/avx/llama-server'
+        check_in_squashfs "the AVX2 engine"                  'squashfs-root/usr/lib/astraos/ai/engine/avx2/llama-server'
+        check_in_squashfs "the engine selector"              'squashfs-root/usr/local/bin/llama-server'
+        check_in_squashfs "the speech selector"              'squashfs-root/usr/local/bin/whisper-cli'
+        check_in_squashfs "the model licences and notice"    'squashfs-root/usr/share/doc/astraos-ai/NOTICE'
         check_in_squashfs "the astraos-hud package"         'squashfs-root/var/lib/dpkg/info/astraos-hud'
         check_in_squashfs "the astraos-ai package"          'squashfs-root/var/lib/dpkg/info/astraos-ai'
         fi

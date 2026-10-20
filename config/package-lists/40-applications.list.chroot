@@ -76,3 +76,14 @@ python3-requests
 # --no-install-recommends: an assistant that cannot say anything until the user works
 # out which package to add is a worse first impression than a robotic voice.
 espeak-ng
+
+# The cage around the assistant's model server.
+#
+# bubblewrap mounts the whole root read-only and gives the server a private /tmp
+# before llama-server loads a model. It is named here, not left to Recommends,
+# because live-build installs with --no-install-recommends and the sandbox must
+# exist in the image for `sandbox: auto` to mean anything. If the kernel forbids
+# unprivileged user namespaces, astra-ai says so and runs the server unconfined
+# rather than failing to answer; it never silently claims a sandbox it does not
+# have.
+bubblewrap

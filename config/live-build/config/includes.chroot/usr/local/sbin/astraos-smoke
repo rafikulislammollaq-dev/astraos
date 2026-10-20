@@ -494,6 +494,68 @@ if [ "$MODE" = live ]; then
         bad "ai-profile" "astra-ai profile failed: $(tail -n 2 /tmp/astra-ai-profile.log | tr '\n' ' ')"
     fi
 fi
+
+# --- the assistant the image ships ----------------------------------------------------
+# The model and engine are in the medium, not downloaded on first use. This checks the
+# files; ai-engine below actually executes the selected build on this CPU, and ai-guard
+# records two decisions in a temporary ledger and walks the chain back.
+if [ -s /usr/share/astraos/ai/models/Spark-X2.5-1.7B-Q4_K_M.gguf ] \
+    && [ -s /usr/share/astraos/ai/models/ggml-tiny.en.bin ] \
+    && [ -x /usr/lib/astraos/ai/engine/avx/llama-server ] \
+    && [ -x /usr/lib/astraos/ai/engine/avx2/llama-server ]; then
+    ok "ai-bundle" "executor, speech model and both engine variants are in the image"
+else
+    bad "ai-bundle" "a model or an engine variant is missing from the image"
+fi
+
+if grep -qw avx /proc/cpuinfo 2>/dev/null; then
+    if llama-server --version >/tmp/astra-llama-version.log 2>&1; then
+        ok "ai-engine" "$(head -n 1 /tmp/astra-llama-version.log)"
+    else
+        bad "ai-engine" "llama-server did not run: $(tail -n 2 /tmp/astra-llama-version.log | tr '\n' ' ')"
+    fi
+else
+    say "note ai-engine (this CPU lists no AVX; the avx build is present but cannot run here)"
+fi
+
+if astra-guard levels >/tmp/astra-guard-levels.log 2>&1 \
+    && grep -q 'privileged' /tmp/astra-guard-levels.log; then
+    ok "ai-guard" "observe, prepare, modify and privileged are in the policy"
+else
+    bad "ai-guard" "astra-guard levels did not print the four levels"
+fi
+
+if ASTRAOS_GUARD_AUDIT=/tmp/astra-guard-smoke.jsonl python3 -c '
+import sys
+sys.path.insert(0, "/usr/lib")
+from astraos.ai import guard
+guard.record({"action": "tell_time", "level": "observe", "decision": "allowed", "provenance": "self-test"}, outcome="allowed")
+guard.record({"action": "run_command", "level": "privileged", "decision": "refused", "provenance": "self-test"}, outcome="refused")
+result = guard.verify()
+print("records", result["count"], "ok", result["ok"])
+raise SystemExit(0 if result["ok"] else 1)
+' >/tmp/astra-guard-smoke.log 2>&1; then
+    ok "ai-guard-chain" "two decisions recorded and the audit chain verified"
+else
+    bad "ai-guard-chain" "$(tail -n 2 /tmp/astra-guard-smoke.log | tr '\n' ' ')"
+fi
+rm -f /tmp/astra-guard-smoke.jsonl
+
+if [ "$MODE" = live ]; then
+    rm -rf /tmp/astra-files-smoke
+    mkdir -p /tmp/astra-files-smoke/Documents
+    printf 'hello from the image\n' > /tmp/astra-files-smoke/Documents/hello.txt
+    chmod -R a+rX /tmp/astra-files-smoke
+    if runuser -u "$LIVE_USER" -- env ASTRAOS_FILES_HOME=/tmp/astra-files-smoke \
+        python3 -c 'import sys; sys.path.insert(0, "/usr/lib"); from astraos.ai import actions; print(actions.read_file("Documents/hello.txt"))' \
+        >/tmp/astra-files.log 2>&1 \
+        && grep -qx 'hello from the image' /tmp/astra-files.log; then
+        ok "ai-files" "the file tools read a document from the live user's Documents"
+    else
+        bad "ai-files" "$(tail -n 2 /tmp/astra-files.log | tr '\n' ' ')"
+    fi
+    rm -rf /tmp/astra-files-smoke
+fi
 if as_user xset s off >/dev/null 2>&1 \
     && as_user xset s noblank >/dev/null 2>&1 \
     && as_user xset dpms force on >/dev/null 2>&1 \

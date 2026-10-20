@@ -317,13 +317,20 @@ def models_of_kind(kind: str) -> list[str]:
 
 
 def model_path(name: str) -> Path:
-    """Where a catalog entry is (or would be) on disk."""
+    """Where a catalog entry is on disk, or where a download would put it.
+
+    The image ships the executor and the tiny speech model, so the first look
+    is the image's directory. A file the user downloaded has the same name in
+    their directory and is found first; a model that is nowhere falls back to
+    the user's directory, which is where install_model() writes it.
+    """
     entry = MODELS.get(name)
     if entry is None:
         raise SetupError(
             f"unknown model: {name} - `astra-ai setup --list` shows the catalog"
         )
-    return _config.PATHS.models_dir / entry["file"]
+    found = _config.find_model(entry["file"])
+    return found if found is not None else _config.PATHS.models_dir / entry["file"]
 
 
 def describe() -> dict:
@@ -349,11 +356,7 @@ def describe() -> dict:
     settings = _config.load_settings()
     chosen = _config.model_file(settings)
 
-    installed: list[str] = []
-    try:
-        installed = sorted(p.name for p in _config.PATHS.models_dir.iterdir() if p.is_file())
-    except OSError:
-        installed = []
+    installed = sorted(_config.installed_models())
 
     stt_name = str(settings.get("stt_model") or "")
     stt_file = ""
@@ -603,30 +606,13 @@ def _download(url: str, target: Path) -> None:
         pass
 
 
-def install_model(name: str) -> Path:
-    """Download one catalog model into models_dir and return its path.
+def _remember(name: str, entry: dict, target: Path) -> None:
+    """Record the user's explicit choice of a model, even when it was already there.
 
-    Already installed means already installed: the file is not fetched again,
-    because a user who ran the command twice did not ask for two gigabytes of
-    traffic. Delete the file to force a fresh download.
+    The early return for an already-installed model used to skip this, so
+    choosing the model the image ships left the settings untouched: harmless
+    while it was the only model, and wrong the moment a second one arrives.
     """
-    entry = MODELS.get(name)
-    if entry is None:
-        raise SetupError(
-            f"unknown model: {name} - `astra-ai setup --list` shows the catalog"
-        )
-
-    target = model_path(name)
-    if target.is_file() and target.stat().st_size > 0:
-        print(f"already installed: {target}")
-        return target
-
-    print(f"installing {name} (about {entry['size_mb']} MB, {entry['note']})")
-    _download(entry["url"], target)
-
-    size = target.stat().st_size
-    print(f"installed: {target} ({size / 1048576:.1f} MB)")
-
     settings = _config.load_settings()
     if entry.get("kind") == "llm":
         settings["model"] = target.name
@@ -638,6 +624,35 @@ def install_model(name: str) -> Path:
     except OSError as exc:
         print(f"note: could not write {_config.PATHS.config_file}: {exc}")
         print(f"      use it with: --model {target}")
+
+
+def install_model(name: str) -> Path:
+    """Download one catalog model into models_dir and return its path.
+
+    Already installed means already installed: the file is not fetched again,
+    because a user who ran the command twice did not ask for two gigabytes of
+    traffic. The choice is still recorded, because the command says which model
+    the assistant should use. Delete the file to force a fresh download.
+    """
+    entry = MODELS.get(name)
+    if entry is None:
+        raise SetupError(
+            f"unknown model: {name} - `astra-ai setup --list` shows the catalog"
+        )
+
+    target = model_path(name)
+    if target.is_file() and target.stat().st_size > 0:
+        print(f"already installed: {target}")
+        _remember(name, entry, target)
+        return target
+
+    print(f"installing {name} (about {entry['size_mb']} MB, {entry['note']})")
+    _download(entry["url"], target)
+
+    size = target.stat().st_size
+    print(f"installed: {target} ({size / 1048576:.1f} MB)")
+
+    _remember(name, entry, target)
     return target
 
 

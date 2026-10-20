@@ -42,10 +42,13 @@ skills and knowledge it quotes are plain files under `/usr/share/astraos/ai/` an
 under `~/.local/share/astraos/ai/`.
 
 The honest boundary of all of this: the assistant runs as your user, with your rights and
-no others, and there is no sandbox around it - no AppArmor profile, no container. It can
-read your files and run commands in your name, which is exactly what makes it useful and
-exactly why the action repertoire is a short fixed list, why anything destructive waits for
-a confirmation in front of you, and why it refuses to run anything as root. A setup step
-like `astra-ai setup --model NAME` does fetch a model from a third party - that is a
-request to a server somewhere else, made by you, to get a file - but the assistant's own
-operation never sends anything.
+no others. The model server is the one part that can be caged - with bubblewrap or
+firejail installed, `llama-server` runs with the root and the model folder read-only and
+private `/tmp` and `/dev/shm` - but the actions themselves have no AppArmor profile and no
+container, and the server keeps the host network so the page can reach it over
+`127.0.0.1`. It can read your files and run commands in your name, which is exactly what
+makes it useful and exactly why the action repertoire is a short fixed list, why anything
+destructive waits for a confirmation in front of you, and why it refuses to run anything
+as root. A setup step like `astra-ai setup --model NAME` does fetch a model from a third
+party - that is a request to a server somewhere else, made by you, to get a file - but the
+assistant's own operation never sends anything.

@@ -1,0 +1,27 @@
+AstraOS ships a working assistant in the image.
+
+The files below are model data, not AstraOS source. They are fetched by the
+image build, verified against pinned SHA-256 values in
+/etc/astraos/ai-bundle.conf, and installed read-only under
+/usr/share/astraos/ai/models.
+
+Spark-X2.5-1.7B-Q4_K_M.gguf
+    The assistant's executor tier.
+    Upstream: https://huggingface.co/XHToken/Spark-X2.5-1.7B-GGUF
+    Revision: 1f7fa33b1245c14730da39e125714ad3a327901b
+    SHA-256:  902bde2522394954ac17821b3e5fd0df02defbc6944f122253f2580acf0503f4
+    Licence:  Apache-2.0 (see LICENSE.Apache-2.0)
+
+ggml-tiny.en.bin
+    The speech-recognition model used by whisper.cpp.
+    Upstream: https://huggingface.co/ggerganov/whisper.cpp
+    Revision: 5359861c739e955e79d9a303bcbc70fb988958b1
+    SHA-256:  921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f
+    Licence:  MIT (see LICENSE.whisper.cpp); Whisper is published by OpenAI.
+
+The engine binaries in /usr/lib/astraos/ai/engine were built by the Build AI
+engine workflow from llama.cpp and whisper.cpp (MIT). Each variant directory
+carries the BUILD-INFO.txt and SHA256SUMS.txt produced by that build.
+
+The middle brain (spark-x2.5-4b-q4_k_m) is not shipped. It is an optional
+upgrade installed with `astra-ai setup --model spark-x2.5-4b-q4_k_m`.

@@ -191,8 +191,9 @@ that.
 
 ## 8. Astra Guard: the assistant's permissions and its ledger
 
-The assistant is opt-in and has no account, no service and no root. What it can do is
-decided outside the model by `astraos/ai/guard.py`, and every decision is recorded.
+The assistant starts only when the user opens it, and has no account, no service and no
+root. What it can do is decided outside the model by `astraos/ai/guard.py`, and every
+decision is recorded.
 
 - Four levels: `observe` (reads), `prepare` (reversible session changes: apps, focus,
   sound, brightness, the radios), `modify` (typing, key presses, closing a window) and
@@ -205,18 +206,27 @@ decided outside the model by `astraos/ai/guard.py`, and every decision is record
   request is marked `document`, and only `observe` actions are allowed for it; the rest
   are refused and the refusal is recorded. This is tested with fixtures that order the
   agent to exfiltrate.
-- The file tools (`search_files`, `read_file`) read only the user's Documents, Desktop,
-  Downloads, Pictures, Music and Videos, and the path is resolved before it is checked,
-  so a symlink out of those folders is refused. Reads are `observe` and are recorded;
-  there is no write action yet.
+- The file tools (`search_files`, `read_file`, `read_pdf`, `compare_files`) read only
+  the user's Documents, Desktop, Downloads, Pictures, Music and Videos, and the path is
+  resolved before it is checked, so a symlink out of those folders is refused. Reads are
+  `observe` and are recorded. `write_file` is the one write action: it is `modify`, needs
+  the person's yes, and writes only inside `~/.local/share/astraos/workspace`.
 - The ledger is `$XDG_STATE_HOME/astraos/guard/audit.jsonl`, one JSON line per decision
   and outcome, each carrying the previous record's SHA-256. `astra-guard verify` walks
   the chain and names the first edited or removed record.
 
-What this does not do: it does not sandbox the model server (no bubblewrap or Landlock
-yet), it has no undo or snapshots, and the chain is not a signature - an account that
-can write the file can rebuild the chain. It raises the cost of a silent action and
-leaves evidence; it is not a defence against a compromised account.
+The model server can be confined: when bubblewrap or firejail is installed, the engine
+runs `llama-server` with the root and the model folder read-only and private `/tmp` and
+`/dev/shm` (`sandbox: auto` by default; `on` refuses to start without it). The network is
+shared on purpose - the page reaches the server over `127.0.0.1` - and Landlock is not
+used. The actions themselves are not sandboxed: they run as the user, with the user's
+rights.
+
+What this does not do: it has no automatic undo - `astraos/ai/undo.py` takes and restores
+copy-based snapshots with tests, but no privileged action triggers one and there is no
+`astra-ai undo` command - and the chain is not a signature: an account that can write the
+file can rebuild the chain. It raises the cost of a silent action and leaves evidence; it
+is not a defence against a compromised account.
 
 ---
 

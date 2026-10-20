@@ -70,7 +70,8 @@ DESCRIPTION = "the assistant's action catalog is complete, and its guards hold"
 # and that is the point - the catalog is a promise to the user, not a detail.
 EXPECTED_ACTIONS = {
     "open_app", "open_url", "open_path",
-    "search_files", "read_file",
+    "search_files", "read_file", "read_pdf", "compare_files", "write_file",
+    "verify_citations",
     "volume_up", "volume_down", "set_volume", "mute_toggle",
     "set_brightness", "lock_screen", "screenshot",
     "wifi_on", "wifi_off", "bluetooth_on", "bluetooth_off",
@@ -90,13 +91,14 @@ EXPECTED_ACTIONS = {
 # command in a terminal, and the person is asked once per plan, with the text.
 EXPECTED_CONFIRMED = {
     "close_window", "press_key", "type_text", "suspend", "reboot", "shutdown",
-    "run_command",
+    "run_command", "write_file",
 }
 
 # Plausible plans for the confirmed actions, used to prove execute() refuses
 # before it runs anything. run_command's command would pass the guard list if
 # it were ever reached, so the "nothing ran" assertion means something.
 CONFIRMED_PLANS = {
+    "write_file": {"path": "report.txt", "content": "hello"},
     "close_window": {"title": "unsaved work"},
     "press_key": {"key": "Return"},
     "type_text": {"text": "hello"},

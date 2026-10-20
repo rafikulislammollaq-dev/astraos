@@ -57,7 +57,9 @@ if str(_LIB) not in sys.path:
 from astraos.ai import actions, config, llm  # noqa: E402
 from astraos.ai import eval as ai_eval  # noqa: E402
 from astraos.ai import machine  # noqa: E402
+from astraos.ai import memory as ai_memory  # noqa: E402
 from astraos.ai import prompt as ai_prompt  # noqa: E402
+from astraos.ai import sandbox as ai_sandbox  # noqa: E402
 from astraos.ai import setup as ai_setup  # noqa: E402
 from astraos.ai import tiers  # noqa: E402
 from astraos.ai import voice  # noqa: E402
@@ -527,9 +529,10 @@ def cmd_profile(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
+    settings = config.load_settings()
     info = ai_setup.describe()
     build = ai_setup.engine_build()
-    health = llm.Engine(config.load_settings()).health()
+    health = llm.Engine(settings).health()
 
     # The capability profile is written at first run; `status` is the command a new
     # user runs first, so it makes sure the profile exists (a read-only measurement,
@@ -564,6 +567,19 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"  models kept in {info['models_dir']}")
     print(f"  settings       {info['config_file']}")
     print(f"  profile        {profile_path if profile_path.exists() else 'not written'}")
+    cap = ai_memory.describe(settings)
+    if cap["cap_bytes"]:
+        print(f"  memory cap     {cap['cap_mb']} MB for the model server")
+    else:
+        print("  memory cap     none (set memory_cap_mb in the settings file)")
+    probe = ai_sandbox.probe()
+    if probe["ok"]:
+        print(f"  sandbox        {Path(probe['tool']).name} can confine the model server")
+    elif probe["tool"]:
+        print(f"  sandbox        {Path(probe['tool']).name} is installed but cannot run: "
+              f"{probe['reason']}")
+    else:
+        print("  sandbox        not installed (sudo apt install bubblewrap)")
     if health["ok"]:
         print(f"  model server   answering on {health['host']}:{health['port']} "
               f"(pid {health['pid']})")
@@ -758,6 +774,24 @@ def cmd_journal(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_missions(args: argparse.Namespace) -> int:
+    """Open tasks as a person reads them: goal, real progress, what is waiting.
+
+    The journal already has the truth; this only formats it. Progress is the
+    executed step index, never a guess, and a task waiting for approval is
+    shown as waiting rather than done.
+    """
+    from astraos.ai import journal as journal_module
+    from astraos.ai import missions as missions_module
+
+    active = journal_module.journal()
+    if args.json:
+        print(json.dumps(missions_module.summary(active), indent=2, sort_keys=True))
+        return 0
+    sys.stdout.write(missions_module.render(active))
+    return 0
+
+
 def cmd_skills(args: argparse.Namespace) -> int:
     """The skills that are installed, and what is missing to run them."""
     from astraos.ai import skills as skills_module
@@ -939,6 +973,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("journal", help="what ran, what failed, what needs a human")
     p.add_argument("--json", action="store_true", help="the summary as JSON")
     p.set_defaults(handler=cmd_journal)
+
+    p = sub.add_parser("missions", help="open tasks with their real progress")
+    p.add_argument("--json", action="store_true", help="the same, for a machine")
+    p.set_defaults(handler=cmd_missions)
 
     p = sub.add_parser("resume", help="continue a stored task where it stopped")
     p.add_argument("task", nargs="?", default="",

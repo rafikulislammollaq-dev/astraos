@@ -76,6 +76,9 @@ ACTION_LEVELS: dict[str, str] = {
     # observe - the answer is information, not a change
     "list_windows": "observe",
     "read_file": "observe",
+    "read_pdf": "observe",
+    "compare_files": "observe",
+    "verify_citations": "observe",
     "screenshot": "observe",
     "search_files": "observe",
     "tell_battery": "observe",
@@ -106,6 +109,7 @@ ACTION_LEVELS: dict[str, str] = {
     "close_window": "modify",
     "press_key": "modify",
     "type_text": "modify",
+    "write_file": "modify",
     # privileged - changes the machine
     "reboot": "privileged",
     "run_command": "privileged",

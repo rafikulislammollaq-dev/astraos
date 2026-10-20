@@ -102,6 +102,11 @@ MAX_ATTEMPTS = 2
 MAX_PLAN_STEPS = 12
 MAX_TASK_SECONDS = 900.0
 
+# A task may not make an unbounded number of tool calls. A weak model that has
+# lost the thread loops; this is the ceiling that stops it. A step is one call,
+# and a retry is a second one, so the budget counts attempts, not steps.
+MAX_TOOL_CALLS = 100
+
 # How long one task may take before the worker stops waiting for it. A task is
 # a single action with a bounded command inside it, so this is a ceiling that
 # catches a hung child process, not a timeout anyone tuned.
@@ -165,13 +170,16 @@ class Worker:
                  journal: _journal.Journal | None = None,
                  clock: Callable[[], float] = time.monotonic,
                  max_steps: int = MAX_PLAN_STEPS,
-                 max_seconds: float = MAX_TASK_SECONDS):
+                 max_seconds: float = MAX_TASK_SECONDS,
+                 max_tool_calls: int = MAX_TOOL_CALLS):
         self.pool = pool
         self._confirm = confirm
         self._on_event = on_event or (lambda event: None)
         self._clock = clock
         self._max_steps = max(1, int(max_steps))
         self._max_seconds = max(1.0, float(max_seconds))
+        self._max_tool_calls = max(1, int(max_tool_calls))
+        self._tool_calls = 0
         # The journal is what makes a run auditable and resumable. It is
         # created here rather than taken from a parameter in the normal case,
         # and passed in by a caller that already has one - the web interface,
@@ -274,8 +282,14 @@ class Worker:
             # swap happens inside the pool, and it is the reason a planned task
             # takes longer than a one-step one: the brain's weights have to come
             # in before the worker's can go out.
+            #
+            # The task row exists before the borrow starts and says `planning`.
+            # Planning can take seconds while a 2.4 GB model loads, and a journal
+            # that cannot tell that apart from `running` cannot tell a waiting
+            # user what is happening.
             from . import planner as _planner
 
+            task_id = self._begin_planning(request, provenance)
             try:
                 with self.pool.asking("brain") as brain:
                     plan = _planner.plan(brain, request, full_context)
@@ -285,8 +299,10 @@ class Worker:
                     "No middle brain is installed, so this is being attempted in "
                     "one step instead. " + str(exc)
                 )
-                return self._single_step(request, full_context, outcome, provenance)
-            return self.run_plan(plan, outcome, provenance)
+                return self._single_step(
+                    request, full_context, outcome, provenance, task_id=task_id
+                )
+            return self.run_plan(plan, outcome, provenance, task_id=task_id)
 
         if kind == "action":
             return self._single_step(request, full_context, outcome, provenance)
@@ -301,9 +317,16 @@ class Worker:
         context: str,
         outcome: dict,
         provenance: str = _guard.TRUSTED_PROVENANCE,
+        task_id: str = "",
     ) -> dict:
-        """Do the one thing the worker named, and report what happened."""
-        task_id = self.journal.add_task(request, [], provenance)
+        """Do the one thing the worker named, and report what happened.
+
+        `task_id` is set when the request already has a row - a planned request
+        whose brain turned out to be missing is retried as one step in the same
+        row, rather than leaving a failed planning task beside a second task.
+        """
+        if not task_id:
+            task_id = self.journal.add_task(request, [], provenance)
         self.journal.set_status(task_id, "running")
         try:
             with self.pool.asking("worker") as engine:
@@ -322,6 +345,8 @@ class Worker:
             outcome["text"] = decision.get("reason") or (
                 "That did not map to anything I can do."
             )
+            self.journal.set_result(task_id, None, error=outcome["text"])
+            self.journal.set_status(task_id, "failed")
             return outcome
 
         step = {"action": action, "args": args, "why": decision.get("reason", "")}
@@ -403,6 +428,7 @@ class Worker:
         if kind == "plan":
             from . import planner as _planner
 
+            task_id = self._begin_planning(request, provenance)
             try:
                 with self.pool.asking("brain") as brain:
                     plan = _planner.plan(brain, request, full_context)
@@ -412,12 +438,16 @@ class Worker:
                     "No middle brain is installed, so this is being attempted in "
                     "one step instead. " + str(exc)
                 )
-                for event in self._single_step_events(request, full_context, outcome, provenance):
+                for event in self._single_step_events(
+                    request, full_context, outcome, provenance, task_id=task_id
+                ):
                     yield event
                 return
 
             yield {"type": "plan", "goal": outcome["text"] or plan_goal(plan), "steps": plan}
-            for event in self._run_plan_events(plan, outcome, provenance):
+            for event in self._run_plan_events(
+                plan, outcome, provenance, task_id=task_id
+            ):
                 yield event
             return
 
@@ -436,9 +466,11 @@ class Worker:
         context: str,
         outcome: dict,
         provenance: str = _guard.TRUSTED_PROVENANCE,
+        task_id: str = "",
     ):
         """The one-step path, emitted rather than collected."""
-        task_id = self.journal.add_task(request, [], provenance)
+        if not task_id:
+            task_id = self.journal.add_task(request, [], provenance)
         self.journal.set_status(task_id, "running")
         try:
             with self.pool.asking("worker") as engine:
@@ -458,6 +490,7 @@ class Worker:
             outcome["text"] = decision.get("reason") or (
                 "That did not map to anything I can do."
             )
+            self.journal.set_result(task_id, None, error=outcome["text"])
             self.journal.set_status(task_id, "failed")
             yield {"type": "done", **outcome}
             return
@@ -483,23 +516,35 @@ class Worker:
         plan: list[dict],
         outcome: dict,
         provenance: str = _guard.TRUSTED_PROVENANCE,
+        task_id: str = "",
     ):
         """The plan, one task at a time, emitted as each step runs."""
         if not plan:
             outcome["kind"] = "refuse"
             outcome["text"] = "The plan was empty, so nothing was done."
+            self._close_unstarted(task_id, outcome)
             yield {"type": "done", **outcome}
             return
         if self._too_long(plan, outcome):
+            self._close_unstarted(task_id, outcome)
             yield {"type": "done", **outcome}
             return
 
-        task_id = self.journal.add_task(outcome.get("text") or "planned task", plan, provenance)
+        if task_id:
+            self.journal.set_steps(task_id, plan)
+        else:
+            task_id = self.journal.add_task(
+                outcome.get("text") or "planned task", plan, provenance
+            )
         self.journal.set_status(task_id, "running")
         deadline = self._clock() + self._max_seconds
+        self._tool_calls = 0
 
         for index, step in enumerate(plan, 1):
             if self._out_of_time(deadline, task_id, index, outcome):
+                yield {"type": "done", **outcome}
+                return
+            if self._out_of_tool_calls(task_id, index, outcome):
                 yield {"type": "done", **outcome}
                 return
             yield {"type": "step-start", "step": step}
@@ -535,6 +580,37 @@ class Worker:
         if evidence.get("needs_confirm") and not evidence.get("confirmed"):
             return "needs_human"
         return "failed"
+
+    def _begin_planning(self, request: str, provenance: str) -> str:
+        """Queue the request and mark it `planning` before the brain is borrowed."""
+        task_id = self.journal.add_task(request, [], provenance)
+        self.journal.set_status(task_id, "planning")
+        return task_id
+
+    def _close_unstarted(self, task_id: str, outcome: dict) -> None:
+        """Close a planning row whose plan was empty, too long, or refused.
+
+        The row has to end somewhere: leaving it in `planning` makes
+        `astra-ai resume` offer a task that has no steps to resume.
+        """
+        if not task_id:
+            return
+        self.journal.set_result(task_id, None, error=outcome.get("text", ""))
+        self.journal.set_status(task_id, "cancelled")
+
+    def _mark(self, task_id: str, status: str) -> None:
+        """Move a task between the phases inside a step, best effort.
+
+        The journal must never stop the work it is recording. A missing or
+        read-only journal leaves the step running; it does not turn a working
+        assistant into a failing one.
+        """
+        if not task_id:
+            return
+        try:
+            self.journal.set_status(task_id, status)
+        except Exception:  # noqa: BLE001 - see the docstring
+            pass
 
     # ------------------------------------------------------------------
     # Budgets: a plan cannot be unbounded, and a task cannot run forever
@@ -579,6 +655,19 @@ class Worker:
         self.journal.set_result(task_id, None, error=outcome["text"])
         return True
 
+    def _out_of_tool_calls(self, task_id: str, position: int, outcome: dict) -> bool:
+        """True when the task has spent its tool-call budget; parks it where it stopped."""
+        if self._tool_calls < self._max_tool_calls:
+            return False
+        outcome["kind"] = "paused"
+        outcome["text"] = (
+            f"The task used its {self._max_tool_calls}-tool-call budget and stopped "
+            f"before step {position}. It is saved; `astra-ai resume` continues it."
+        )
+        self.journal.set_status(task_id, "paused")
+        self.journal.set_result(task_id, None, error=outcome["text"])
+        return True
+
     # ------------------------------------------------------------------
     # Running a step, and telling the truth about it
     # ------------------------------------------------------------------
@@ -590,17 +679,17 @@ class Worker:
             return False
         return bool(spec.dangerous) and bool(spec.needs_confirm)
 
-    def _ask(self, action: str, args: dict) -> bool:
+    def _ask(self, action: str, args: dict, task_id: str = "") -> bool:
         """Ask a human. With no one to ask, the answer is no."""
         question = question_for(action, args)
         if self._confirm is None:
-            self.journal.ask(action, question)
+            self.journal.ask(action, question, task_id=task_id)
             return False
         try:
             granted = bool(self._confirm(action, args))
         except Exception:  # noqa: BLE001 - a broken callback is a no, never a yes
             granted = False
-        approval_id = self.journal.ask(action, question)
+        approval_id = self.journal.ask(action, question, task_id=task_id)
         self.journal.answer(approval_id, "yes" if granted else "no")
         return granted
 
@@ -634,15 +723,20 @@ class Worker:
             return evidence
 
         if evidence["needs_confirm"]:
-            evidence["confirmed"] = self._ask(action, args)
+            # The row says a human is being asked while the question is open.
+            # A task waiting for a person must not look like one that is running.
+            self._mark(task_id, "awaiting approval")
+            evidence["confirmed"] = self._ask(action, args, task_id)
             if not evidence["confirmed"]:
                 evidence["error"] = (
                     "not run: this changes the system and nobody confirmed it"
                 )
                 self._journal_step(task_id, index, evidence)
                 return evidence
+            self._mark(task_id, "running")
 
         for attempt in range(1, MAX_ATTEMPTS + 1):
+            self._tool_calls += 1
             evidence["attempts"] = attempt
             # The arguments belong under "args". actions.execute() reads plan["args"]
             # (actions.py, `raw_args = plan.get("args")`) and resolves each key against
@@ -660,7 +754,12 @@ class Worker:
             evidence["ok"] = bool(result.get("ok"))
             evidence["output"] = str(result.get("output", "")).strip()
             evidence["error"] = str(result.get("error") or "")
+            # Verification is its own phase, visible in the journal: an action
+            # that ran and a step that was checked are different moments, and a
+            # verifier is allowed to read the machine back.
+            self._mark(task_id, "verifying")
             evidence["verified"] = self._verify(action, args, result)
+            self._mark(task_id, "running")
             self._journal_step(task_id, index, evidence)
             self._on_event({"type": "step", "evidence": dict(evidence)})
 
@@ -742,6 +841,7 @@ class Worker:
         plan: list[dict],
         outcome: dict,
         provenance: str = _guard.TRUSTED_PROVENANCE,
+        task_id: str = "",
     ) -> dict:
         """Run the middle brain's plan, one task at a time, and report all of it.
 
@@ -754,20 +854,34 @@ class Worker:
         The plan is in the journal BEFORE it runs, not after. A plan that exists
         only once it has finished is a plan nobody could veto, and a crash on
         step two leaves nothing for a human to resume from.
+
+        `task_id` is the row created when the plan was requested and marked
+        `planning`; the plan is attached to it here. Without one - the callers
+        that already have a plan and no earlier row - a task is created now.
         """
         if not plan:
             outcome["kind"] = "refuse"
             outcome["text"] = "The plan was empty, so nothing was done."
+            self._close_unstarted(task_id, outcome)
             return outcome
         if self._too_long(plan, outcome):
+            self._close_unstarted(task_id, outcome)
             return outcome
 
-        task_id = self.journal.add_task(outcome.get("text") or "planned task", plan, provenance)
+        if task_id:
+            self.journal.set_steps(task_id, plan)
+        else:
+            task_id = self.journal.add_task(
+                outcome.get("text") or "planned task", plan, provenance
+            )
         self.journal.set_status(task_id, "running")
         deadline = self._clock() + self._max_seconds
+        self._tool_calls = 0
 
         for index, step in enumerate(plan, 1):
             if self._out_of_time(deadline, task_id, index, outcome):
+                return outcome
+            if self._out_of_tool_calls(task_id, index, outcome):
                 return outcome
             self._on_event({"type": "step-start", "step": step})
             evidence = self._run_step(step, index, task_id, provenance)
@@ -847,8 +961,11 @@ class Worker:
         provenance = str(task.get("provenance") or _guard.TRUSTED_PROVENANCE)
         self.journal.set_status(task_id, "running")
         deadline = self._clock() + self._max_seconds
+        self._tool_calls = 0
         for position in range(start, len(steps) + 1):
             if self._out_of_time(deadline, task_id, position, outcome):
+                return outcome
+            if self._out_of_tool_calls(task_id, position, outcome):
                 return outcome
             step = steps[position - 1]
             self._on_event({"type": "step-start", "step": step})
@@ -921,9 +1038,35 @@ def _verify_screenshot(args: dict, result: dict) -> bool:
     return path.is_file() and path.stat().st_size > 0
 
 
+def _verify_write_file(args: dict, result: dict) -> bool:
+    """The workspace file named by write_file exists with exactly its content."""
+    try:
+        target = _actions._workspace_authorized(str(args.get("path", "")))
+    except _actions.ActionError:
+        return False
+    content = "" if args.get("content") is None else str(args.get("content"))
+    try:
+        return target.is_file() and target.read_bytes() == content.encode("utf-8")
+    except OSError:
+        return False
+
+
+def _verify_citations(args: dict, result: dict) -> bool:
+    """Every citation in the artifact resolved to a supplied source."""
+    try:
+        checked = _actions.verify_citations(
+            str(args.get("artifact", "")), args.get("sources")
+        )
+    except _actions.ActionError:
+        return False
+    return bool(checked) and all(bool(item.get("ok")) for item in checked)
+
+
 _VERIFIERS: dict[str, Callable[[dict, dict], bool]] = {
     "set_volume": _verify_volume,
     "screenshot": _verify_screenshot,
+    "write_file": _verify_write_file,
+    "verify_citations": _verify_citations,
 }
 
 
