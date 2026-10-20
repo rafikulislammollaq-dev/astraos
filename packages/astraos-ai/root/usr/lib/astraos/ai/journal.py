@@ -106,7 +106,6 @@ STATUSES = (
     "pending",
     "planning",
     "awaiting approval",
-    "awaiting_approval",
     "running",
     "verifying",
     "paused",
@@ -343,7 +342,7 @@ class Journal:
         # and the answer that was given.
         rows = self._connect().execute(
             "SELECT * FROM tasks"
-            " WHERE status IN ('pending','planning','awaiting approval','awaiting_approval',"
+            " WHERE status IN ('pending','planning','awaiting approval',"
             " 'running','verifying','paused','needs_human')"
             " ORDER BY created_ts"
         ).fetchall()
