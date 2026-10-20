@@ -61,6 +61,14 @@ jobs:
       - name: Name the failing checks on the summary
         if: failure()
         run: |
+          # An annotation is readable on the public run page without a sign-in;
+          # the raw log is not. Both carry the same check names.
+          failing=$(grep -E '^[[:space:]]+FAIL' /tmp/astraos-static-tests.log | head -n 5 || true)
+          if [ -n "$failing" ]; then
+            while IFS= read -r line; do
+              echo "::error::${line}"
+            done <<< "$failing"
+          fi
           {
             echo "### Static test suite"
             echo '```'
