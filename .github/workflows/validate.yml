@@ -49,7 +49,25 @@ jobs:
           echo "---"
 
       - name: Static test suite
-        run: python3 tests/run.py --verbose
+        run: |
+          # Keep the suite's own report so a failure is readable on the run page
+          # even when the raw log is not (GitHub asks for a sign-in to open it).
+          set +e
+          python3 tests/run.py --verbose 2>&1 | tee /tmp/astraos-static-tests.log
+          status=${PIPESTATUS[0]}
+          printf 'static suite exit: %s\n' "$status" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Name the failing checks on the summary
+        if: failure()
+        run: |
+          {
+            echo "### Static test suite"
+            echo '```'
+            grep -E '^[[:space:]]+(FAIL|SKIP)|^passed|^skipped|^failed|^RESULT' \
+              /tmp/astraos-static-tests.log || tail -n 100 /tmp/astraos-static-tests.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Shell syntax and shellcheck
         run: make lint
