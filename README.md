@@ -1,5 +1,18 @@
 # AstraOS
 
+<p align="center">
+  <img src="docs/astraos-banner.png" alt="AstraOS" width="900">
+</p>
+
+<p align="center">
+  <a href="https://github.com/rafikulislammollaq-dev/astraos/actions/workflows/build-iso.yml"><img alt="Build ISO" src="https://github.com/rafikulislammollaq-dev/astraos/actions/workflows/build-iso.yml/badge.svg"></a>
+  <a href="https://github.com/rafikulislammollaq-dev/astraos/actions/workflows/validate.yml"><img alt="Validate" src="https://github.com/rafikulislammollaq-dev/astraos/actions/workflows/validate.yml/badge.svg"></a>
+  <a href="https://github.com/rafikulislammollaq-dev/astraos/actions/workflows/install-test.yml"><img alt="Install test" src="https://github.com/rafikulislammollaq-dev/astraos/actions/workflows/install-test.yml/badge.svg"></a>
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.2.0%20Alpha%20Nova-6f42c1">
+  <img alt="Base" src="https://img.shields.io/badge/base-Debian%2013%20trixie-a41d1b">
+</p>
+
 An independent, lightweight Linux desktop distribution built from Debian packages.
 **Version 0.2.0 Alpha, codename Nova, architecture amd64 (x86_64).**
 
@@ -7,6 +20,64 @@ AstraOS is a Debian 13 (trixie) derivative with its own package selection, Xfce 
 configuration, branding, installer configuration and automated ISO build pipeline.
 It uses the Debian Linux kernel. It is not a from-scratch kernel, not an official
 Debian release, and not a website pretending to be an operating system.
+
+---
+
+## Try it
+
+Three ways, cheapest first.
+
+**1. Read the evidence.** Every claim on this page links to the CI run that proves it.
+The maturity table below names the run number for each one, and the logs are attached
+to the release. Nothing here is a screenshot of something that was set up by hand
+to look right.
+
+**2. Download the ISO.** The `Build ISO` workflow produces a bootable image, and the
+release page carries the SHA-256 checksum, the build manifest and the boot logs.
+
+**3. Build it yourself.** You need a Debian 13 host and about 25 GB of disk:
+
+```bash
+git clone https://github.com/rafikulislammollaq-dev/astraos.git
+cd astraos
+make bootstrap     # install the build dependencies
+make iso          # build the image into dist/
+```
+
+Then boot `dist/*.iso` in VirtualBox. The full procedure, including what to expect
+when it goes wrong, is in [docs/INSTALLATION_VIRTUALBOX.md](docs/INSTALLATION_VIRTUALBOX.md).
+
+## What is inside
+
+<p align="center">
+  <img src="docs/astraos-boot.png" alt="AstraOS boot screen" width="820">
+</p>
+
+- A themed Xfce desktop with its own wallpaper, panel, icons, cursor and login greeter.
+- An assistant that can read your files and run commands, but has to ask first - a
+  seven-step confirmation set, a sandbox, undo, and a step and time budget per task.
+  The reasoning is in [docs/AI.md](docs/AI.md).
+- An installer, a recovery path, and an APT archive the installed system can update
+  from.
+- A CI pipeline that builds the ISO, boots it three ways (BIOS, UEFI, and UEFI under
+  Secure Boot with the Microsoft keys enrolled), installs it onto a blank disk, and
+  boots the result with no medium attached.
+
+## Documentation
+
+| Document | What is in it |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the distribution is put together |
+| [docs/AI.md](docs/AI.md) | The assistant, and why the confirmation set is shaped the way it is |
+| [docs/BUILDING.md](docs/BUILDING.md) | Building the ISO, step by step |
+| [docs/INSTALLATION_VIRTUALBOX.md](docs/INSTALLATION_VIRTUALBOX.md) | Running it in a virtual machine |
+| [docs/INSTALLATION_PHYSICAL_PC.md](docs/INSTALLATION_PHYSICAL_PC.md) | Installing it on real hardware |
+| [docs/HARDWARE_COMPATIBILITY.md](docs/HARDWARE_COMPATIBILITY.md) | What it is known to work on |
+| [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md) | What does not work yet |
+| [docs/SECURITY.md](docs/SECURITY.md) | The security model and how to report a bug |
+| [docs/RECOVERY.md](docs/RECOVERY.md) | Getting back in when it breaks |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | What comes next, and why |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to help |
 
 ---
 
