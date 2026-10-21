@@ -527,9 +527,17 @@ maintainer's direction (October 2026); it comes after Guard and the flagship
 because familiarity on an unproven base would be decoration.
 
 - [ ] **A first-run welcome that can be skipped**: language, layout, file import,
-  phone pairing, AI opt-in, Packs — every choice reachable again later from one
+  phone pairing, AI opt-in, Packs - every choice reachable again later from one
   settings panel, and none of it requiring an account or a network. The design is
-  [`FIRST_BOOT.md`](blueprints/FIRST_BOOT.md).
+  [`FIRST_BOOT.md`](blueprints/FIRST_BOOT.md). Partly built (2026-10-21): the
+  welcome itself exists - a page on the first login of a new account, opened once
+  by a launcher that never breaks a login, saying what the machine is, what to try
+  first, what has not been proven, and pointing at the guide for the system the
+  person is coming from (Windows, Android, Plasma). The boot self-test checks that
+  the page and its autostart entry are in the image. Still open: the question
+  itself and the presets it sets - the layout profiles, the imports, the assistant
+  opt-in and the Packs - which is the blueprint's real content and needs a
+  settings panel to be reversible.
 - [ ] **Layout profiles that are real**: one switch changes panel, menu, launcher
   and keyboard shortcuts together — Windows-like / macOS-like / Linux-classic /
   AstraOS — plus a "where is it now?" cheat sheet for whatever you came from.

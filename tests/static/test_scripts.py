@@ -253,6 +253,9 @@ REPORTERS = {
     # Records what it can determine and writes "unknown" for the rest. The doctor
     # is one of these: it must survive a missing tool and still print a report.
     "astraos-doctor",
+    # Shows the first-run page once. It must never fail a login, so a missing
+    # browser or a read-only home is a reason to say nothing, not to fail.
+    "astraos-welcome",
     # Records what it can determine and writes "unknown" for the rest.
     "generate-manifest.sh",
 }

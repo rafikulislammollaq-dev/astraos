@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Welcome to AstraOS
+Comment=Show the welcome page the first time this account signs in
+Exec=sh -c "command -v astraos-welcome >/dev/null 2>&1 && astraos-welcome"
+Icon=help-browser
+Terminal=false
+NoDisplay=true
+Categories=Utility;
+X-GNOME-Autostart-enabled=true

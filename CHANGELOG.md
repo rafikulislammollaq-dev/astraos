@@ -19,6 +19,16 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **A first-run welcome, shown once.** A new account's first login opens a page that
+  says what the machine is (an independent distribution on Debian 13), what to try
+  first (the assistant, the help centre, the dashboard, the phone pairing) and what
+  has not been proven (no install on physical hardware, an unsigned image, an
+  unsigned archive). It opens once: a marker in the user's state directory is what
+  makes it a first-run thing rather than a habit, and the launcher says nothing at
+  all when there is no page to show, so a login is never broken by it. The boot
+  self-test checks that both halves - the page and the autostart entry that opens
+  it - are really in the image.
+
 - **Astra Doctor: a health report you can paste into a bug report.**
   `astraos-doctor` prints this machine's health - the release, the kernel, the CPU, the
   memory, the disks that are nearly full, the swap pressure, the units that failed,

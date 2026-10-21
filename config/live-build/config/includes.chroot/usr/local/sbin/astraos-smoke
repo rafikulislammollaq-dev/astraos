@@ -512,6 +512,23 @@ if [ "$MODE" = live ]; then
     fi
 fi
 
+# --- the first-run welcome, in the image (live medium only) --------------------------
+# The welcome page is shown once, on the first login of a new account. Both halves
+# have to be in the image: the page, and the autostart entry that opens it - a
+# package that ships one without the other gives a user either no welcome or a
+# broken one at every login.
+if [ "$MODE" = live ]; then
+    welcome_page=/usr/share/astraos/ai/web/welcome.html
+    welcome_entry=/etc/skel/.config/autostart/astraos-welcome.desktop
+    if [ -s "$welcome_page" ] && [ -f "$welcome_entry" ] \
+        && grep -q 'Welcome to AstraOS' "$welcome_page" \
+        && grep -q 'astraos-welcome' "$welcome_entry"; then
+        ok "welcome-page" "the first-run welcome page and its launcher are in the image"
+    else
+        bad "welcome-page" "the first-run welcome is missing or incomplete in the image"
+    fi
+fi
+
 # --- the assistant the image ships ----------------------------------------------------
 # The model and engine are in the medium, not downloaded on first use. This checks the
 # files; ai-engine below actually executes the selected build on this CPU, and ai-guard

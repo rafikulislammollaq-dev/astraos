@@ -1,0 +1,37 @@
+#!/bin/bash
+# astraos-welcome - show the welcome page, once.
+#
+# The first login on a new account opens a page that says what the machine is, what
+# to try and what has not been proven. It opens once: the marker file in the user's
+# state directory is what makes it a first-run thing rather than a habit.
+#
+# It never fails the session. A missing page, a missing browser, a read-only home:
+# each of those is a reason to say nothing, not a reason to show an error to
+# someone who just logged in.
+#
+# Usage:
+#   astraos-welcome          show the page if it has not been shown yet
+#   astraos-welcome --reset  forget that it has been shown (for testing, and for
+#                             anyone who wants to read it again)
+
+set -uo pipefail
+
+PAGE=/usr/share/astraos/ai/web/welcome.html
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/astraos"
+MARKER="$STATE/welcome-seen"
+
+if [ "${1:-}" = "--reset" ]; then
+    rm -f "$MARKER" 2>/dev/null || true
+    exit 0
+fi
+
+[ -f "$PAGE" ] || exit 0
+[ -f "$MARKER" ] && exit 0
+
+mkdir -p "$STATE" 2>/dev/null || exit 0
+: > "$MARKER" 2>/dev/null || true
+
+if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$PAGE" >/dev/null 2>&1 || true
+fi
+exit 0
