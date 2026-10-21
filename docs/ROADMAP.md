@@ -561,6 +561,15 @@ because familiarity on an unproven base would be decoration.
   rather than from a guess.
 - [ ] **Reset and fresh-start**: "reset the system, keep my files" and "factory
   reset", both tested in a VM. People trust what has a visible way back to clean.
+  The source exists (2026-10-21): `astraos-reset --settings` restores the shipped
+  desktop and session defaults, moves the settings it replaces into the user's own
+  state directory (the state before the reset is the backup), leaves every file
+  alone, and asks for the word `RESET` first; `astraos-reset --factory` erases
+  nothing and says what to save first, how to reinstall from the medium, and that
+  the installer is what empties the disk - because the installer asks for a
+  password and shows the disk. Still open: a factory reset that can be started
+  from the installed system itself, and both paths tested in a VM, which needs a
+  VM in the CI.
 - [ ] **Updates that cannot brick it**: snapshot before a system upgrade and a
   one-command rollback, with update-success numbers on the proof page (depends on
   the Stage 3 undo decision).

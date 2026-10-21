@@ -1,0 +1,133 @@
+#!/bin/bash
+# astraos-reset - put the machine back to how it shipped, or say how to.
+#
+# Design rules (the same ones the rest of this package keeps):
+#   * It never deletes a user's files. The "settings" mode restores the shipped
+#     defaults and leaves Documents, Pictures and everything else alone.
+#   * What it does change, it backs up first, into the user's own state
+#     directory, with the time in the name.
+#   * The "factory" mode does not wipe anything itself. Erasing the disk is the
+#     installer's job, it asks for a password, and it shows what it will erase.
+#     This command only says how to get there and what to back up first.
+#   * It asks before it changes anything, and it says what it changed.
+#
+# Usage:
+#   astraos-reset --settings     restore the shipped desktop and session defaults
+#   astraos-reset --factory      how to reinstall from scratch, and what to save
+#   astraos-reset --help
+#
+# ASTRAOS_RESET_SKEL points at the shipped defaults (normally /etc/skel). It
+# exists so the behaviour can be tested against a fixture instead of against the
+# machine it is running on.
+
+set -uo pipefail
+
+SKEL="${ASTRAOS_RESET_SKEL:-/etc/skel}"
+BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/astraos"
+
+usage() {
+    sed -n '/^# Usage:/,/^# ASTRAOS_RESET_SKEL/p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# The directories the shipped defaults live in. They are the ones a person
+# changes by accident - a panel that will not open, a theme that is unreadable,
+# a keyboard shortcut that ate their typing.
+DEFAULTS=(
+    ".config/xfce4"
+    ".config/autostart"
+    ".config/gtk-3.0"
+    ".config/gtk-4.0"
+    ".config/Thunar"
+)
+
+restore_settings() {
+    if [ ! -d "$SKEL" ]; then
+        printf 'ERROR: the shipped defaults are not at %s.\n' "$SKEL" >&2
+        return 1
+    fi
+
+    local stamp backup copied=0
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    backup="$BACKUP_ROOT/reset-backup-$stamp"
+    mkdir -p "$backup" || {
+        printf 'ERROR: cannot write the backup directory %s\n' "$backup" >&2
+        return 1
+    }
+
+    printf 'This restores the shipped desktop and session settings.\n'
+    printf 'Your files are not touched. What is replaced is backed up first, in:\n'
+    printf '  %s\n\n' "$backup"
+    printf 'Type RESET to continue: '
+    local answer
+    read -r answer
+    if [ "$answer" != "RESET" ]; then
+        printf 'Nothing was changed.\n'
+        return 0
+    fi
+
+    for relative in "${DEFAULTS[@]}"; do
+        [ -d "$SKEL/$relative" ] || continue
+        if [ -e "$HOME/$relative" ]; then
+            # The current version is moved, not copied: the backup then *is* the
+            # state before the reset, and nothing is deleted to make room.
+            mkdir -p "$backup/$(dirname "$relative")" 2>/dev/null || true
+            if ! mv "$HOME/$relative" "$backup/$relative" 2>/dev/null; then
+                printf 'ERROR: could not set the current %s aside; nothing further was changed.\n' \
+                    "$relative" >&2
+                return 1
+            fi
+        fi
+        mkdir -p "$(dirname "$HOME/$relative")" 2>/dev/null || true
+        if ! cp -a "$SKEL/$relative" "$HOME/$relative" 2>/dev/null; then
+            printf 'ERROR: could not restore %s\n' "$relative" >&2
+            return 1
+        fi
+        printf '  restored %s\n' "$relative"
+        copied=$((copied + 1))
+    done
+
+    if [ "$copied" -eq 0 ]; then
+        printf 'Nothing was restored: the shipped defaults hold none of these.\n'
+        return 0
+    fi
+
+    printf '\n%d director(y|ies) restored. Log out and back in to see them.\n' "$copied"
+    printf 'Your previous versions are in %s\n' "$backup"
+    printf 'To put them back, copy them over %s yourself.\n' "$SKEL"
+    return 0
+}
+
+factory_advice() {
+    cat <<'EOF'
+A factory reset is the installer doing its job, not a command doing it.
+
+WHAT TO SAVE FIRST
+  * anything in your home that is not on a backup: Documents, Pictures, Music,
+    Videos, and the dotfiles you keep in git
+  * the list of packages you installed by hand (dpkg -l | grep '^ii' > ~/packages.txt)
+  * your assistant's settings, if you want them: ~/.config/astraos
+
+HOW TO DO IT
+  1. Boot the AstraOS ISO on the machine (a USB stick, or a disc).
+  2. Start the installer from the desktop.
+  3. On the partitioning page choose "Erase the disk and install AstraOS".
+     The installer shows which disk it will erase and asks for your password.
+  4. When it finishes, the machine restarts into a fresh AstraOS.
+
+WHAT IT DOES NOT KEEP
+  Everything on that disk, including the AstraOS you have now. That is the
+  point of it, and it is why the installer asks.
+
+IF THE MACHINE WILL NOT BOOT
+  astraos-recovery-guide prints the recovery procedure, including using the
+  live image to inspect the installed system without erasing anything.
+EOF
+}
+
+case "${1:-}" in
+    --settings) restore_settings ;;
+    --factory) factory_advice ;;
+    -h|--help) usage ;;
+    "") usage >&2; exit 2 ;;
+    *) printf 'ERROR: unknown argument: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+esac

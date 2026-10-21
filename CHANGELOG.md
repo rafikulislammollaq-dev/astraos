@@ -19,6 +19,16 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **A way out that does not delete anything.** `astraos-reset --settings` puts the
+  desktop and session back to how the system shipped: the settings it replaces are
+  moved into the user's own state directory (so the state before the reset *is* the
+  backup), every file is left alone, and it asks for the word `RESET` before it
+  changes anything. `astraos-reset --factory` does not erase anything either: it
+  says what to save first, how to reinstall from the medium, and that the installer
+  is the thing that erases - because the installer asks for a password and shows
+  which disk it will empty. Four tests run the command against a fixture home and
+  check what it did to it.
+
 - **Astra Doctor: a health report you can paste into a bug report.**
   `astraos-doctor` prints this machine's health - the release, the kernel, the CPU, the
   memory, the disks that are nearly full, the swap pressure, the units that failed,
