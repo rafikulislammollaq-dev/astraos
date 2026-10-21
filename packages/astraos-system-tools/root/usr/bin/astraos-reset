@@ -19,8 +19,11 @@
 # ASTRAOS_RESET_SKEL points at the shipped defaults (normally /etc/skel). It
 # exists so the behaviour can be tested against a fixture instead of against the
 # machine it is running on.
+#
+# `set -e` is deliberate: this command changes things, so it must stop at the
+# first error rather than carry on and report a success it did not earn.
 
-set -uo pipefail
+set -euo pipefail
 
 SKEL="${ASTRAOS_RESET_SKEL:-/etc/skel}"
 BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/astraos"
@@ -59,7 +62,8 @@ restore_settings() {
     printf '  %s\n\n' "$backup"
     printf 'Type RESET to continue: '
     local answer
-    read -r answer
+    # An answer that is not there is an answer of "no", not a reason to abort.
+    read -r answer || answer=""
     if [ "$answer" != "RESET" ]; then
         printf 'Nothing was changed.\n'
         return 0
