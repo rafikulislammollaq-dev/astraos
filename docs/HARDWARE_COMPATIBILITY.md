@@ -7,6 +7,34 @@
 >
 > Treat this document as a list of expectations to test, not as a compatibility guarantee.
 
+## Results on real hardware
+
+**None recorded yet.** Every row below is a placeholder for a real test; nothing has
+been installed on physical hardware (`KNOWN_LIMITATIONS.md` section 1.1). This
+section is a record, not a plan, and an empty record is the honest state.
+
+When a result arrives it becomes one row. Columns:
+
+| Column | Meaning |
+|---|---|
+| Machine | Make and model, or `VM: <name> <version>` for a virtual machine |
+| Firmware | `UEFI` or `BIOS`; append `SB on` / `SB off` for Secure Boot state |
+| GPU | The graphics device as reported by `lspci` (e.g. `Intel UHD 620 (i915)`) |
+| Installer | `pass` / `fail` / `partial`, with the CI run or issue number as evidence |
+| Installed boot | `pass` / `fail` / `partial` for booting the installed disk with no medium attached |
+| Notes | What did not work, and at which step; link to the report |
+
+| Machine | Firmware | GPU | Installer | Installed boot | Notes |
+|---|---|---|---|---|---|
+| _(no results recorded yet)_ | | | | | |
+
+To add a row: open a pull request editing this table, or open an issue using the
+report format in section 4 and a maintainer will add it. A result is recorded only
+when it is backed by evidence (a CI run number, a log, or a reproducible command
+output); a claim without evidence does not become a row.
+
+---
+
 ## 1. What is included
 
 AstraOS installs firmware from Debian's `non-free-firmware` component, so the licensing is
