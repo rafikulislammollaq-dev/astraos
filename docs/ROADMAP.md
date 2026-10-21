@@ -538,10 +538,21 @@ because familiarity on an unproven base would be decoration.
   confirmation; import browser bookmarks from Chrome / Edge / Firefox profiles;
   print a report of what arrived and what did not. Never move or delete without
   asking.
-- [ ] **"I use this app on Windows"**: type an app name, get the honest ladder —
-  native alternative, Flatpak, Wine, or web app — each labeled works / works with
+- [ ] **"I use this app on Windows"**: type an app name, get the honest ladder -
+  native alternative, Flatpak, Wine, or web app - each labeled works / works with
   caveats / not yet, starting with the apps switchers actually use. The labels come
-  from tests, not optimism.
+  from tests, not optimism. The source exists (2026-10-21): the skill
+  `can-i-run-this-app` answers with four verdicts - native, Wine, browser, no -
+  and the table it reads (`windows-applications-on-astraos.md`) covers the
+  applications people actually ask about: Word, Excel, PowerPoint, Outlook,
+  Photoshop, Illustrator, Premiere, AutoCAD, Teams, Zoom, Discord, Telegram,
+  WhatsApp, Spotify, Netflix, Chrome, Edge, VS Code, Docker, Notepad, Minecraft
+  and the phone games, each with the honest note (what transfers, what does not,
+  which licence applies). An application that is not in the table is checked
+  against the archive with `apt-cache` before anything is claimed, and a
+  "does not run" is a complete answer when it is true. Still open: Flatpak as a
+  third road with its own label, and a table that grows from real questions
+  rather than from a guess.
 - [ ] **Reset and fresh-start**: "reset the system, keep my files" and "factory
   reset", both tested in a VM. People trust what has a visible way back to clean.
 - [ ] **Updates that cannot brick it**: snapshot before a system upgrade and a

@@ -75,11 +75,12 @@ NEEDS_CONFIRMATION = {
     "run_command",
 }
 
-# The eight skills the package ships. Spelled out rather than derived, for the
+# The nine skills the package ships. Spelled out rather than derived, for the
 # same reason: a skill that silently disappears from `astra-ai skills` is a
 # capability the user was told they had.
 SHIPPED_SKILLS = (
     "backup-and-sync",
+    "can-i-run-this-app",
     "find-and-organise-files",
     "locale-and-timezone",
     "offline-email-triage",
