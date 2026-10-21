@@ -379,7 +379,10 @@ def main(argv: list[str] | None = None) -> int:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     page = _page(topics)
-    out.write_text(page, encoding="utf-8")
+    # newline="\n" so the file is byte-identical wherever it is generated: a page
+    # that differs between a Windows checkout and a Linux build is a page nobody can
+    # reproduce.
+    out.write_text(page, encoding="utf-8", newline="\n")
     print(f"wrote {out} ({len(topics)} topic(s), {len(page):,} bytes)")
     return 0
 

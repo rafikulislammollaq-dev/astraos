@@ -53,7 +53,11 @@ def test_the_committed_page_is_what_the_generator_writes() -> None:
             check=False,
         )
         assert result.returncode == 0, f"the generator failed: {result.stderr}"
-        assert rebuilt.read_bytes() == HELP_HTML.read_bytes(), (
+        # Compared with the line endings normalised: what matters is the content,
+        # and a checkout on one platform may carry CRLF while the other carries LF.
+        rebuilt_text = rebuilt.read_text(encoding="utf-8").replace("\r\n", "\n")
+        committed_text = HELP_HTML.read_text(encoding="utf-8").replace("\r\n", "\n")
+        assert rebuilt_text == committed_text, (
             "the committed help page is not what the generator produces from the corpus. "
             "Run scripts/build-help-center.py and commit what it writes."
         )
