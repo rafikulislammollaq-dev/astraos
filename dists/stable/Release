@@ -1,0 +1,11 @@
+Origin: AstraOS
+Label: AstraOS
+Suite: stable
+Codename: stable
+Architectures: amd64
+Components: main
+Description: AstraOS archive
+Date: Wed, 21 Oct 2026 15:43:55 +0000
+SHA256:
+ 7bf906d22709b8325279ebfc925585a01555595c4fc721c1a6c527cc1816443c 13452 main/binary-amd64/Packages
+ 5e1d9505722d3333fda4317bbb45a92ab23fe5d2f96156612289a2bc9a5eab24 5360 main/binary-amd64/Packages.gz

@@ -1,0 +1,258 @@
+Package: astraos-ai
+Version: 0.2.0
+Installed-Size: 1556
+Architecture: amd64
+Maintainer: AstraOS Project <maintainers@astraos.invalid>
+Section: utils
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: astraos-base (>= 0.2.0), python3 (>= 3.11), bash (>= 5.0), coreutils, sed, grep, procps
+Recommends: alsa-utils, xdotool, wmctrl, curl, ca-certificates, xfce4-screenshooter, x11-utils
+Description: AstraOS AI assistant
+ An assistant that runs on the machine it is asked to control. `astra-ai ask` answers a
+ question, `astra-ai chat` holds a conversation, `astra ai` reaches the same thing through
+ the system command, and `astra-ai serve` publishes it as a page on localhost - which is
+ also how a phone on the same network becomes the microphone for a machine that has none.
+ .
+ The assistant's repertoire is a closed list of actions that ship with it: opening
+ applications, files and links, volume, brightness, media keys, window management, the
+ time, the battery, a screenshot, a web search, and - only behind an explicit
+ confirmation - the power actions and a command it shows before running. The model
+ chooses from that list and cannot invent an action; anything irreversible waits for a
+ Confirm click or a typed yes.
+ .
+ It runs as the user who started it, never as root, and nothing starts at boot: no
+ service, no daemon and no model in the background. The model itself is opt-in and is
+ downloaded by `astra-ai setup --model` only when the user asks for it, because a
+ 1-3B model is a gigabyte of someone else's bandwidth and a distribution should not
+ fetch that on their behalf.
+ .
+ Speech is optional and equally opt-in: whisper.cpp for listening, espeak-ng for
+ speaking. `astra-ai setup --voice` builds whisper.cpp for this machine's CPU, which
+ matters because prebuilt binaries are compiled for AVX2 and die with an illegal
+ instruction on anything older (the build passes -DGGML_AVX=ON -DGGML_AVX2=OFF).
+Filename: pool/main/astraos-ai/astraos-ai_0.2.0_amd64.deb
+Size: 311588
+SHA256: 5ad9c95e4b5179507a559d5f25055c53f891666d54a7d1e6301e99c039a0a639
+
+Package: astraos-base
+Version: 0.2.0
+Installed-Size: 140
+Architecture: amd64
+Maintainer: AstraOS Project <maintainers@astraos.invalid>
+Section: admin
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: bash (>= 5.0), coreutils, grep, sed, gawk, procps, util-linux, iproute2, kmod, dpkg
+Recommends: pciutils, usbutils, lm-sensors
+Description: AstraOS base system identity, policy and diagnostics
+ Provides the parts of AstraOS that are not branding or desktop: the distribution
+ identity file, the sysctl hardening defaults, the sudo policy, the APT signature
+ policy, the documented firewall policy, the astraos-info diagnostic command, and
+ astraos-scan-secrets, the credential scan that the image build runs before packing.
+ .
+ This is an independent distribution based on Debian GNU/Linux. It is not an
+ official Debian release. /etc/os-release, /etc/issue and /etc/motd are written at
+ image build time because base-files owns those paths as configuration files; see
+ docs/KNOWN_LIMITATIONS.md.
+Filename: pool/main/astraos-base/astraos-base_0.2.0_amd64.deb
+Size: 17488
+SHA256: 288052171bdf2421e5e72869a5f6e31b428ec03fc8818b8cfd0b76afaae35e2b
+
+Package: astraos-branding
+Version: 0.2.0
+Installed-Size: 11144
+Architecture: amd64
+Maintainer: AstraOS Project <maintainers@astraos.invalid>
+Section: x11
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: fonts-dejavu-core, hicolor-icon-theme
+Recommends: plymouth, plymouth-themes, grub2-common, lightdm, lightdm-gtk-greeter
+Suggests: inkscape
+Description: AstraOS visual identity
+ The AstraOS brand assets and the configuration that points system components at them:
+ wallpapers, the AstraOS ring logo in colour and monochrome, the AstraOS icon theme,
+ the AstraOS cursor theme, the Plymouth boot splash, the GRUB theme, and the LightDM
+ greeter theme and assets.
+ .
+ The cursor theme is installed as an icon theme that carries cursors, which is the
+ layout libXcursor reads. It is generated rather than drawn so that every cursor name
+ it claims to provide exists on disk.
+ .
+ All artwork is original to the AstraOS project. No asset is copied from another
+ distribution and no third-party logo or trademark is redistributed. The palette and
+ the generated bitmaps both derive from config/branding.env, so the identity has a
+ single source of truth in the source tree.
+ .
+ The upstream LightDM greeter configuration file is written at image build time
+ because lightdm-gtk-greeter owns that path as a configuration file; the drop-in
+ /etc/lightdm/lightdm.conf.d/50-astraos.conf is shipped by this package.
+Filename: pool/main/astraos-branding/astraos-branding_0.2.0_amd64.deb
+Size: 4232616
+SHA256: 130822837ed309b1234e27accf25c8961e362ebd74f2141afab688d067951f7b
+
+Package: astraos-desktop
+Version: 0.2.0
+Installed-Size: 844
+Architecture: amd64
+Maintainer: AstraOS Project <maintainers@astraos.invalid>
+Section: x11
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: astraos-base (>= 0.2.0), astraos-branding (>= 0.2.0), astraos-winbridge (>= 0.2.0), xfce4-session, xfce4-panel, xfconf, libgarcon-1-0, thunar, xfce4-terminal, xfce4-settings, xfce4-appfinder
+Recommends: xfce4-whiskermenu-plugin, xfce4-docklike-plugin, papirus-icon-theme, fonts-inter, fonts-jetbrains-mono, picom, xfce4-goodies, xfce4-power-manager, xfce4-notifyd, xfce4-screenshooter, xfce4-taskmanager, xfce4-clipman-plugin, xfce4-pulseaudio-plugin, mousepad, ristretto, xarchiver, parole, lightdm, lightdm-gtk-greeter
+Description: AstraOS Xfce desktop configuration
+ The AstraOS desktop: the Windows-11 style taskbar layout, keyboard shortcuts,
+ window-manager and desktop settings, the skeleton home directory that seeds
+ every new account (panel, neon terminal, compositor profile), the AstraOS
+ application launchers, and the opt-in picom animation profile.
+ .
+ The desktop is CONFIGURED Xfce, not a replacement for it. AstraOS does not
+ ship a custom shell, window manager or session manager (plan §7). Configuration is
+ applied through /etc/skel, the mechanism Xfce uses for a new account's defaults, so
+ the interface stays user-configurable and upgradable with the upstream packages.
+ .
+ The defaults are deliberately NOT written to /etc/xdg/xfce4/xfconf/xfce-perchannel-xml:
+ those paths belong to Debian's Xfce packages, and dpkg refuses to let two packages own
+ the same file.
+ .
+ The window chrome carries a light frame opacity and translucent move/resize
+ (the HUD glass look); the heavier fade-on-open animation is opt-in through
+ `astra effects on` and ships as /etc/astraos/picom.conf, because the default
+ must stay the compositor that renders correctly everywhere.
+Filename: pool/main/astraos-desktop/astraos-desktop_0.2.0_amd64.deb
+Size: 40324
+SHA256: bd3d78df8aa2d5952b5fba362564555e674258da0fa43bb6f9bc38c322579828
+
+Package: astraos-hud
+Version: 0.2.0
+Installed-Size: 204
+Architecture: amd64
+Maintainer: AstraOS Project <maintainers@astraos.invalid>
+Section: x11
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: astraos-base (>= 0.2.0), python3 (>= 3.11), python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, coreutils, procps
+Recommends: gir1.2-vte-3.91, fonts-dejavu-core
+Description: AstraOS full-screen system dashboard
+ The AstraOS HUD is the session's overview surface: one full-screen window that
+ shows what the machine is doing at a glance. It is drawn with GTK 3 and Cairo
+ and reads its numbers straight from /proc and /sys, with no third-party Python
+ package - there is no psutil in the image.
+ .
+  * CPU, per-core load, memory, swap, load average and the top processes
+  * per-interface network traffic, latency and a rolling traffic graph
+  * mounted filesystems and their usage, disk I/O and temperatures
+  * the clock, uptime and battery state, in the AstraOS palette
+ .
+ It is started by hand or from its launcher. It is not a system service, it
+ registers no autostart entry, and nothing starts it at boot, so it costs the
+ session nothing until it is asked for.
+ .
+ A value that cannot be measured - no battery, no thermal zone, a counter with
+ only one sample - is shown as a dash rather than invented, so a number on screen
+ is always something the kernel actually reported. The embedded terminal appears
+ only when gir1.2-vte-3.91 is installed; without it the HUD starts anyway and
+ says so instead of failing.
+Filename: pool/main/astraos-hud/astraos-hud_0.2.0_amd64.deb
+Size: 42516
+SHA256: b29bd8db6c6a7b0a2ee7ee7d263c3031911edcfacd73fab006b5d711ab1d8a3f
+
+Package: astraos-installer
+Version: 0.2.0
+Installed-Size: 1392
+Architecture: amd64
+Maintainer: AstraOS Project <maintainers@astraos.invalid>
+Section: admin
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: astraos-base (>= 0.2.0), calamares (>= 3.2), squashfs-tools, parted, gdisk, dosfstools, e2fsprogs, mount, util-linux, os-prober, grub2-common, efibootmgr, libkpmcore12
+Recommends: ntfs-3g, xfsprogs, btrfs-progs, f2fs-tools, exfatprogs, lvm2, cryptsetup, cryptsetup-initramfs
+Conflicts: calamares-settings-debian
+Replaces: calamares-settings-debian
+Description: AstraOS installer configuration
+ The Calamares configuration and branding that make the upstream Calamares installer
+ an AstraOS installer: the module sequence, the partitioning defaults, the user
+ creation policy, the summary and the AstraOS visual identity.
+ .
+ AstraOS does NOT ship a custom partitioning program and does not reimplement disk
+ handling. Calamares performs all partitioning through kpmcore, which is the same
+ path every distribution using Calamares takes (plan §10.1 and Rule 9: never
+ compromise disk safety for convenience).
+ .
+ Safety properties enforced by this configuration:
+  * the target disk is shown explicitly and is never assumed;
+  * erasing a disk requires an explicit confirmation step;
+  * no disk is formatted without user confirmation;
+  * no fixed, shared or automatic login credentials are shipped;
+  * installation can only be started by the user, never by a script.
+Filename: pool/main/astraos-installer/astraos-installer_0.2.0_amd64.deb
+Size: 1276540
+SHA256: a194425937cfe5fdc850e28af0e8fa956d82226710f3b30182f115d117d32f89
+
+Package: astraos-system-tools
+Version: 0.2.0
+Installed-Size: 64
+Architecture: amd64
+Maintainer: AstraOS Project <maintainers@astraos.invalid>
+Section: admin
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: astraos-base (>= 0.2.0), bash (>= 5.0), coreutils, util-linux, procps, iproute2
+Recommends: xfce4-terminal, mousepad, xdg-utils
+Description: AstraOS user-facing system utilities
+ The small set of AstraOS-specific tools that solve a real problem rather than
+ duplicating an existing application (plan §15):
+ .
+  * astraos-info            system and hardware summary (in astraos-base)
+  * astraos-help            where the documentation lives and how to report problems
+  * astraos-welcome         first-run guidance for an installed system
+  * astraos-release-info    release identity, provenance and licence pointers
+  * astraos-recovery-guide  step-by-step recovery for common failures
+ .
+ Every utility here is deliberately additive. AstraOS does not ship a replacement for
+ system settings, the package manager, or any other established component.
+Filename: pool/main/astraos-system-tools/astraos-system-tools_0.2.0_amd64.deb
+Size: 12632
+SHA256: da1a44c8a30b1bcac5d33370b9cb6550855cea1ad722d748990f8f7d87410bdc
+
+Package: astraos-winbridge
+Version: 0.2.0
+Installed-Size: 392
+Architecture: amd64
+Maintainer: AstraOS Project <maintainers@astraos.invalid>
+Section: utils
+Priority: optional
+Homepage: https://astraos.invalid
+Depends: astraos-base (>= 0.2.0), bash (>= 5.0), coreutils, util-linux, procps, psmisc, iproute2, iputils-ping, net-tools, sed, gawk, grep, libglib2.0-bin
+Recommends: fastfetch, xfce4-taskmanager, traceroute, gvfs, mesa-utils
+Description: AstraOS Windows command bridge
+ The bridge for people arriving from Windows. It puts a set of familiar Windows
+ commands on the PATH — dir, cls, copy, move, del, ren, md, rd, type, ipconfig,
+ tasklist, taskkill, ping, tracert, netstat, sfc, chkdsk, shutdown and more — and
+ maps each one onto the real Linux tool underneath, translating Windows switches
+ (/y, /s, /t 0) and Windows-style paths as it goes.
+ .
+ Nothing here replaces a system component. Every command is a small entry point
+ that calls /usr/lib/astraos/winbin/bridge, which executes the genuine Linux
+ equivalent and prints a one-line hint the first time it differs in behaviour.
+ 'del' moves files to the trash (gvfs) instead of unlinking them, which is the
+ Recycle-Bin behaviour a new user expects.
+ .
+ Also ships:
+ .
+  * astra(1)             one friendly front end for apt, system health and help
+  * command_not_found_handle  names the Linux equivalent when a Windows command
+                          that is not wrapped is typed
+  * winmap(5) data       the single Windows-to-Linux mapping table behind the
+                          bridge, 'astra help' and the shell suggestions
+ .
+ The wrappers are placed on the PATH through /etc/profile.d and the X11 session
+ environment, never by shipping files into /usr/bin, so no package that owns a
+ Linux command of the same name (coreutils' dir, net-tools' netstat) is ever
+ overlapped at the dpkg level.
+Filename: pool/main/astraos-winbridge/astraos-winbridge_0.2.0_amd64.deb
+Size: 34476
+SHA256: 38d110b5195a7248b87edf44114ff4328b8c8951e0beecdc97fd9b3e31794e2d
+
