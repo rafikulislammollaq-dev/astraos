@@ -19,6 +19,16 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The assistant can convert files now, and says what it will do first.** The image
+  already shipped the tools - LibreOffice for documents, ImageMagick for pictures,
+  poppler for PDFs - but nothing told the assistant it may use them, so "turn this
+  spreadsheet into a PDF" had no answer. The skill `converting-files` now does: a
+  document or spreadsheet to PDF with `soffice --headless --convert-to`, a picture
+  to JPG (or smaller, or rotated) with ImageMagick's `convert`, a PDF back to text
+  with `pdftotext`, and `pdfinfo` for the page count. It checks the result before
+  reporting it, writes a new file beside the old one, and never overwrites a file
+  that is already there. The help centre gained the same page in plain words.
+
 - **A way out that does not delete anything.** `astraos-reset --settings` puts the
   desktop and session back to how the system shipped: the settings it replaces are
   moved into the user's own state directory (so the state before the reset *is* the

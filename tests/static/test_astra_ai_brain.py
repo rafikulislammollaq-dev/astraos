@@ -81,6 +81,7 @@ NEEDS_CONFIRMATION = {
 SHIPPED_SKILLS = (
     "backup-and-sync",
     "can-i-run-this-app",
+    "converting-files",
     "find-and-organise-files",
     "locale-and-timezone",
     "offline-email-triage",
