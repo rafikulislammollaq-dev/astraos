@@ -24,7 +24,7 @@ if [ -r /etc/astraos-release ]; then
     STAGE="$( . /etc/astraos-release; printf '%s' "${RELEASE_STAGE:-}" )"
 fi
 DOC_DIR="/usr/share/doc/astraos"
-MARKER="${HOME}/.config/astraos/welcome-shown"
+MARKER="${XDG_CONFIG_HOME:-${HOME:-/tmp}/.config}/astraos/welcome-shown"
 
 mkdir -p "$(dirname "$MARKER")" 2>/dev/null || true
 

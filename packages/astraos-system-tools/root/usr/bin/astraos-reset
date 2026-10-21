@@ -26,7 +26,10 @@
 set -euo pipefail
 
 SKEL="${ASTRAOS_RESET_SKEL:-/etc/skel}"
-BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/astraos"
+# HOME may be unset: a systemd service - the boot self-test runs the very same
+# command - has no HOME in its environment, and `set -u` turns that into a
+# failure. The fallback is only used when there is no home to speak of.
+BACKUP_ROOT="${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}/astraos"
 
 usage() {
     sed -n '/^# Usage:/,/^# ASTRAOS_RESET_SKEL/p' "$0" | sed 's/^# \{0,1\}//'

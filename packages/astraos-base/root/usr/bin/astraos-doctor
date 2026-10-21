@@ -230,7 +230,7 @@ section ""
 
 section "The assistant"
 section "--------------"
-section "- Model:         $( [ -d "${XDG_DATA_HOME:-$HOME/.local/share}/astraos/ai/models" ] && ls "${XDG_DATA_HOME:-$HOME/.local/share}/astraos/ai/models" 2>/dev/null | head -3 | tr '\n' ' ' || printf 'unknown' )"
+section "- Model:         $( [ -d "${XDG_DATA_HOME:-${HOME:-/tmp}/.local/share}/astraos/ai/models" ] && ls "${XDG_DATA_HOME:-${HOME:-/tmp}/.local/share}/astraos/ai/models" 2>/dev/null | head -3 | tr '\n' ' ' || printf 'unknown' )"
 section "- Engine:        $(command -v llama-server >/dev/null 2>&1 && printf 'installed' || printf 'not installed')"
 section ""
 
