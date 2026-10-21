@@ -122,3 +122,21 @@ def test_the_help_centre_is_reachable_from_the_desktop() -> None:
         "the launcher must open the page the package installs"
     )
     assert "Terminal=false" in entry
+
+
+def test_the_image_is_checked_for_the_help_centre() -> None:
+    """The self-test has to look for the page in the image, not in the repository."""
+    smoke = (
+        REPO_ROOT / "config" / "live-build" / "config" / "includes.chroot"
+        / "usr" / "local" / "sbin" / "astraos-smoke"
+    )
+    text = _text(smoke)
+    assert 'ok "help-centre"' in text and 'bad "help-centre"' in text, (
+        "the boot self-test must check that the help centre is really in the image"
+    )
+    assert "/usr/share/astraos/ai/web/help.html" in text, (
+        "the check must look where the package installs the page"
+    )
+    assert "/usr/share/applications/astraos-help.desktop" in text, (
+        "the check must also find the launcher, or the entry could open nothing"
+    )

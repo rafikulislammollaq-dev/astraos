@@ -495,6 +495,23 @@ if [ "$MODE" = live ]; then
     fi
 fi
 
+# --- the offline help centre, in the image (live medium only) -------------------------
+# The help centre is a feature of the image, not of the repository: the page has to be
+# installed where the launcher opens it, and it has to carry the topics. A build that
+# shipped the repository's copy but not the package's would give a user a "Help" entry
+# that opens nothing, which is worse than no entry at all.
+if [ "$MODE" = live ]; then
+    help_page=/usr/share/astraos/ai/web/help.html
+    help_entry=/usr/share/applications/astraos-help.desktop
+    if [ -s "$help_page" ] && [ -f "$help_entry" ] \
+        && grep -q 'id="search"' "$help_page" \
+        && grep -q '<article id=' "$help_page"; then
+        ok "help-centre" "the offline help centre is installed with $(grep -c '<article id=' "$help_page") topic(s)"
+    else
+        bad "help-centre" "the help centre is missing, empty or has no topics at ${help_page}"
+    fi
+fi
+
 # --- the assistant the image ships ----------------------------------------------------
 # The model and engine are in the medium, not downloaded on first use. This checks the
 # files; ai-engine below actually executes the selected build on this CPU, and ai-guard

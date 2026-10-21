@@ -61,6 +61,10 @@ WHAT IT CHECKS
     the derived AI-readiness rung) beside the assistant's settings. The check requires
     the file the command says it wrote;
 
+  * on the live medium, the offline help centre is present ("help-centre"): the page
+    is installed where the "AstraOS Help" launcher opens it, it carries a search box
+    and it has topics in it, so the entry in the menu cannot open an empty page;
+
   A line marked "note" is information, not a verdict: the shipped image has no AI model
   installed, so "assistant-status" reporting no model is expected.
 
