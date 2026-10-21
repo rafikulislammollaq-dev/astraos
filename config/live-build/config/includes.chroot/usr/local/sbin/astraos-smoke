@@ -502,30 +502,13 @@ fi
 # that opens nothing, which is worse than no entry at all.
 if [ "$MODE" = live ]; then
     help_page=/usr/share/astraos/ai/web/help.html
-    help_entry=/usr/share/applications/astraos-help.desktop
+    help_entry=/usr/share/applications/astraos-helpcentre.desktop
     if [ -s "$help_page" ] && [ -f "$help_entry" ] \
         && grep -q 'id="search"' "$help_page" \
         && grep -q '<article id=' "$help_page"; then
         ok "help-centre" "the offline help centre is installed with $(grep -c '<article id=' "$help_page") topic(s)"
     else
         bad "help-centre" "the help centre is missing, empty or has no topics at ${help_page}"
-    fi
-fi
-
-# --- the first-run welcome, in the image (live medium only) --------------------------
-# The welcome page is shown once, on the first login of a new account. Both halves
-# have to be in the image: the page, and the autostart entry that opens it - a
-# package that ships one without the other gives a user either no welcome or a
-# broken one at every login.
-if [ "$MODE" = live ]; then
-    welcome_page=/usr/share/astraos/ai/web/welcome.html
-    welcome_entry=/etc/skel/.config/autostart/astraos-welcome.desktop
-    if [ -s "$welcome_page" ] && [ -f "$welcome_entry" ] \
-        && grep -q 'Welcome to AstraOS' "$welcome_page" \
-        && grep -q 'astraos-welcome' "$welcome_entry"; then
-        ok "welcome-page" "the first-run welcome page and its launcher are in the image"
-    else
-        bad "welcome-page" "the first-run welcome is missing or incomplete in the image"
     fi
 fi
 

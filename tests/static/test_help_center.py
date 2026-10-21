@@ -29,7 +29,7 @@ CORPUS = (
 HELP_HTML = CORPUS / "web" / "help.html"
 DESKTOP_ENTRY = (
     REPO_ROOT / "packages" / "astraos-ai" / "root" / "usr" / "share" / "applications"
-    / "astraos-help.desktop"
+    / "astraos-helpcentre.desktop"
 )
 
 DESCRIPTION = "the offline help centre is generated from the corpus and works without a network"
@@ -117,11 +117,37 @@ def test_the_help_centre_is_reachable_from_the_desktop() -> None:
     assert DESKTOP_ENTRY.is_file(), f"the launcher is missing: {DESKTOP_ENTRY}"
     entry = _text(DESKTOP_ENTRY)
     assert "Type=Application" in entry
-    assert "Name=AstraOS Help" in entry
+    assert "Name=AstraOS Help Centre" in entry
     assert "/usr/share/astraos/ai/web/help.html" in entry, (
         "the launcher must open the page the package installs"
     )
     assert "Terminal=false" in entry
+
+
+def test_the_launcher_does_not_collide_with_the_desktops_own_help_entry() -> None:
+    """Two packages may not own the same path: dpkg refuses to install the second.
+
+    The desktop package already ships `astraos-help.desktop` (the documentation
+    index in a terminal). The help centre is a different thing and needs a
+    different name, and a collision here is not a warning - it is a build that
+    dies in the chroot stage with "trying to overwrite ...".
+    """
+    owned: dict[str, str] = {}
+    for package in sorted((REPO_ROOT / "packages").iterdir()):
+        if not package.is_dir():
+            continue
+        root = package / "root"
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*.desktop"):
+            key = path.relative_to(root).as_posix()
+            if key in owned:
+                raise AssertionError(
+                    f"{package.name} and {owned[key]} both ship {key}: dpkg refuses to "
+                    "install the second, and the image build dies with it"
+                )
+            owned[key] = package.name
+    assert owned, "no package ships a desktop entry, so this check is not looking at anything"
 
 
 def test_the_image_is_checked_for_the_help_centre() -> None:
@@ -137,6 +163,6 @@ def test_the_image_is_checked_for_the_help_centre() -> None:
     assert "/usr/share/astraos/ai/web/help.html" in text, (
         "the check must look where the package installs the page"
     )
-    assert "/usr/share/applications/astraos-help.desktop" in text, (
+    assert "/usr/share/applications/astraos-helpcentre.desktop" in text, (
         "the check must also find the launcher, or the entry could open nothing"
     )

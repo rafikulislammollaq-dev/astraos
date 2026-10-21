@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=AstraOS Help
-Name[en]=AstraOS Help
+Name=AstraOS Help Centre
+Name[en]=AstraOS Help Centre
 GenericName=Help Centre
 Comment=How do I ...? Every answer, offline, on this machine
 Comment[en]=How do I ...? Every answer, offline, on this machine
@@ -10,5 +10,5 @@ Exec=xdg-open /usr/share/astraos/ai/web/help.html
 Icon=help-browser
 Terminal=false
 Categories=Utility;System;
-Keywords=AstraOS;help;manual;documentation;offline;howto;
+Keywords=AstraOS;help;manual;documentation;offline;howto;answers;
 StartupNotify=true

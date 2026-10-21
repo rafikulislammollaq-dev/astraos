@@ -19,16 +19,6 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
-- **A first-run welcome, shown once.** A new account's first login opens a page that
-  says what the machine is (an independent distribution on Debian 13), what to try
-  first (the assistant, the help centre, the dashboard, the phone pairing) and what
-  has not been proven (no install on physical hardware, an unsigned image, an
-  unsigned archive). It opens once: a marker in the user's state directory is what
-  makes it a first-run thing rather than a habit, and the launcher says nothing at
-  all when there is no page to show, so a login is never broken by it. The boot
-  self-test checks that both halves - the page and the autostart entry that opens
-  it - are really in the image.
-
 - **Astra Doctor: a health report you can paste into a bug report.**
   `astraos-doctor` prints this machine's health - the release, the kernel, the CPU, the
   memory, the disks that are nearly full, the swap pressure, the units that failed,
@@ -47,10 +37,14 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   one self-contained HTML file: every topic is in the page, a search box filters on
   the title, the keywords and the body, and nothing is fetched from anywhere - no
   external script, no stylesheet, no image - so it works on a machine with no
-  connection at all. A launcher ("AstraOS Help") puts it in the desktop menu. The
-  page is generated and committed, and a test regenerates it and compares, so it
-  cannot drift from the corpus. First run pending: the page has never been opened
-  in a booted image yet.
+  connection at all. A launcher ("AstraOS Help Centre") puts it in the desktop
+  menu - named so it does not collide with the desktop package's own "AstraOS
+  Help" entry, because two packages may not own the same path and the image build
+  died on exactly that. The page is generated and committed, and a test
+  regenerates it and compares, so it cannot drift from the corpus. The first-run
+  guidance (`astraos-welcome`, shown once at the first login of an installed
+  system) now points at it. First run pending: the page has never been opened in a
+  booted image yet.
 
 - **A proof page for every run, written from the run's own artifacts.**
   `scripts/generate-proof-page.py` reads what a run produced - the build log, the

@@ -96,6 +96,8 @@ printf '  Documentation\n'
 printf '    %s/\n' "$DOC_DIR"
 printf '    Coming from Windows: %s/WINDOWS_USERS.md\n' "$DOC_DIR"
 printf '    Known limitations: %s/KNOWN_LIMITATIONS.md\n' "$DOC_DIR"
+printf '    Help centre (searchable, offline): "AstraOS Help Centre" in the menu,\n'
+printf '      or open /usr/share/astraos/ai/web/help.html\n'
 printf '\n'
 printf '  AstraOS is an ALPHA release built on Debian GNU/Linux.\n'
 printf '  It is not a stable product and it is not an official Debian release.\n'

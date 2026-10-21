@@ -60,6 +60,43 @@ def _without_comments(text: str) -> str:
 VALID_NAME = re.compile(r"^[a-z0-9][a-z0-9+.-]*$")
 
 
+def test_no_two_astraos_packages_ship_the_same_path() -> None:
+    """Two packages may not own the same file: dpkg refuses to install the second.
+
+    This is not a style rule. The image build installs the AstraOS packages into
+    the chroot, and when two of them own the same path the build dies there with
+    "trying to overwrite '/usr/share/applications/astraos-help.desktop', which is
+    also in package astraos-ai" - after the image has been assembled, which is
+    the most expensive place to find out. A desktop entry added to the assistant
+    package while the desktop package already shipped one with that name cost
+    exactly that.
+    """
+    owners: dict[str, str] = {}
+    conflicts: list[str] = []
+    for package in sorted((REPO_ROOT / "packages").iterdir()):
+        if not package.is_dir():
+            continue
+        root = package / "root"
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            key = path.relative_to(root).as_posix()
+            if key in owners:
+                conflicts.append(f"{key} is shipped by both {owners[key]} and {package.name}")
+            else:
+                owners[key] = package.name
+    assert not conflicts, (
+        "two AstraOS packages own the same path, and the image build will refuse to "
+        "install the second one:\n  " + "\n  ".join(conflicts)
+    )
+    assert len(owners) > 10, (
+        "only a handful of package files were found, so this check is not looking at "
+        "the packages"
+    )
+
+
 def test_package_lists_exist() -> None:
     lists = astraos_env.package_lists()
     assert lists, "no *.list.chroot files found in config/package-lists"
