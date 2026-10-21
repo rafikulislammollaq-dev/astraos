@@ -117,8 +117,8 @@ Proven by CI on 2026-10-16 (boot self-test, run 38919644411, commit 8e40d99):
   the runner user is not in the `kvm` group. Corrected 2026-10-19; run 39222797247 was
   the first to use the runner's own virtualisation (`install-boot: KVM acceleration
   enabled` in its transcript), which is what that device is there for — and the image's
-  own self-test reports `RESULT: PASS (52 checks,
-  0 failed)`: the console login prompt appears by the 141 s mark, LightDM is
+  own self-test reports `RESULT: PASS (64 checks,
+  0 failed)` (run 39564153919, 2026-10-21): the console login prompt appears by the 141 s mark, LightDM is
   active, an Xfce session (xfwm4) runs as the live user, every `astraos-*`
   package is present at its expected version, the hardware, codec and
   compatibility tools and the Flathub remote check out, NetworkManager is
@@ -195,7 +195,10 @@ they exist, rather than being estimated here.
 | Desktop | Xfce, configured and branded |
 | Session dashboard | AstraOS HUD (`astraos-hud`): one full-screen window with live CPU, memory, network, disk and temperature panels, an on-screen keyboard and an embedded terminal, started from its menu entry or launcher |
 | Assistant | `astraos-ai`: a local assistant that ships with an executor model and a speech model, so it works offline on first boot, with Guard permissions/audit, a three-tier model ladder and a shipped skills/knowledge library. The middle brain is an optional download (`docs/AI.md`) |
-| Help centre | "AstraOS Help": every how-do-I page and every procedure the assistant knows, in one offline page with a search box - no network needed, nothing fetched from anywhere |
+| Help centre | "AstraOS Help Centre": every how-do-I page and every procedure the assistant knows, in one offline page with a search box - no network needed, nothing fetched from anywhere. It also answers "can I run this app on Windows?" with the honest ladder: native, Wine, browser, or no |
+| Conversions | The assistant converts files: a document or spreadsheet to PDF, a picture to JPG (or smaller, or rotated), a PDF back to text. It says what it will produce first, checks the result, and never overwrites a file that is already there |
+| Coming from elsewhere | Guides for people arriving from Windows, from Android and from KDE Plasma (or Mint, or Ubuntu) - what changes, what is the same, and what is honest - plus one for the first thirty minutes |
+| Proof | Every CI run publishes a proof page (the image's hash, the structural checks, the self-test, each firmware path, the install, and what the run does *not* prove) and a bill of materials for the packages it built |
 | First run | First-login guidance (`astraos-welcome`, shown once) and a searchable offline help centre ("AstraOS Help Centre" in the menu) |
 | Getting out | `astraos-reset --settings` puts the desktop and session back to how it shipped, keeps every file, and sets the old settings aside in your own state directory; `--factory` explains how to reinstall from scratch, and the installer is the thing that erases |
 | Diagnostics | `astraos-doctor`: a read-only health report (machine, disks, memory, services, logs, network, graphics) and a `--share` mode that redacts the user name, the host name, the addresses, the MAC addresses, the machine id and any serial number before you paste it into a bug report |
