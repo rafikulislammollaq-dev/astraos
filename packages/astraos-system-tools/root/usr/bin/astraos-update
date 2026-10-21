@@ -70,7 +70,10 @@ copy_home() {
             ;;
     esac
     if command -v rsync >/dev/null 2>&1; then
-        rsync -a --delete "${excludes[@]}" "$source" "$target"
+        # The trailing slashes matter: rsync copies the directory itself without
+        # them (so the snapshot would hold a copy of your home, inside itself),
+        # and its contents with them.
+        rsync -a --delete "${excludes[@]}" "${source%/}/" "${target%/}/"
     else
         mkdir -p "$target"
         # The exclusions are applied by copying the tree and then leaving out what
