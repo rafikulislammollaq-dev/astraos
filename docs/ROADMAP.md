@@ -557,9 +557,15 @@ because familiarity on an unproven base would be decoration.
   that filters on the title, the keywords and the body, and no network in it at
   all: no external script, no stylesheet, no image. A launcher ("AstraOS Help")
   puts it in the desktop menu. The page is generated and committed, and a test
-  regenerates it and compares, so it cannot drift from the corpus. Still open: the
-  migration guides (coming from Windows, Android, Mint or Ubuntu, Plasma), which
-  need writing, and reaching the centre through the assistant.
+  regenerates it and compares, so it cannot drift from the corpus. The migration
+  guides are written too (2026-10-21): `coming-from-windows`, `coming-from-android`,
+  `coming-from-plasma` and `first-thirty-minutes`, each honest about what changes
+  (apt, not pacman; Flatpak, not Snap; Xfce, not Plasma; an X11 session; ufw on by
+  default; MTP and the assistant's pairing instead of a phone bridge; Wine for the
+  Windows applications that work under it) and each pointing at the pages that
+  answer the next question. Still open: reaching the centre through the assistant,
+  and the compatibility matrix that would tell a new user what to expect from
+  their own machine.
 - [ ] **Astra Link, the Android bridge**: pairing out of the box (notifications,
   clipboard, file transfer), phone camera and microphone as PC input, and automatic
   photo and video backup over the LAN into a private library on the PC — a personal
