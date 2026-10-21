@@ -43,26 +43,29 @@ usage() {
 
 # What the snapshot copies. The caches and the snapshots themselves are left out:
 # they are large, they are not yours, and a snapshot of a snapshot is a loop.
-exclude_args() {
-    printf '%s\n' \
-        --exclude=/.cache/ \
-        --exclude=/.local/state/astraos/snapshots/ \
-        --exclude=/.local/share/Trash/
-}
+# What the snapshot copies. The caches and the snapshots themselves are left out:
+# they are large, they are not yours, and a snapshot of a snapshot is a loop. The
+# whole AstraOS state directory is excluded, because the snapshots live inside it
+# and the copy would otherwise copy the copy.
+EXCLUDES=(
+    --exclude=/.cache/
+    --exclude=/.local/state/astraos
+    --exclude=/.local/share/Trash/
+)
 
 # The copy itself. rsync is the better tool - it is incremental, so the second
 # snapshot of the same home directory is quick - but it is not guaranteed to be
 # installed, and a command that only works on half the machines is a command half
-# the users cannot use. cp is always there, so it is the fallback.
+# the users cannot use. tar is always there, so it is the fallback.
 copy_home() {
     local source="$1" target="$2"
     if command -v rsync >/dev/null 2>&1; then
-        rsync -a --delete $(exclude_args) "$source" "$target"
+        rsync -a --delete "${EXCLUDES[@]}" "$source" "$target"
     else
         mkdir -p "$target"
-        # The exclusions are applied by copying the tree and then removing what
+        # The exclusions are applied by copying the tree and then leaving out what
         # must not be copied; the caches are large and never worth a copy.
-        (cd "$source" && tar --exclude=./.cache --exclude=./.local/state/astraos/snapshots \
+        (cd "$source" && tar --exclude=./.cache --exclude=./.local/state/astraos \
             --exclude=./.local/share/Trash -cf - .) | (cd "$target" && tar -xf -)
     fi
 }
@@ -139,7 +142,7 @@ do_rollback() {
             printf 'ERROR: there are no snapshots in %s\n' "$SNAPSHOTS" >&2
             return 1
         }
-        source="$(ls -1 "$SNAPSHOTS" 2>/dev/null | sort | tail -n 1 || true)"
+        source="$(find "$SNAPSHOTS" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort | tail -n 1 || true)"
         [ -n "$source" ] || {
             printf 'ERROR: there are no snapshots in %s\n' "$SNAPSHOTS" >&2
             return 1
@@ -150,7 +153,7 @@ do_rollback() {
     [ -d "$source" ] || {
         printf 'ERROR: no snapshot at %s\n' "$source" >&2
         printf '       The snapshots are:\n' >&2
-        ls -1 "$SNAPSHOTS" 2>/dev/null | sed 's/^/         /' >&2 || true
+        find "$SNAPSHOTS" -mindepth 1 -maxdepth 1 -type d -printf '         %f\n' 2>/dev/null >&2 || true
         return 1
     }
 
