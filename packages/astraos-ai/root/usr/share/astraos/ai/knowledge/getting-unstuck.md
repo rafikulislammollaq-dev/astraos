@@ -15,6 +15,11 @@ root, so it is safe to run on a machine that is already unwell.
 
     astraos-doctor
 
+**`astra doctor` is the quick verdict** - ok, WARN or FAIL for each thing, with
+the fix under each problem and a count at the end. Use it when you want to know
+"is anything wrong?" in one screen, and `astraos-doctor` when you want the whole
+picture with the evidence next to each number. Both are read-only.
+
 **`astraos-doctor --share` is the same report, redacted.** The user name, the
 host name, the home path, the addresses, the MAC addresses, the machine id and
 any serial number are replaced, and the page says on its face that it did. That

@@ -234,6 +234,13 @@ section "- Model:         $( [ -d "${XDG_DATA_HOME:-$HOME/.local/share}/astraos/
 section "- Engine:        $(command -v llama-server >/dev/null 2>&1 && printf 'installed' || printf 'not installed')"
 section ""
 
+section "A quick verdict, and the full report"
+section "-----------------------------------"
+section "- This is the full report: every number names the command or the file it came"
+section "  from, so a reader can check it. For a quick verdict - ok, WARN, FAIL, and the"
+section "  fix line under each problem - run:  astra doctor"
+section ""
+
 section "What this report does not do"
 section "-----------------------------"
 section "- It changes nothing: every command above is read-only, and none of them"

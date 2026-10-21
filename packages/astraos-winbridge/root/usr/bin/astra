@@ -572,6 +572,8 @@ do_doctor() {
     printf "\n"
     if [ "$_problems" -eq 0 ]; then
         printf "${GRN}${B}AstraOS looks healthy.${E}\n"
+        printf "  ${DIM}for the full report - every number with the command that produced it:${E}\n"
+        printf "  ${DIM}astraos-doctor${E}\n"
         return 0
     fi
     printf "${RED}${B}%s problem(s) found.${E} Work through the fixes above, then run 'astra doctor' again.\n" "$_problems"
