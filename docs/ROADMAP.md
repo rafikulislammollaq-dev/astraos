@@ -616,9 +616,9 @@ because familiarity on an unproven base would be decoration.
   build log, the boot self-test log and capture, the three boot-menu logs with the
   Secure Boot firmware hashes, the install exercise and the APT archive) and writes
   one page: the image and its hash, the structural checks, the self-test's own
-  result, whether each of the three firmware paths reached the live login prompt,
-  what the installer did and what the installed system then reported, and the
-  archive's contents and signing state. The rule it is built on: every line is read
+  result and the machine it ran on (kernel, CPU, memory), whether each of the three
+  firmware paths reached the live login prompt, what the installer did and what the
+  installed system then reported, and the archive's contents and signing state. The rule it is built on: every line is read
   from an artifact, a missing artifact is written down as missing ("not shown in
   this run"), and the page always ends with what the run does *not* prove. A new
   `proof` job in the CI workflow downloads the artifacts, writes the page, appends

@@ -57,6 +57,9 @@ def _evidence(root: Path) -> Path:
     live.mkdir(parents=True)
     (live / "serial.log").write_text(
         "[  44.541124] astraos-smoke[1558]: ASTRAOS-SMOKE: ok hud-on-screen the dashboard is up\n"
+        "[  16.424537] astraos-smoke[1558]: ASTRAOS-SMOKE: kernel: 6.12.113+deb13-amd64, architecture x86_64\n"
+        "[  16.430252] astraos-smoke[1558]: ASTRAOS-SMOKE: cpu: AMD EPYC 7763 64-Core Processor\n"
+        "[  16.433531] astraos-smoke[1558]: ASTRAOS-SMOKE: memory: 3921 MiB\n"
         "[  44.900000] astraos-smoke[1558]: ASTRAOS-SMOKE: RESULT: PASS (63 checks, 0 failed)\n",
         encoding="utf-8",
     )
@@ -161,6 +164,11 @@ def test_the_page_reports_what_the_artifacts_say() -> None:
         assert "rc=0" in page, "the install's result is not on the page"
         assert "PASS (55 checks, 0 failed)" in page, "the installed system's result is missing"
         assert "2 packages" in page, "the archive's package count is not on the page"
+        assert "AMD EPYC 7763 64-Core Processor" in page, (
+            "the page must name the machine the run was proven on; that is the CPU "
+            "matrix a reader needs"
+        )
+        assert "6.12.113+deb13-amd64" in page, "the kernel it ran is not on the page"
         assert "It is unsigned." in page, "the archive's signing state is not on the page"
         assert "A fresh container updated from it" in page, (
             "the build log records a container installing from the archive; the page "

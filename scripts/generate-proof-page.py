@@ -175,6 +175,10 @@ class Proof:
         for check in ("hud-on-screen", "screenshot-ready", "ai-profile"):
             if f"ASTRAOS-SMOKE: ok {check} " in serial:
                 self.lines.append(f"- `{check}` passed.")
+        for label in ("kernel", "cpu", "memory"):
+            match = re.search(rf"ASTRAOS-SMOKE: {label}: (.+)", serial)
+            if match:
+                self.lines.append(f"- The machine it ran on - {label}: {match.group(1).strip()}.")
         shot = self.evidence / "self-test" / "screenshot.png"
         if folder:
             shot = folder / "screenshot.png"
@@ -246,6 +250,10 @@ class Proof:
             result = re.search(r"ASTRAOS-SMOKE: RESULT: ([A-Z]+) \((\d+) checks, (\d+) failed\)", serial2)
             if result:
                 self.lines.append(f"- Its own self-test then reported `{result.group(0).split('ASTRAOS-SMOKE: ')[-1]}`.")
+            for label in ("kernel", "cpu", "memory"):
+                match = re.search(rf"ASTRAOS-SMOKE: {label}: (.+)", serial2)
+                if match:
+                    self.lines.append(f"- The installed system ran on - {label}: {match.group(1).strip()}.")
         greeter = _size(folder / "greeter.png") if folder else None
         if greeter is None:
             self.note_missing("the greeter capture")
