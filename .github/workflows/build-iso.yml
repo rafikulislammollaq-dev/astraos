@@ -557,13 +557,32 @@ jobs:
       - name: Download the evidence
         uses: actions/download-artifact@v4
         with:
-          path: evidence
-          # The image itself is 2.4 GB and the page does not need it: the hash and
-          # the structural checks come from the build log.
-          pattern: |
-            astraos-*
-            !astraos-iso
-          merge-multiple: false
+          name: astraos-boot-self-test
+          path: evidence/astraos-boot-self-test
+
+      - name: Download the boot-menu evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: astraos-boot-menus
+          path: evidence/astraos-boot-menus
+
+      - name: Download the install evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: astraos-install-test
+          path: evidence/astraos-install-test
+
+      - name: Download the build log
+        uses: actions/download-artifact@v4
+        with:
+          name: astraos-build-logs
+          path: evidence/astraos-build-logs
+
+      - name: Download the APT archive
+        uses: actions/download-artifact@v4
+        with:
+          name: astraos-apt-repo
+          path: evidence/astraos-apt-repo
 
       - name: Write the proof page
         run: |

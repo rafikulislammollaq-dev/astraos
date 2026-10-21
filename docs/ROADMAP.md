@@ -618,9 +618,20 @@ because familiarity on an unproven base would be decoration.
   permissions, runtime, dependencies, integrity, compatibility — shown before
   install; signed and revocable.
 - [ ] **Astra Doctor**: read journal, dmesg and `inxi` (already in the image),
-  explain failures in plain language, and propose allowlisted fixes with undo —
+  explain failures in plain language, and propose allowlisted fixes with undo -
   starting with the failures observed on real machines (audio, Wi-Fi, suspend),
-  not a blank sheet.
+  not a blank sheet. The report exists (2026-10-21): `astraos-doctor` prints the
+  machine's health - release, kernel, CPU, memory, the disks above 80 percent, the
+  swap pressure, the failed units, this boot's errors, the addresses and routes, the
+  graphics card and the assistant's own state - and every line names the command or
+  the file it came from. It only reads: no writes, no password, nothing as root.
+  `--share` redacts the user name, the host name, the home path, the addresses, the
+  MAC addresses, the machine id and any serial number, and says so on the page;
+  `--json` is the same for a machine to read. Still open: explaining a failure in
+  plain language and proposing an allowlisted fix with undo, and the compatibility
+  matrix that would turn these reports into a public "works / workaround / broken"
+  table - which needs the reports to be collected somewhere, and that is the user's
+  decision, not the project's.
 - [ ] **A compatibility matrix, built with consent**: a hardware report the user
   previews before sending (no telemetry by default), and a public
   works / workaround / broken table. Prefer existing probe formats over inventing

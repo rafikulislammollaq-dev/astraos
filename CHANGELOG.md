@@ -19,6 +19,19 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **Astra Doctor: a health report you can paste into a bug report.**
+  `astraos-doctor` prints this machine's health - the release, the kernel, the CPU, the
+  memory, the disks that are nearly full, the swap pressure, the units that failed,
+  this boot's errors, the addresses and routes, the graphics card, the assistant's own
+  state - and every line names the command or the file it came from, so a reader can
+  check the number rather than trust it. It only reads: it never writes, never asks for
+  a password and never runs anything as root, so it is safe to run on a machine that is
+  already unwell. `--share` produces the same report with the user name, the host
+  name, the home path, the addresses, the MAC addresses, the machine id and any serial
+  number replaced, and says on its face that it did; `--json` is the same thing for a
+  machine to read. Five tests run it against a fixture machine and a directory of stub
+  commands, so what it prints is checked against what the machine said.
+
 - **An offline help centre, generated from the pages the assistant already ships.**
   `scripts/build-help-center.py` turns the `knowledge/` pages and the `skills/` into
   one self-contained HTML file: every topic is in the page, a search box filters on

@@ -35,6 +35,7 @@ release, and the runs are public.
 | It installs itself onto a blank disk | Calamares ran the installer end to end; the screenshots are attached | install-boot job, run 39379045276 |
 | The installed system boots alone | No medium attached; the greeter was reached | install-boot job, run 39379045276 |
 | The APT archive is real | A fresh `debian:trixie` container updated from it and installed `astraos-system-tools` out of it | build job, run 39379045276 |
+| The bill of materials is real | SPDX 2.3 for the eight packages, each with its version and SHA-256 | run 39553943772 (artifact `astraos-sbom`) |
 | The assistant engine is proven | Built and tested for AVX and AVX2 | release `ai-engine-2026-10-19` |
 
 ## How to get it
@@ -71,6 +72,12 @@ covers real hardware.
   because AstraOS signs anything itself.
 - **A hosted APT archive.** The archive this build produced is unsigned and
   lives in the build artifacts. Where it will be hosted is still open.
+- **A published proof page.** Every run now writes one page from its own
+  artifacts - the image and its hash, the structural checks, the self-test's
+  result, each firmware path, the install, the archive, and what the run does
+  *not* prove. The first run of that job (39553943772) failed on a fault in the
+  workflow's download step, not in the page; the fix is in the tree and the next
+  run publishes it.
 - **A browser in a booted image.** The network stack was proven in CI. No
   browser has been launched inside a booted image yet.
 

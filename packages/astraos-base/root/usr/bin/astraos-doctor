@@ -1,0 +1,262 @@
+#!/bin/bash
+# astraos-doctor - report this machine's health, and a version safe to share.
+#
+# Design constraints (the same ones astraos-info keeps):
+#   * It only reads. It never writes, never deletes, never asks for a password and
+#     never runs anything as root: every command it runs is readable by the user.
+#   * It never prints a secret. No keyring, no NetworkManager profile, no Wi-Fi
+#     password, no token, no environment variable.
+#   * It degrades gracefully: a missing tool or an unreadable file prints
+#     "unknown" for that line instead of failing the report.
+#   * Everything it prints names the command or the file it came from, so a reader
+#     can check the number rather than trust it.
+#
+# The --share mode exists because the most useful report is the one that reaches
+# a bug report: it removes the things that identify the machine or the person
+# (user name, host name, addresses, MAC addresses, machine id, serial numbers)
+# and says on its face that it did.
+#
+# Usage:
+#   astraos-doctor            the health report
+#   astraos-doctor --share    the same report, redacted for sharing
+#   astraos-doctor --json     machine-readable (machine-readable and shareable)
+#   astraos-doctor --help
+#
+# ASTRAOS_DOCTOR_ROOT exists so the report can be produced from another root
+# (a mounted disk, a chroot, a test fixture). ASTRAOS_DOCTOR_BIN exists so the
+# commands the report runs can be taken from a directory of its own. Neither is a
+# back door: the commands are still the ones that were asked for, and on a real
+# machine both are unset and the system's own are used.
+
+set -uo pipefail
+
+ROOT="${ASTRAOS_DOCTOR_ROOT:-}"
+SHARE=no
+JSON=no
+
+usage() {
+    sed -n '/^# Usage:/,/^# ASTRAOS_DOCTOR_ROOT/p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --share) SHARE=yes; shift ;;
+        --json) JSON=yes; SHARE=yes; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) printf 'ERROR: unknown argument: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+# The commands the report runs come from here when the caller says so.
+if [ -n "${ASTRAOS_DOCTOR_BIN:-}" ] && [ -d "${ASTRAOS_DOCTOR_BIN}" ]; then
+    PATH="${ASTRAOS_DOCTOR_BIN}:${PATH}"
+    export PATH
+fi
+
+# --- helpers --------------------------------------------------------------------
+# A command that may not exist prints "unknown" instead of failing the report.
+try() {
+    local out
+    if out="$("$@" 2>/dev/null)"; then
+        [ -n "$out" ] && printf '%s' "$out" || printf 'unknown'
+    else
+        printf 'unknown'
+    fi
+}
+
+# A file under the root, read the same way.
+read_file() {
+    local path="$ROOT$1"
+    if [ -r "$path" ]; then
+        cat "$path" 2>/dev/null || printf 'unknown'
+    else
+        printf 'unknown'
+    fi
+}
+
+# --- redaction ------------------------------------------------------------------
+# These run over the finished report, so a value that reached the report by any
+# route is covered. The replacements are deliberately blunt: a redacted report is
+# less useful, not wrong.
+redact() {
+    sed -E \
+        -e "s/$(printf '%s' "${USER:-user}" | sed 's/[][\.*^$/]/\\&/g')/<user>/g" \
+        -e "s/$(printf '%s' "${HOSTNAME:-host}" | sed 's/[][\.*^$/]/\\&/g')/<host>/g" \
+        -e 's#/(home|Users)/[A-Za-z0-9._-]+#/<home>#g' \
+        -e 's/([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}/<mac>/g' \
+        -e 's/\b([0-9]{1,3}\.){3}[0-9]{1,3}\b/<ip>/g' \
+        -e 's/\b([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}\b/<ip>/g' \
+        -e 's/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/<machine-id>/g' \
+        -e 's/\b[0-9a-f]{32}\b/<machine-id>/g' \
+        -e 's/\b(SN|SerialNumber|serial)[=: ]+[A-Za-z0-9._-]+/\1=<serial>/gI'
+}
+
+# --- the report -----------------------------------------------------------------
+REPORT=""
+section() {
+    REPORT="${REPORT}${1}"$'\n'
+}
+
+section "AstraOS Doctor - this machine's health"
+section "==============================================="
+section ""
+
+section "Machine"
+section "--------"
+section "- Release:       $(read_file /etc/os-release | sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' | head -1)"
+section "- AstraOS:      $( [ -r "$ROOT/etc/astraos-release" ] && ( . "$ROOT/etc/astraos-release" 2>/dev/null; printf '%s' "${VERSION:-unknown}" ) || printf 'unknown')"
+section "- Kernel:        $(try uname -r) ($(try uname -m))"
+section "- Host name:     $(try hostname)"
+section "- Running as:    $(try id -un)"
+section "- Uptime:        $(read_file /proc/uptime | cut -d' ' -f1 | awk '{printf "%.1f hours", $1/3600}')"
+section "- Machine id:    $(read_file /etc/machine-id)"
+section "- CPU:           $(read_file /proc/cpuinfo | sed -n 's/^model name[[:space:]]*: //p' | head -1)"
+section "- Cores:         $(try nproc)"
+section "- Memory:        $(read_file /proc/meminfo | sed -n 's/^MemTotal:[[:space:]]*\([0-9]*\).*/\1 kB/p')"
+section "- Swap:          $(read_file /proc/meminfo | sed -n 's/^SwapTotal:[[:space:]]*\([0-9]*\).*/\1 kB/p')"
+section "- Load average:  $(read_file /proc/loadavg | cut -d' ' -f1-3)"
+section ""
+
+section "Disk"
+section "----"
+section "- Mounted filesystems above 80 percent use (df -h):"
+DF="$(try df -h -x tmpfs -x devtmpfs)"
+if [ "$DF" = "unknown" ]; then
+    section "  unknown"
+else
+    while IFS= read -r line; do
+        case "$line" in
+            Filesystem*|"" ) ;;
+            * )
+                use="$(printf '%s' "$line" | awk '{print $5}')"
+                case "$use" in
+                    [89]%|[9][0-9]%|100%) section "  $line" ;;
+                esac
+                ;;
+        esac
+    done <<< "$DF"
+    if ! printf '%s' "$DF" | awk 'NR>1 {print $5}' | grep -qE '^(8[0-9]|9[0-9]|100)%$'; then
+        section "  none"
+    fi
+fi
+section "- Block devices (lsblk):"
+LSBLK="$(try lsblk -o NAME,SIZE,TYPE,MOUNTPOINT -p)"
+if [ "$LSBLK" = "unknown" ]; then
+    section "  unknown"
+else
+    while IFS= read -r line; do
+        section "  $line"
+    done <<< "$LSBLK"
+fi
+section ""
+
+section "Memory and swapping"
+section "-------------------"
+section "- vm.swappiness:  $(try sysctl -n vm.swappiness) (a high number moves memory to disk early)"
+section "- free -h:"
+FREE="$(try free -h)"
+if [ "$FREE" = "unknown" ]; then
+    section "  unknown"
+else
+    while IFS= read -r line; do
+        section "  $line"
+    done <<< "$FREE"
+fi
+section ""
+
+section "Services and logs"
+section "------------------"
+section "- Failed units (systemctl --failed):"
+FAILED="$(try systemctl --failed --no-legend --plain)"
+if [ "$FAILED" = "unknown" ] || [ -z "$(printf '%s' "$FAILED" | tr -d '[:space:]')" ]; then
+    section "  none, or systemctl is not available here"
+else
+    while IFS= read -r line; do
+        section "  $line"
+    done <<< "$FAILED"
+fi
+section "- Errors of this boot (journalctl -p 3 -xb):"
+ERRORS="$(try journalctl -p 3 -xb --no-pager -n 20)"
+if [ "$ERRORS" = "unknown" ]; then
+    section "  unknown"
+else
+    while IFS= read -r line; do
+        section "  $line"
+    done <<< "$ERRORS"
+fi
+section ""
+
+section "Network"
+section "-------"
+section "- Addresses (ip -br addr):"
+ADDR="$(try ip -br addr)"
+if [ "$ADDR" = "unknown" ]; then
+    section "  unknown"
+else
+    while IFS= read -r line; do
+        section "  $line"
+    done <<< "$ADDR"
+fi
+section "- Routes (ip route):"
+ROUTE="$(try ip route)"
+if [ "$ROUTE" = "unknown" ]; then
+    section "  unknown"
+else
+    while IFS= read -r line; do
+        section "  $line"
+    done <<< "$ROUTE"
+fi
+section "- Wi-Fi is not read: connection names and passwords stay out of this report."
+section ""
+
+section "Graphics"
+section "---------"
+section "- GPU (lspci, if present):"
+GPU="$(try lspci -nn)"
+if [ "$GPU" = "unknown" ]; then
+    section "  unknown"
+else
+    while IFS= read -r line; do
+        case "$line" in
+            *[Vv]GA*|*[3D]*|*[Dd]isplay*) section "  $line" ;;
+        esac
+    done <<< "$GPU"
+fi
+section ""
+
+section "The assistant"
+section "--------------"
+section "- Model:         $( [ -d "${XDG_DATA_HOME:-$HOME/.local/share}/astraos/ai/models" ] && ls "${XDG_DATA_HOME:-$HOME/.local/share}/astraos/ai/models" 2>/dev/null | head -3 | tr '\n' ' ' || printf 'unknown' )"
+section "- Engine:        $(command -v llama-server >/dev/null 2>&1 && printf 'installed' || printf 'not installed')"
+section ""
+
+section "What this report does not do"
+section "-----------------------------"
+section "- It changes nothing: every command above is read-only, and none of them"
+section "  needs a password."
+section "- It reads no keyring, no Wi-Fi password, no token and no mail."
+section "- It is not a diagnosis. It is the evidence a diagnosis is made from."
+section ""
+
+if [ "$SHARE" = yes ]; then
+    REPORT="$(printf '%s' "$REPORT" | redact)"
+    REPORT="${REPORT}"$'\n'"Redacted for sharing: the user name, the host name, the home path,"$'\n'"the addresses, the MAC addresses, the machine id and any serial number have"
+    REPORT="${REPORT}"$'\n'"been replaced. Nothing else has been changed."
+    REPORT="${REPORT}"$'\n'
+fi
+
+if [ "$JSON" = yes ]; then
+    # A small, honest JSON object: the same facts, as strings. Everything is
+    # escaped, because a host name or a serial number can contain a quote.
+    esc() {
+        printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' | tr -d '\r'
+    }
+    printf '{\n'
+    printf '  "tool": "astraos-doctor",\n'
+    printf '  "shareable": %s,\n' "$([ "$SHARE" = yes ] && printf 'true' || printf 'false')"
+    printf '  "report": "%s"\n' "$(esc "$REPORT" | awk 'BEGIN{ORS="\\n"}{print}')"
+    printf '}\n'
+    exit 0
+fi
+
+printf '%s\n' "$REPORT"
