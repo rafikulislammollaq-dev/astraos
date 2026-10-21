@@ -59,8 +59,18 @@ EXCLUDES=(
 # the users cannot use. tar is always there, so it is the fallback.
 copy_home() {
     local source="$1" target="$2"
+    # The snapshots themselves must never be copied into a snapshot: where they
+    # live depends on the machine (the state directory by default, somewhere else
+    # when ASTRAOS_UPDATE_SNAPSHOTS says so), so the exclusion is computed from
+    # the path rather than assumed.
+    local excludes=("${EXCLUDES[@]}")
+    case "$SNAPSHOTS" in
+        "$HOME"/*)
+            excludes+=("--exclude=/${SNAPSHOTS#"$HOME"/}")
+            ;;
+    esac
     if command -v rsync >/dev/null 2>&1; then
-        rsync -a --delete "${EXCLUDES[@]}" "$source" "$target"
+        rsync -a --delete "${excludes[@]}" "$source" "$target"
     else
         mkdir -p "$target"
         # The exclusions are applied by copying the tree and then leaving out what
