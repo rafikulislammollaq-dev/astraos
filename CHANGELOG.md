@@ -19,6 +19,16 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **An offline help centre, generated from the pages the assistant already ships.**
+  `scripts/build-help-center.py` turns the `knowledge/` pages and the `skills/` into
+  one self-contained HTML file: every topic is in the page, a search box filters on
+  the title, the keywords and the body, and nothing is fetched from anywhere - no
+  external script, no stylesheet, no image - so it works on a machine with no
+  connection at all. A launcher ("AstraOS Help") puts it in the desktop menu. The
+  page is generated and committed, and a test regenerates it and compares, so it
+  cannot drift from the corpus. First run pending: the page has never been opened
+  in a booted image yet.
+
 - **A proof page for every run, written from the run's own artifacts.**
   `scripts/generate-proof-page.py` reads what a run produced - the build log, the
   boot self-test log and its capture, the three boot-menu logs with the Secure Boot

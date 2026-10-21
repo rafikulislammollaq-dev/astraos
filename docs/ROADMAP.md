@@ -548,9 +548,18 @@ because familiarity on an unproven base would be decoration.
   one-command rollback, with update-success numbers on the proof page (depends on
   the Stage 3 undo decision).
 - [ ] **"How do I ...?": an OS that explains itself**: an offline help center with
-  migration guides — coming from Windows, from Android, from Mint or Ubuntu, for
-  Arch and Kali users, for Plasma users — reachable through the assistant, whose
-  answers cite the actual documents.
+  migration guides - coming from Windows, from Android, from Mint or Ubuntu, for
+  Arch and Kali users, for Plasma users - reachable through the assistant, whose
+  answers cite the actual documents. The centre exists (2026-10-21):
+  `scripts/build-help-center.py` turns the corpus the assistant already ships -
+  the `knowledge/` pages and the `skills/` - into one self-contained HTML file
+  (`/usr/share/astraos/ai/web/help.html`) with every topic in it, a search box
+  that filters on the title, the keywords and the body, and no network in it at
+  all: no external script, no stylesheet, no image. A launcher ("AstraOS Help")
+  puts it in the desktop menu. The page is generated and committed, and a test
+  regenerates it and compares, so it cannot drift from the corpus. Still open: the
+  migration guides (coming from Windows, Android, Mint or Ubuntu, Plasma), which
+  need writing, and reaching the centre through the assistant.
 - [ ] **Astra Link, the Android bridge**: pairing out of the box (notifications,
   clipboard, file transfer), phone camera and microphone as PC input, and automatic
   photo and video backup over the LAN into a private library on the PC — a personal
