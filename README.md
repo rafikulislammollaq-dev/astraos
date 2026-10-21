@@ -67,6 +67,7 @@ when it goes wrong, is in [docs/INSTALLATION_VIRTUALBOX.md](docs/INSTALLATION_VI
 
 | Document | What is in it |
 |---|---|
+| [docs/RELEASE-0.2.0-alpha.md](docs/RELEASE-0.2.0-alpha.md) | The 0.2.0 alpha release: what is in it, the run that proves each claim, and the screenshots it took |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the distribution is put together |
 | [docs/AI.md](docs/AI.md) | The assistant, and why the confirmation set is shaped the way it is |
 | [docs/BUILDING.md](docs/BUILDING.md) | Building the ISO, step by step |
