@@ -19,6 +19,20 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **The archive gets a home, and the update command that goes with it.**
+  `astraos-update` is the part of an upgrade apt cannot do: `--check` shows what
+  is on offer from both archives without changing anything and without root,
+  `--snapshot` keeps a copy of your home directory before you upgrade, and
+  `--rollback` puts it back afterwards - asking first, and keeping the state from
+  before the restore, so the restore can itself be undone. It never runs the
+  upgrade: that needs your password, and a tool that types your password for you
+  is a tool that can break your system without asking. It prints the command
+  instead. A new workflow publishes the archive to the `apt` branch, which GitHub
+  Pages serves at `https://rafikulislammollaq-dev.github.io/astraos`, after
+  every green build; the image ships the client line **disabled**
+  (`astraos.list.disabled`), because a line that points at an archive whose
+  signature cannot be verified makes `apt update` fail for the whole system.
+
 - **The assistant can convert files now, and says what it will do first.** The image
   already shipped the tools - LibreOffice for documents, ImageMagick for pictures,
   poppler for PDFs - but nothing told the assistant it may use them, so "turn this

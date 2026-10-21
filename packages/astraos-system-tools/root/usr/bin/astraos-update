@@ -1,0 +1,193 @@
+#!/bin/bash
+# astraos-update - see what is on offer, keep your files safe, and undo a bad upgrade.
+#
+# WHAT THIS IS
+#
+#   An installed AstraOS has two ways to get newer packages: the Debian archive,
+#   and the AstraOS archive (the one this build produced, and the one a hosted
+#   archive would serve). Both are reached with apt, and apt is a fine package
+#   manager. What apt does not do is take your files with it.
+#
+#   So this command does the part apt cannot:
+#
+#     --check      what is on offer, without changing anything and without root
+#     --snapshot   a copy of your home directory, with a time stamp
+#     --rollback   put a snapshot back, after a bad upgrade
+#
+#   It never runs the upgrade itself. Upgrading needs your password, and a tool
+#   that types your password for you is a tool that can break your system
+#   without asking. It prints the command; you run it; then, if the upgrade went
+#   badly, --rollback puts your files back.
+#
+#   What it can undo is YOUR FILES. A broken package is repaired by apt or by
+#   the recovery guide (astraos-recovery-guide), not by this command - and it
+#   says so rather than pretending.
+#
+# Usage:
+#   astraos-update --check
+#   astraos-update --snapshot
+#   astraos-update --rollback [SNAPSHOT]
+#   astraos-update --help
+#
+# ASTRAOS_UPDATE_SNAPSHOTS points at where the snapshots are kept (normally
+# ~/.local/state/astraos/snapshots). It exists so the behaviour can be tested
+# against a fixture.
+
+set -euo pipefail
+
+SNAPSHOTS="${ASTRAOS_UPDATE_SNAPSHOTS:-${HOME:-/tmp}/.local/state/astraos/snapshots}"
+
+usage() {
+    sed -n '/^# Usage:/,/^# ASTRAOS_UPDATE_SNAPSHOTS/p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# What the snapshot copies. The caches and the snapshots themselves are left out:
+# they are large, they are not yours, and a snapshot of a snapshot is a loop.
+exclude_args() {
+    printf '%s\n' \
+        --exclude=/.cache/ \
+        --exclude=/.local/state/astraos/snapshots/ \
+        --exclude=/.local/share/Trash/
+}
+
+# The copy itself. rsync is the better tool - it is incremental, so the second
+# snapshot of the same home directory is quick - but it is not guaranteed to be
+# installed, and a command that only works on half the machines is a command half
+# the users cannot use. cp is always there, so it is the fallback.
+copy_home() {
+    local source="$1" target="$2"
+    if command -v rsync >/dev/null 2>&1; then
+        rsync -a --delete $(exclude_args) "$source" "$target"
+    else
+        mkdir -p "$target"
+        # The exclusions are applied by copying the tree and then removing what
+        # must not be copied; the caches are large and never worth a copy.
+        (cd "$source" && tar --exclude=./.cache --exclude=./.local/state/astraos/snapshots \
+            --exclude=./.local/share/Trash -cf - .) | (cd "$target" && tar -xf -)
+    fi
+}
+
+do_check() {
+    printf 'Updates on offer\n'
+    printf '=================\n\n'
+    if ! command -v apt >/dev/null 2>&1; then
+        printf 'ERROR: apt is not on this machine, so there is nothing to check.\n' >&2
+        return 1
+    fi
+
+    local upgradable
+    upgradable="$(apt list --upgradable 2>/dev/null | grep -v '^Listing' || true)"
+    if [ -z "$upgradable" ]; then
+        printf 'Nothing on offer from the archives this machine knows about.\n\n'
+    else
+        printf '%s\n\n' "$upgradable"
+    fi
+
+    printf 'AstraOS archives this machine is pointed at:\n'
+    if [ -d /etc/apt/sources.list.d ]; then
+        local found=no
+        for list in /etc/apt/sources.list.d/*.list; do
+            [ -e "$list" ] || continue
+            if grep -q 'astraos' "$list" 2>/dev/null; then
+                printf '  %s: %s\n' "$(basename "$list")" "$(head -n 1 "$list")"
+                found=yes
+            fi
+        done
+        [ "$found" = yes ] || printf '  none - the AstraOS archive is not configured here yet\n'
+    else
+        printf '  none\n'
+    fi
+    printf '\n'
+    printf 'To take them, run this yourself (it asks for your password):\n'
+    printf '  sudo apt update && sudo apt full-upgrade\n\n'
+    printf 'Before you do, keep your files safe:\n'
+    printf '  astraos-update --snapshot\n'
+}
+
+do_snapshot() {
+    if ! command -v rsync >/dev/null 2>&1 && ! command -v tar >/dev/null 2>&1; then
+        printf 'ERROR: neither rsync nor tar is installed, so a snapshot cannot be taken.\n' >&2
+        printf '       It is one command away: sudo apt install rsync\n' >&2
+        return 1
+    fi
+
+    local stamp target
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    target="$SNAPSHOTS/$stamp"
+    mkdir -p "$target" || {
+        printf 'ERROR: cannot write to %s\n' "$target" >&2
+        return 1
+    }
+
+    printf 'Copying your home directory to %s\n' "$target"
+    printf '(this can take a while the first time; the copy is incremental after that)\n'
+    copy_home "$HOME" "$target" || {
+        printf 'ERROR: the copy did not finish; the snapshot is incomplete.\n' >&2
+        return 1
+    }
+    printf '\nSnapshot taken: %s\n' "$target"
+    printf 'To put it back later:  astraos-update --rollback %s\n' "$stamp"
+}
+
+do_rollback() {
+    local which="${1:-}"
+    local source
+    if [ -n "$which" ]; then
+        source="$SNAPSHOTS/$which"
+    else
+        [ -d "$SNAPSHOTS" ] || {
+            printf 'ERROR: there are no snapshots in %s\n' "$SNAPSHOTS" >&2
+            return 1
+        }
+        source="$(ls -1 "$SNAPSHOTS" 2>/dev/null | sort | tail -n 1 || true)"
+        [ -n "$source" ] || {
+            printf 'ERROR: there are no snapshots in %s\n' "$SNAPSHOTS" >&2
+            return 1
+        }
+        source="$SNAPSHOTS/$source"
+    fi
+
+    [ -d "$source" ] || {
+        printf 'ERROR: no snapshot at %s\n' "$source" >&2
+        printf '       The snapshots are:\n' >&2
+        ls -1 "$SNAPSHOTS" 2>/dev/null | sed 's/^/         /' >&2 || true
+        return 1
+    }
+
+    printf 'This puts the files from\n'
+    printf '  %s\n' "$source"
+    printf 'back into %s, replacing what is there now.\n\n' "$HOME"
+    printf 'The current state is copied aside first, so this can be undone too.\n'
+    printf 'Type RESTORE to continue: '
+    local answer
+    read -r answer || answer=""
+    if [ "$answer" != "RESTORE" ]; then
+        printf 'Nothing was changed.\n'
+        return 0
+    fi
+
+    local stamp aside
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    aside="$SNAPSHOTS/before-rollback-$stamp"
+    mkdir -p "$aside"
+    copy_home "$HOME" "$aside" || {
+        printf 'ERROR: could not set the current state aside; nothing was changed.\n' >&2
+        return 1
+    }
+    copy_home "$source" "$HOME" || {
+        printf 'ERROR: the restore did not finish.\n' >&2
+        printf '       The state before the restore is in %s\n' "$aside" >&2
+        return 1
+    }
+    printf '\nRestored. The state from before the restore is in %s\n' "$aside"
+    printf 'If a package is broken, that is a different repair: astraos-recovery-guide\n'
+}
+
+case "${1:-}" in
+    --check) do_check ;;
+    --snapshot) do_snapshot ;;
+    --rollback) shift; do_rollback "${1:-}" ;;
+    -h|--help) usage ;;
+    "") usage >&2; exit 2 ;;
+    *) printf 'ERROR: unknown argument: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+esac

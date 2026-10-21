@@ -1,0 +1,18 @@
+# The AstraOS archive: where an installed AstraOS gets its updates from.
+#
+# This file is shipped DISABLED on purpose. apt reads every *.list file in this
+# directory, and a file that points at an archive whose signature cannot be
+# verified makes `apt update` fail for the whole system - the worst possible
+# moment for that to happen. So the line is here, ready, and it is enabled when
+# the archive is signed and the public key is installed:
+#
+#   sudo install -m 0644 astraos-archive-keyring.gpg \
+#       /usr/share/keyrings/astraos-archive-keyring.gpg
+#   sudo mv /etc/apt/sources.list.d/astraos.list.disabled \
+#       /etc/apt/sources.list.d/astraos.list
+#   sudo apt update
+#
+# The archive is served by GitHub Pages from the `apt` branch of the repository.
+# It is assembled by the build and published after a green one.
+
+deb [signed-by=/usr/share/keyrings/astraos-archive-keyring.gpg] https://rafikulislammollaq-dev.github.io/astraos stable main

@@ -1,0 +1,150 @@
+name: Publish the APT archive
+
+# The archive an installed AstraOS updates from.
+#
+# The build already assembles it (scripts/build-apt-repo.sh) and CI proves a fresh
+# container can read it. What it did not have was a home: an installed system had
+# nowhere to fetch an update from, which made "updates that cannot brick it"
+# impossible - there were no updates to receive.
+#
+# It is published to the `apt` branch, which GitHub Pages serves at
+#
+#     https://rafikulislammollaq-dev.github.io/astraos
+#
+# and the client line is therefore
+#
+#     deb [signed-by=/usr/share/keyrings/astraos-archive-keyring.gpg] \
+#         https://rafikulislammollaq-dev.github.io/astraos stable main
+#
+# SIGNING: when the signing key is present as a repository secret, the archive is
+# signed and the keyring is exported next to it. Without the key the archive is
+# published unsigned, and the publisher says so in the run summary - an unsigned
+# archive is published, but it is never published quietly.
+#
+# It runs after a green build, so the archive always matches the latest image, and
+# it can be re-run by hand to republish the last green build.
+
+on:
+  workflow_run:
+    workflows: ["Build ISO"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-apt-archive
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish the archive to the apt branch
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Find the build to publish
+        id: build
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            run_id="${{ github.event.workflow_run.id }}"
+          else
+            run_id="$(gh api "repos/${{ github.repository }}/actions/workflows/build-iso.yml/runs?status=success&per_page=1" \
+              --jq '.workflow_runs[0].id')"
+          fi
+          [ -n "$run_id" ] || { echo "no green build to publish"; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "publishing the archive of run $run_id"
+
+      - name: Download the archive
+        uses: actions/download-artifact@v4
+        with:
+          name: astraos-apt-repo
+          run-id: ${{ steps.build.outputs.run_id }}
+          path: archive
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sign it, when there is a key
+        id: sign
+        env:
+          # The key is a repository secret; the public half is what clients need.
+          APT_SIGNING_KEY: ${{ secrets.APT_ARCHIVE_SIGNING_KEY }}
+          APT_SIGNING_PASSPHRASE: ${{ secrets.APT_ARCHIVE_SIGNING_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APT_SIGNING_KEY:-}" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "no signing key in the secrets: publishing the archive unsigned"
+            exit 0
+          fi
+          printf '%s' "$APT_SIGNING_KEY" | base64 -d > "$RUNNER_TEMP/key.asc"
+          chmod 600 "$RUNNER_TEMP/key.asc"
+          gpg --batch --import "$RUNNER_TEMP/key.asc"
+          fingerprint="$(gpg --batch --list-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')"
+          if [ -n "${APT_SIGNING_PASSPHRASE:-}" ]; then
+            echo "$APT_SIGNING_PASSPHRASE" > "$RUNNER_TEMP/passphrase"
+            gpg --batch --pinentry-mode loopback --passphrase-file "$RUNNER_TEMP/passphrase" \
+              --clearsign --output archive/dists/stable/InRelease archive/dists/stable/Release
+            gpg --batch --pinentry-mode loopback --passphrase-file "$RUNNER_TEMP/passphrase" \
+              --armor --detach-sign --output archive/dists/stable/Release.gpg archive/dists/stable/Release
+          else
+            gpg --batch --clearsign --output archive/dists/stable/InRelease archive/dists/stable/Release
+            gpg --batch --armor --detach-sign --output archive/dists/stable/Release.gpg archive/dists/stable/Release
+          fi
+          gpg --batch --export "$fingerprint" > archive/astraos-archive-keyring.gpg
+          rm -f "$RUNNER_TEMP/key.asc" "$RUNNER_TEMP/passphrase"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo "signed with $fingerprint"
+
+      - name: Publish the archive to the apt branch
+        run: |
+          set -euo pipefail
+          # The branch holds the archive at its root, which is what Pages serves.
+          rm -rf publish
+          mkdir -p publish
+          cp -a archive/. publish/
+          rm -f publish/dists/stable/Release.gpg.bak 2>/dev/null || true
+          # An index page, so a human who opens the URL sees what this is.
+          cat > publish/index.html <<'HTML'
+          <!DOCTYPE html>
+          <html lang="en"><head><meta charset="utf-8">
+          <title>AstraOS archive</title></head>
+          <body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto">
+          <h1>AstraOS archive</h1>
+          <p>This is the APT archive for AstraOS 0.2.0 Alpha. An installed AstraOS
+          points apt at this address:</p>
+          <pre>deb [signed-by=/usr/share/keyrings/astraos-archive-keyring.gpg] \
+          https://rafikulislammollaq-dev.github.io/astraos stable main</pre>
+          <p>It is served from the <code>apt</code> branch of the repository, and it
+          is assembled by the build and published after a green one. The index lives at
+          <code>dists/stable/main/binary-amd64/Packages</code>.</p>
+          </body></html>
+          HTML
+          cd publish
+          git init -q .
+          git config user.name "astraos-publisher"
+          git config user.email "publisher@astraos.invalid"
+          git checkout -q -B apt
+          git add -A
+          git commit -q -m "archive: the packages from the build of run ${{ steps.build.outputs.run_id }}"
+          git push -q "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" apt
+
+      - name: Say what was published
+        run: |
+          {
+            echo ""
+            echo "### The APT archive"
+            echo ""
+            echo "- Published to: \`https://rafikulislammollaq-dev.github.io/astraos\`"
+            echo "- From build run: ${{ steps.build.outputs.run_id }}"
+            if [ "${{ steps.sign.outputs.signed }}" = "true" ]; then
+              echo "- Signed: yes (InRelease, Release.gpg and the public keyring are published)"
+            else
+              echo "- Signed: **no** - no signing key in the repository secrets, so the"
+              echo "  archive is unsigned. Clients that verify signatures cannot use it yet."
+            fi
+            echo "- Client line: \`deb [signed-by=/usr/share/keyrings/astraos-archive-keyring.gpg] https://rafikulislammollaq-dev.github.io/astraos stable main\`"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
