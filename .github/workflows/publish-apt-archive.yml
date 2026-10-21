@@ -43,6 +43,11 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Find the build to publish
         id: build
@@ -141,6 +146,15 @@ jobs:
           git add -A
           git commit -q -m "archive: the packages from the build of run ${{ steps.build.outputs.run_id }}"
           git push -q "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" apt
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: publish
+
+      - name: Deploy the archive to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
       - name: Say what was published
         run: |
