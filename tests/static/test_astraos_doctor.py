@@ -61,7 +61,7 @@ def _fixture_root(root: Path) -> Path:
     (root / "etc" / "astraos-release").write_text(
         'VERSION="0.2.0"\nCODENAME="Nova"\n', encoding="utf-8"
     )
-    (root / "etc" / "machine-id").write_text("3f2a9c1b8d7e6f5041322314150607080\n", encoding="utf-8")
+    (root / "etc" / "machine-id").write_text("3f2a9c1b8d7e6f504132231415060708\n", encoding="utf-8")
     (root / "proc" / "uptime").write_text("129845.22 987654.32\n", encoding="utf-8")
     (root / "proc" / "meminfo").write_text(
         "MemTotal:        8073820 kB\nMemAvailable:    5500000 kB\n"
@@ -166,7 +166,7 @@ def test_the_shareable_report_hides_what_identifies_the_machine() -> None:
         assert "192.168.1.42" not in shared, "the address survived the redaction"
         assert "192.168.1.1" not in shared, "the router's address survived the redaction"
         assert "astra-workstation" not in shared, "the host name survived the redaction"
-        assert "3f2a9c1b8d7e6f5041322314150607080" not in shared, (
+        assert "3f2a9c1b8d7e6f504132231415060708" not in shared, (
             "the machine id survived the redaction"
         )
         assert "<ip>" in shared, "the redaction did not say what it replaced"

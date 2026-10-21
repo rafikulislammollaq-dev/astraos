@@ -250,6 +250,9 @@ def test_bootstrap_does_not_need_a_tool_it_installs() -> None:
 REPORTERS = {
     "astraos-info", "astraos-help", "astraos-release-info",
     "astraos-welcome", "astraos-recovery-guide",
+    # Records what it can determine and writes "unknown" for the rest. The doctor
+    # is one of these: it must survive a missing tool and still print a report.
+    "astraos-doctor",
     # Records what it can determine and writes "unknown" for the rest.
     "generate-manifest.sh",
 }

@@ -135,7 +135,11 @@ else
                 ;;
         esac
     done <<< "$DF"
-    if ! printf '%s' "$DF" | awk 'NR>1 {print $5}' | grep -qE '^(8[0-9]|9[0-9]|100)%$'; then
+    # The disks that are nearly full, counted without a pipeline into `grep -q`: a
+    # pipe into grep can be killed by SIGPIPE under pipefail and report a failure
+    # that did not happen (the rule tests/static/test_scripts.py keeps).
+    crowded="$(printf '%s' "$DF" | awk 'NR>1 && $5 ~ /^(8[0-9]|9[0-9]|100)%$/ {n++} END {print n+0}')"
+    if [ "${crowded:-0}" -eq 0 ]; then
         section "  none"
     fi
 fi
