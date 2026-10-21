@@ -24,6 +24,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RESET = REPO_ROOT / "packages" / "astraos-system-tools" / "root" / "usr" / "bin" / "astraos-reset"
+SMOKE = (
+    REPO_ROOT / "config" / "live-build" / "config" / "includes.chroot"
+    / "usr" / "local" / "sbin" / "astraos-smoke"
+)
 
 DESCRIPTION = "the reset puts the machine back to how it shipped, and never deletes a file"
 
@@ -150,3 +154,11 @@ def test_the_command_never_deletes_a_file() -> None:
         )
     assert "read -r answer" in source, "the reset must ask before it changes anything"
     assert "RESET" in source, "the confirmation word must be in the script"
+
+
+def test_the_image_is_checked_for_the_recovery_tools() -> None:
+    """The doctor and the reset are only a way out if they are really in the image."""
+    smoke = SMOKE.read_text(encoding="utf-8")
+    assert 'ok "recovery-tools"' in smoke and 'bad "recovery-tools"' in smoke
+    assert "/usr/bin/astraos-doctor" in smoke
+    assert "/usr/bin/astraos-reset" in smoke

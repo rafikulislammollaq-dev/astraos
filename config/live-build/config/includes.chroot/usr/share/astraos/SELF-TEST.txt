@@ -65,6 +65,10 @@ WHAT IT CHECKS
     is installed where the "AstraOS Help" launcher opens it, it carries a search box
     and it has topics in it, so the entry in the menu cannot open an empty page;
 
+  * on the live medium, the tools a person reaches for when something is wrong are
+    present and run ("recovery-tools"): astraos-doctor and astraos-reset are asked for
+    their help text, which proves they are installed, executable and start;
+
   A line marked "note" is information, not a verdict: the shipped image has no AI model
   installed, so "assistant-status" reporting no model is expected.
 

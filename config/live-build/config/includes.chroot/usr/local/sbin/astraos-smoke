@@ -512,6 +512,20 @@ if [ "$MODE" = live ]; then
     fi
 fi
 
+# --- the tools a person reaches for when something is wrong (live medium only) --------
+# The doctor and the reset are the way out of a broken system, and they are only a
+# way out if they are really in the image and really run. Both are asked for their
+# help text: that proves the file is there, it is executable, and it starts.
+if [ "$MODE" = live ]; then
+    if [ -x /usr/bin/astraos-doctor ] && [ -x /usr/bin/astraos-reset ] \
+        && /usr/bin/astraos-doctor --help >/dev/null 2>&1 \
+        && /usr/bin/astraos-reset --help >/dev/null 2>&1; then
+        ok "recovery-tools" "astraos-doctor and astraos-reset are installed and run"
+    else
+        bad "recovery-tools" "astraos-doctor or astraos-reset is missing or does not run"
+    fi
+fi
+
 # --- the assistant the image ships ----------------------------------------------------
 # The model and engine are in the medium, not downloaded on first use. This checks the
 # files; ai-engine below actually executes the selected build on this CPU, and ai-guard
