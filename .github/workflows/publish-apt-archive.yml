@@ -106,6 +106,10 @@ jobs:
           echo "signed with $fingerprint"
 
       - name: Publish the archive to the apt branch
+        env:
+          # The token is put in the environment here for the same reason as above:
+          # a step does not get it by itself.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # The branch holds the archive at its root, which is what Pages serves.
