@@ -51,7 +51,10 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
             run_id="${{ github.event.workflow_run.id }}"
           else
-            run_id="$(gh api "repos/${{ github.repository }}/actions/workflows/build-iso.yml/runs?status=success&per_page=1" \
+            # gh needs a token of its own: GITHUB_TOKEN is not exported to the
+            # environment by default, and without one the API answers 404.
+            run_id="$(GH_TOKEN="${GITHUB_TOKEN}" gh api \
+              "repos/${{ github.repository }}/actions/workflows/build-iso.yml/runs?status=success&per_page=1" \
               --jq '.workflow_runs[0].id')"
           fi
           [ -n "$run_id" ] || { echo "no green build to publish"; exit 1; }
