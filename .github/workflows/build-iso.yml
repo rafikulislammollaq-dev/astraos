@@ -208,6 +208,24 @@ jobs:
             echo "apt updated from the archive and installed a package out of it"
           '
 
+      - name: Write the software bill of materials
+        run: |
+          # SPDX 2.3 for the packages this build produced. The script reads each
+          # .deb's own control data with a small ar reader, so it needs no dpkg-deb
+          # and runs anywhere Python does.
+          python3 scripts/generate-sbom.py \
+            --debs build/live-build/packages \
+            --out dist/astraos-sbom.spdx.json \
+            --name astraos-0.2.0-alpha
+
+      - name: Upload the software bill of materials
+        uses: actions/upload-artifact@v4
+        with:
+          name: astraos-sbom
+          retention-days: 14
+          if-no-files-found: error
+          path: dist/astraos-sbom.spdx.json
+
       - name: Upload the ISO
         if: ${{ inputs.upload_artifact }}
         uses: actions/upload-artifact@v4
@@ -517,3 +535,58 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
           path: install-out/
+
+  proof:
+    name: Write the proof page
+    # One page that says what this run proved and what it did not. It is written from
+    # the artifacts, never by hand: a missing artifact is reported as missing, so a
+    # partial run produces a partial page instead of a flattering one.
+    needs: [build, smoke-boot, boot-menus, install-boot]
+    if: ${{ always() && needs.build.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download the evidence
+        uses: actions/download-artifact@v4
+        with:
+          path: evidence
+          # The image itself is 2.4 GB and the page does not need it: the hash and
+          # the structural checks come from the build log.
+          pattern: |
+            astraos-*
+            !astraos-iso
+          merge-multiple: false
+
+      - name: Write the proof page
+        run: |
+          python3 scripts/generate-proof-page.py \
+            --evidence evidence \
+            --out dist/proof.md \
+            --run-id "$GITHUB_RUN_ID" \
+            --commit "$GITHUB_SHA"
+
+      - name: Publish the proof page
+        run: |
+          {
+            echo ""
+            echo "### The proof page"
+            echo ""
+            cat dist/proof.md
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the proof page
+        uses: actions/upload-artifact@v4
+        with:
+          name: astraos-proof
+          retention-days: 14
+          if-no-files-found: error
+          path: dist/proof.md

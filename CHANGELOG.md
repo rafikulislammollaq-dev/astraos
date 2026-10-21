@@ -19,6 +19,27 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Added
 
+- **A proof page for every run, written from the run's own artifacts.**
+  `scripts/generate-proof-page.py` reads what a run produced - the build log, the
+  boot self-test log and its capture, the three boot-menu logs with the Secure Boot
+  firmware's hashes, the install exercise and the APT archive - and writes one
+  document: the image and its SHA-256, the structural checks, the self-test's own
+  result, whether each firmware path reached the live login prompt, what the
+  installer did and what the installed system then reported, and the archive's
+  contents and signing state. Every line is read from an artifact; a missing
+  artifact is written down as missing ("not shown in this run"), and the page ends
+  with what the run does *not* prove. A new `proof` job downloads the artifacts,
+  writes the page, appends it to the run summary and uploads it as `astraos-proof`.
+  First CI run pending.
+
+- **A software bill of materials for the packages the build produced.**
+  `scripts/generate-sbom.py` writes an SPDX 2.3 document naming every AstraOS
+  package with its version, its SHA-256, its supplier and its licence, plus the
+  image's hash when it is given one. It reads each `.deb`'s own control data with a
+  small `ar` reader, so it needs no `dpkg-deb` and runs anywhere Python does, and
+  the document says plainly that Debian's packages keep their own licences. The
+  build job writes it and uploads it as `astraos-sbom`. First CI run pending.
+
 - **The model server can be caged, a changed file can be restored, and a running task
   can be watched (source; 42 tests, one skipped on this host, 2026-10-20).** Four
   Stage 3/4 gaps that earlier entries named as missing now have code and tests:

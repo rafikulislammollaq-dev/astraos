@@ -409,6 +409,30 @@ arriving and the installed package describing itself are all exercised at once. 
 remains untested is an *installed* AstraOS updating from a hosted archive: the hosting
 decision is open, and nothing in CI is a long-lived installed system.
 
+### The proof page and the bill of materials
+
+Two scripts turn a run's output into the two documents a reader asks for.
+
+```bash
+# One page: the image and its hash, the structural checks, the self-test's result,
+# whether each firmware path reached the login prompt, the install, the archive -
+# and what the run does not prove. Missing artifacts are written down as missing.
+python3 scripts/generate-proof-page.py --evidence evidence/ --out dist/proof.md
+
+# SPDX 2.3 for the packages the build produced. No dpkg-deb needed: the .deb files
+# are read directly.
+python3 scripts/generate-sbom.py --debs build/live-build/packages \
+    --out dist/astraos-sbom.spdx.json --name astraos-0.2.0-alpha
+```
+
+The evidence directory holds the CI artifacts, each in its own folder: the build
+log under `*/logs/`, the self-test's `serial.log` and `screenshot.png`, the three
+`menus-*/serial.log` files with the Secure Boot `firmware.txt`, and the install
+exercise's `done`, `serial2.log`, `calamares-session.log` and `greeter.png`. In CI
+the `proof` job downloads them, writes the page, appends it to the run summary and
+uploads it as the `astraos-proof` artifact; the bill of materials is written by the
+build job and uploaded as `astraos-sbom`.
+
 ## 9. After a successful build
 
 A structurally valid ISO is **not** a working operating system. Boot it:

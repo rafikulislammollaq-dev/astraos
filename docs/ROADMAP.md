@@ -611,9 +611,27 @@ because familiarity on an unproven base would be decoration.
   works / workaround / broken table. Prefer existing probe formats over inventing
   one.
 - [ ] **A CI-generated proof page**: the ISO hash, the structural checks, the boot
-  self-test log and screenshot, and the tested CPU matrix.
+  self-test log and screenshot, and the tested CPU matrix. The source exists
+  (2026-10-21): `scripts/generate-proof-page.py` reads a run's CI artifacts (the
+  build log, the boot self-test log and capture, the three boot-menu logs with the
+  Secure Boot firmware hashes, the install exercise and the APT archive) and writes
+  one page: the image and its hash, the structural checks, the self-test's own
+  result, whether each of the three firmware paths reached the live login prompt,
+  what the installer did and what the installed system then reported, and the
+  archive's contents and signing state. The rule it is built on: every line is read
+  from an artifact, a missing artifact is written down as missing ("not shown in
+  this run"), and the page always ends with what the run does *not* prove. A new
+  `proof` job in the CI workflow downloads the artifacts, writes the page, appends
+  it to the run summary and uploads it as `astraos-proof`. First CI run pending.
 - [ ] **Signed releases and an SBOM**; the Stage 1 APT repository becomes the
-  signed update channel.
+  signed update channel. The bill of materials exists (2026-10-21):
+  `scripts/generate-sbom.py` writes an SPDX 2.3 document for the packages the
+  build produced, reading each `.deb`'s own control data with a small `ar` reader
+  (so it needs no `dpkg-deb` and runs anywhere Python does): every AstraOS package
+  with its version, its SHA-256, its supplier and its licence, plus the image's own
+  hash when it is given one, and a note saying that Debian's packages keep their own
+  licences. The build job writes it and uploads it as `astraos-sbom`. First CI run
+  pending. Still open: signing the release itself, and the signed update channel.
 - [ ] **Packs**: keep every capability, but move Office, Media, Wine and Dev into
   opt-in first-run groups, and install only the firmware the machine needs — a
   smaller ISO without losing the "everything is available" claim.
