@@ -16,6 +16,19 @@ and it should not be installed on a machine holding data you cannot lose.**
 **No image has ever been installed to a disk, and no image has ever booted on physical
 hardware.** What has happened, with the record:
 
+- **2026-10-21, the release run (run 39564153919, commit bb2568e): PASS, and two new
+  artifacts.** The image's own self-test reported `RESULT: PASS (64 checks, 0
+  failed)` - the firewall, the phone arc, the capture, the capability profile, and
+  the new `help-centre` check, which requires the offline help centre, its launcher
+  and its topics to be installed in the image. All three firmware paths reached the
+  live login prompt: BIOS, UEFI, and UEFI under OVMF's Secure Boot-enforcing
+  firmware with the Microsoft keys enrolled. The installer finished with `rc=0`,
+  the installed system booted with no medium attached and passed 55 checks of its
+  own, and the APT archive held the eight packages with a fresh container
+  installing out of it. The run also published `astraos-sbom` (the bill of
+  materials) and `astraos-proof` (one page saying what the run proved and what it
+  did not). Evidence artifacts: `astraos-boot-self-test`, `astraos-boot-menus`,
+  `astraos-install-test`, `astraos-apt-repo`, `astraos-sbom`, `astraos-proof`.
 - **2026-10-16, the HUD on screen (run 38919644411, commit 8e40d99): PASS.** The
   image's self-test reported `RESULT: PASS (52 checks, 0 failed)` — the same firewall,
   phone and capture checks as the run below, plus the new `hud-on-screen` — and the

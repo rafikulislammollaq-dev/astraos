@@ -53,8 +53,10 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   died on exactly that. The page is generated and committed, and a test
   regenerates it and compares, so it cannot drift from the corpus. The first-run
   guidance (`astraos-welcome`, shown once at the first login of an installed
-  system) now points at it. First run pending: the page has never been opened in a
-  booted image yet.
+  system) now points at it. The image carries it: the boot self-test's new
+  `help-centre` check requires the page, the launcher and the topics, and it is
+  green in run 39564153919 (`RESULT: PASS (64 checks, 0 failed)`). It has not been
+  opened in a browser inside a booted image, because no browser is launched there.
 
 - **A proof page for every run, written from the run's own artifacts.**
   `scripts/generate-proof-page.py` reads what a run produced - the build log, the
@@ -67,7 +69,11 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   artifact is written down as missing ("not shown in this run"), and the page ends
   with what the run does *not* prove. A new `proof` job downloads the artifacts,
   writes the page, appends it to the run summary and uploads it as `astraos-proof`.
-  First CI run pending.
+  Green 2026-10-21, run 39564153919: the job published the page, and the page
+  names the image's SHA-256, the 33 structural checks, the self-test's 64 checks,
+  the three firmware paths (all reaching the live login prompt), the installer
+  (`rc=0`), the installed system's own 55 checks, the archive's eight packages,
+  and the machine each of the two boots ran on.
 
 - **A software bill of materials for the packages the build produced.**
   `scripts/generate-sbom.py` writes an SPDX 2.3 document naming every AstraOS
@@ -75,7 +81,9 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   image's hash when it is given one. It reads each `.deb`'s own control data with a
   small `ar` reader, so it needs no `dpkg-deb` and runs anywhere Python does, and
   the document says plainly that Debian's packages keep their own licences. The
-  build job writes it and uploads it as `astraos-sbom`. First CI run pending.
+  build job writes it and uploads it as `astraos-sbom`. Green 2026-10-21, run
+  39564153919: the artifact is there, and it names the eight packages with their
+  versions, their SHA-256 sums and their licences.
 
 - **The model server can be caged, a changed file can be restored, and a running task
   can be watched (source; 42 tests, one skipped on this host, 2026-10-20).** Four

@@ -583,7 +583,10 @@ because familiarity on an unproven base would be decoration.
   that filters on the title, the keywords and the body, and no network in it at
   all: no external script, no stylesheet, no image. A launcher ("AstraOS Help")
   puts it in the desktop menu. The page is generated and committed, and a test
-  regenerates it and compares, so it cannot drift from the corpus. The migration
+  regenerates it and compares, so it cannot drift from the corpus. The image
+  carries it: the boot self-test's `help-centre` check requires the page, the
+  launcher and the topics, and it is green in run 39564153919
+  (`RESULT: PASS (64 checks, 0 failed)`). The migration
   guides are written too (2026-10-21): `coming-from-windows`, `coming-from-android`,
   `coming-from-plasma` and `first-thirty-minutes`, each honest about what changes
   (apt, not pacman; Flatpak, not Snap; Xfce, not Plasma; an X11 session; ufw on by
@@ -674,7 +677,11 @@ because familiarity on an unproven base would be decoration.
   from an artifact, a missing artifact is written down as missing ("not shown in
   this run"), and the page always ends with what the run does *not* prove. A new
   `proof` job in the CI workflow downloads the artifacts, writes the page, appends
-  it to the run summary and uploads it as `astraos-proof`. First CI run pending.
+  it to the run summary and uploads it as `astraos-proof`. Green 2026-10-21, run
+  39564153919: the job published the page, and every line in it was read from that
+  run's artifacts - the image's hash, the 33 structural checks, the self-test's 64
+  checks, the three firmware paths, the installer, the archive, and what the run
+  does not prove.
 - [ ] **Signed releases and an SBOM**; the Stage 1 APT repository becomes the
   signed update channel. The bill of materials exists (2026-10-21):
   `scripts/generate-sbom.py` writes an SPDX 2.3 document for the packages the
@@ -682,8 +689,10 @@ because familiarity on an unproven base would be decoration.
   (so it needs no `dpkg-deb` and runs anywhere Python does): every AstraOS package
   with its version, its SHA-256, its supplier and its licence, plus the image's own
   hash when it is given one, and a note saying that Debian's packages keep their own
-  licences. The build job writes it and uploads it as `astraos-sbom`. First CI run
-  pending. Still open: signing the release itself, and the signed update channel.
+  licences. The build job writes it and uploads it as `astraos-sbom`. Green
+  2026-10-21, run 39564153919: the artifact names the eight packages with their
+  versions, their SHA-256 sums and their licences. Still open: signing the release
+  itself, and the signed update channel.
 - [ ] **Packs**: keep every capability, but move Office, Media, Wine and Dev into
   opt-in first-run groups, and install only the firmware the machine needs — a
   smaller ISO without losing the "everything is available" claim.
