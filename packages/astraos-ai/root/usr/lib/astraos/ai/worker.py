@@ -190,15 +190,20 @@ class Worker:
     # Talking to the model
     # ------------------------------------------------------------------
 
-    def _decide(self, request: str, context: str, engine) -> dict:
+    def _decide(self, request: str, context: str, engine,
+                history: list[dict] | None = None) -> dict:
         """Ask the worker what this request is: an answer, a task, or a plan.
 
         The prompt is short on purpose. A worker's context is small, and every
         line of instruction in it is a line taken from the knowledge and the
         request itself.
+
+        `history` is the conversation the page already has. Without it the
+        executor reads "do that" as a request with no referent and refuses it
+        as ambiguous; with it, the follow-up is a follow-up.
         """
         system = _prompt.worker_system()
-        user = _prompt.worker_user(request, context)
+        user = _prompt.worker_user(request, context, history)
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -221,7 +226,8 @@ class Worker:
     # The loop
     # ------------------------------------------------------------------
 
-    def handle(self, request: str, context: str = "") -> dict:
+    def handle(self, request: str, context: str = "",
+               history: list[dict] | None = None) -> dict:
         """Answer a request: directly, by doing one thing, or by handing it up.
 
         Returns the same shape whatever the answer was, because the callers
@@ -258,7 +264,7 @@ class Worker:
 
         try:
             with self.pool.asking("worker") as engine:
-                decision = self._decide(request, full_context, engine)
+                decision = self._decide(request, full_context, engine, history)
         except (TierUnavailable, EngineUnavailable) as exc:
             outcome["kind"] = "needs"
             outcome["text"] = str(exc)
@@ -292,7 +298,7 @@ class Worker:
             task_id = self._begin_planning(request, provenance)
             try:
                 with self.pool.asking("brain") as brain:
-                    plan = _planner.plan(brain, request, full_context)
+                    plan = _planner.plan(brain, request, full_context, history=history)
             except (TierUnavailable, EngineUnavailable) as exc:
                 outcome["kind"] = "degraded"
                 outcome["text"] = (
@@ -300,12 +306,15 @@ class Worker:
                     "one step instead. " + str(exc)
                 )
                 return self._single_step(
-                    request, full_context, outcome, provenance, task_id=task_id
+                    request, full_context, outcome, provenance, task_id=task_id,
+                    history=history,
                 )
             return self.run_plan(plan, outcome, provenance, task_id=task_id)
 
         if kind == "action":
-            return self._single_step(request, full_context, outcome, provenance)
+            return self._single_step(
+                request, full_context, outcome, provenance, history=history
+            )
 
         outcome["kind"] = "refuse"
         outcome["text"] = "I could not work out what was being asked for."
@@ -318,6 +327,7 @@ class Worker:
         outcome: dict,
         provenance: str = _guard.TRUSTED_PROVENANCE,
         task_id: str = "",
+        history: list[dict] | None = None,
     ) -> dict:
         """Do the one thing the worker named, and report what happened.
 
@@ -330,7 +340,7 @@ class Worker:
         self.journal.set_status(task_id, "running")
         try:
             with self.pool.asking("worker") as engine:
-                decision = self._decide(request, context, engine)
+                decision = self._decide(request, context, engine, history)
         except (TierUnavailable, EngineUnavailable) as exc:
             outcome["kind"] = "failed"
             outcome["text"] = f"The model could not be reached: {exc}"
@@ -364,7 +374,8 @@ class Worker:
         return outcome
 
     def events_for(self, request: str,
-                  context: str = "") -> Iterator[dict]:
+                  context: str = "",
+                  history: list[dict] | None = None) -> Iterator[dict]:
         """Run one request and yield its events. Same behaviour as handle().
 
         The event vocabulary:
@@ -403,7 +414,7 @@ class Worker:
 
         try:
             with self.pool.asking("worker") as engine:
-                decision = self._decide(request, full_context, engine)
+                decision = self._decide(request, full_context, engine, history)
         except (TierUnavailable, EngineUnavailable) as exc:
             outcome["kind"] = "needs"
             outcome["text"] = str(exc)
@@ -431,7 +442,7 @@ class Worker:
             task_id = self._begin_planning(request, provenance)
             try:
                 with self.pool.asking("brain") as brain:
-                    plan = _planner.plan(brain, request, full_context)
+                    plan = _planner.plan(brain, request, full_context, history=history)
             except (TierUnavailable, EngineUnavailable) as exc:
                 outcome["kind"] = "degraded"
                 outcome["text"] = (
@@ -439,7 +450,8 @@ class Worker:
                     "one step instead. " + str(exc)
                 )
                 for event in self._single_step_events(
-                    request, full_context, outcome, provenance, task_id=task_id
+                    request, full_context, outcome, provenance, task_id=task_id,
+                    history=history,
                 ):
                     yield event
                 return
@@ -452,7 +464,9 @@ class Worker:
             return
 
         if kind == "action":
-            for event in self._single_step_events(request, full_context, outcome, provenance):
+            for event in self._single_step_events(
+                request, full_context, outcome, provenance, history=history
+            ):
                 yield event
             return
 
@@ -467,6 +481,7 @@ class Worker:
         outcome: dict,
         provenance: str = _guard.TRUSTED_PROVENANCE,
         task_id: str = "",
+        history: list[dict] | None = None,
     ):
         """The one-step path, emitted rather than collected."""
         if not task_id:
@@ -474,7 +489,7 @@ class Worker:
         self.journal.set_status(task_id, "running")
         try:
             with self.pool.asking("worker") as engine:
-                decision = self._decide(request, context, engine)
+                decision = self._decide(request, context, engine, history)
         except (TierUnavailable, EngineUnavailable) as exc:
             outcome["kind"] = "failed"
             outcome["text"] = f"The model could not be reached: {exc}"

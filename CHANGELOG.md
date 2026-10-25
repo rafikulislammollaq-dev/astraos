@@ -706,6 +706,16 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
   anything else is raised unchanged and carries the server's words, so the next failure
   says what is actually wrong.
 
+- **The assistant page left its own thinking on screen, and forgot the conversation.**
+  Every `thinking` event appended a new italic line and nothing removed it, so ten
+  messages left ten "reading the request" lines above the chat; a turn that produced no
+  words kept an empty bubble labelled `astra`, because the clean-up counted the label as
+  an answer. One status line now replaces the previous one and disappears when the turn
+  ends, an empty turn says so instead of silently removing its bubble, and a confirmation
+  request is a warning rather than an error. `/api/work` also hands the executor and the
+  planner the conversation the page already sends, so "do that" has a referent instead of
+  being refused as ambiguous.
+
 - **The install exercise's phase-2 check grepped a file it had no permission to open, and
   reported a correct patch as missing.** Run 39238238246 completed an installation for the
   first time — the wizard walked every page, `unpackfs` filled the filesystems, the `mount`

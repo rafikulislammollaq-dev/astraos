@@ -48,6 +48,15 @@ from . import knowledge as _knowledge
 HISTORY_MESSAGES = 12
 MAX_MESSAGE_CHARS = 2000
 
+# What the executor is shown of the conversation before the request. It is
+# deliberately smaller than the chat page's history: the executor's window is
+# the smallest in the ladder, it is asked one question with a schema, and the
+# only follow-up it has to resolve is one like "do that" - which the previous
+# exchange answers. Four turns of six hundred characters each is under a tenth
+# of its window.
+WORKER_HISTORY_MESSAGES = 4
+WORKER_HISTORY_CHARS = 600
+
 _INSTRUCTIONS = """You are the AstraOS assistant. AstraOS is a Debian desktop and you are \
 running on the user's own computer: the model is a file on this machine and \
 nothing is sent anywhere.
@@ -157,15 +166,49 @@ The actions, and nothing else:
 """
 
 
-def worker_user(request: str, context: str = "") -> str:
-    """The request, plus anything retrieved for it.
+def conversation(history: list[dict] | None) -> list[dict]:
+    """The previous turns, as a prompt reads them: short, plain, oldest first.
+
+    The page sends its conversation on every request, and the executor used to
+    receive only the current sentence - so "do that", "and then?", "the other
+    one" arrived with no referent and were refused as ambiguous. A transcript
+    in the prompt is what turns a request into a follow-up.
+
+    Only user and assistant turns are kept, each cut to WORKER_HISTORY_CHARS,
+    and only the last WORKER_HISTORY_MESSAGES of them: this text sits in the
+    smallest window in the ladder, next to the machine's documentation.
+    """
+    kept: list[dict] = []
+    for item in history or []:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        content = item.get("content")
+        if role not in ("user", "assistant"):
+            continue
+        if not isinstance(content, str) or not content.strip():
+            continue
+        kept.append({"role": role, "content": content.strip()[:WORKER_HISTORY_CHARS]})
+    return kept[-WORKER_HISTORY_MESSAGES:]
+
+
+def worker_user(request: str, context: str = "",
+                history: list[dict] | None = None) -> str:
+    """The request, the conversation before it, and anything retrieved for it.
 
     The knowledge comes before the request rather than after, because it is
     background the model should be reading *through* when it decides - and
     because a passage the model has already seen is a fact it can act on, while
-    a passage that arrives afterwards is an aside.
+    a passage that arrives afterwards is an aside. The conversation comes first
+    of all, because it is what the request is a continuation of.
     """
     parts = []
+    earlier = conversation(history)
+    if earlier:
+        parts.append(
+            "Earlier in this conversation, oldest first:\n"
+            + "\n".join(f"{item['role']}: {item['content']}" for item in earlier)
+        )
     if context.strip():
         parts.append(
             "This is what the machine's own documentation says about the "

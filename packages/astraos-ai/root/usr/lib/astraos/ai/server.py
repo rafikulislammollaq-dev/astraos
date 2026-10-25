@@ -842,6 +842,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._json(400, {"ok": False,
                              "detail": 'Expected a non-empty "text" string.'})
             return
+        # The page sends the conversation it already has, and the executor used
+        # to be given only the last sentence - so "do that" arrived with no
+        # referent. normalize_history() is the same gate the chat endpoint uses:
+        # the browser is untrusted input, and only role/content pairs reach a
+        # prompt.
+        history = normalize_history(payload.get("history"))
 
         # The ladder is imported here, not at the top of the file. The five
         # modules the rest of the server needs are enough for the chat page to
@@ -861,7 +867,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         self._begin_stream()
         try:
-            for event in agent.events_for(text.strip()):
+            for event in agent.events_for(text.strip(), history=history):
                 self._send_event(event)
         except (BrokenPipeError, ConnectionResetError):
             # The page went away mid-task. Nothing to report to anyone.

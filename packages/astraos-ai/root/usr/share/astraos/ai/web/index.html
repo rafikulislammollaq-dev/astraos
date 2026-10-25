@@ -712,6 +712,9 @@
     canRecord: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder),
     serverSTT: false,
     serverTTS: false,
+    // The one status line of the turn in progress. Replaced rather than
+    // appended, and removed when the turn ends: see addSystemNote().
+    note: null,
     canSpeak: "speechSynthesis" in window && typeof window.SpeechSynthesisUtterance === "function"
   };
 
@@ -742,11 +745,36 @@
   }
 
   function addSystemNote(text) {
-    const note = textEl("div", "step step-note", text);
-    note.dataset.state = "thinking";
-    els.transcript.appendChild(note);
+    // One status line per turn, not one per event. The executor says "reading
+    // the request" and the middle brain says "the middle brain is reading the
+    // request"; appending both, and keeping both after the answer arrives,
+    // turned the transcript into a log of the assistant thinking to itself.
+    let note = state.note;
+    if (!note || !note.isConnected) {
+      note = textEl("div", "step step-note", text);
+      note.dataset.state = "thinking";
+      els.transcript.appendChild(note);
+      state.note = note;
+    } else {
+      note.textContent = text;
+    }
     autoScroll(true);
     return note;
+  }
+
+  function clearSystemNote() {
+    if (state.note) state.note.remove();
+    state.note = null;
+  }
+
+  function hasAnswer(bubble) {
+    // The bubble's label ("astra") is a child too, so textContent alone is
+    // never empty and the old clean-up never removed an unanswered bubble -
+    // a failed turn left a bubble containing nothing but the word "astra".
+    return Array.from(bubble.childNodes).some((node) =>
+      !(node.classList && node.classList.contains("msg-label")) &&
+      String(node.textContent || "").trim()
+    );
   }
 
   function addStepNote(step, state, output) {
@@ -978,12 +1006,19 @@
         bubble.appendChild(document.createTextNode(answer));
         autoScroll(false);
       }
+      if (!answer.trim()) {
+        // A turn that produced no words must say so. Removing an empty bubble
+        // and stopping is what made a model failure look like the page dying.
+        addMessage("warn", "The assistant finished without an answer. Try again, " +
+          "or ask a shorter question.");
+      }
       if (answer.trim()) state.history.push({ role: "assistant", content: answer });
       if (answer.trim() && state.speakMode !== "off") speak(answer);
     } catch (err) {
       addMessage("error", "The assistant could not answer: " + err.message);
     } finally {
-      if (!bubble.textContent.trim()) bubble.remove();
+      if (!hasAnswer(bubble)) bubble.remove();
+      clearSystemNote();
       state.busy = false;
       els.send.disabled = false;
       setPhase("idle");
@@ -1000,6 +1035,8 @@
       return "";
     }
     if (event.type === "step-start" && plainObject(event.step)) {
+      // The work is visible now; a line saying it is being read is stale.
+      clearSystemNote();
       addStepNote(event.step, "running");
       return "";
     }
@@ -1008,7 +1045,9 @@
       return "";
     }
     if (event.type === "needs") {
-      addMessage("error", String(event.text || "This needs a human's confirmation."));
+      // A confirmation is a question, not a failure: error red made a normal
+      // "may I do this?" look like something had broken.
+      addMessage("warn", String(event.text || "This needs a human's confirmation."));
       return "";
     }
     if (event.type === "delta") {
@@ -1018,6 +1057,7 @@
       return chunk;
     }
     if (event.type === "plan" && plainObject(event.plan)) {
+      clearSystemNote();
       stripPlanText(bubble, event.plan);
       renderPlan(event.plan, Array.isArray(event.catalog) ? event.catalog : []);
       autoScroll(true);

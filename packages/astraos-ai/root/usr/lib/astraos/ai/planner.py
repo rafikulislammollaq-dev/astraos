@@ -50,6 +50,7 @@ import re
 from typing import Callable
 
 from . import actions as _actions
+from . import prompt as _prompt
 from . import skills as _skills
 
 # How many steps a plan may have. Not a soft target: the grammar refuses a
@@ -103,7 +104,8 @@ def action_catalog() -> list[str]:
 
 
 def plan(engine, request: str, context: str = "",
-         on_event: Callable[[dict], None] | None = None) -> list[dict]:
+         on_event: Callable[[dict], None] | None = None,
+         history: list[dict] | None = None) -> list[dict]:
     """Ask the middle brain for a plan, and return it as a list of steps.
 
     The steps come back in the shape worker.run_plan() expects, which is the
@@ -126,7 +128,7 @@ def plan(engine, request: str, context: str = "",
     emit = on_event or (lambda event: None)
     messages = [
         {"role": "system", "content": system_prompt()},
-        {"role": "user", "content": user_prompt(request, context)},
+        {"role": "user", "content": user_prompt(request, context, history)},
     ]
 
     emit({"type": "thinking", "text": "the middle brain is reading the request"})
@@ -231,9 +233,22 @@ Rules for a plan:
 """
 
 
-def user_prompt(request: str, context: str = "") -> str:
-    """The request, the skills that exist, and anything retrieved for it."""
-    parts = [f"The user asks: {request.strip()}"]
+def user_prompt(request: str, context: str = "",
+                history: list[dict] | None = None) -> str:
+    """The request, the skills that exist, and anything retrieved for it.
+
+    `history` is the conversation the page already had. A plan written for
+    "move them to the pictures folder" is only correct if "them" has a
+    referent, and the referent is in the previous turn.
+    """
+    parts = []
+    earlier = _prompt.conversation(history)
+    if earlier:
+        parts.append(
+            "Earlier in this conversation, oldest first:\n"
+            + "\n".join(f"{item['role']}: {item['content']}" for item in earlier)
+        )
+    parts.append(f"The user asks: {request.strip()}")
     catalogue = _skills.catalogue()
     if catalogue:
         parts.append(

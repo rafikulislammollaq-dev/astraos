@@ -727,6 +727,27 @@ def test_index_html_is_the_finished_product_shape() -> None:
         assert needle in text, f"the page is missing {needle!r} ({why})"
 
 
+def test_index_html_keeps_the_thinking_line_to_one_per_turn() -> None:
+    """A status line is replaced during the turn and removed after it, not kept.
+
+    Every "thinking" event used to append a new italic line and nothing removed
+    them, so ten messages left ten "reading the request" lines above the
+    conversation. A turn that produced no words also kept its bubble: the
+    clean-up tested bubble.textContent, which always contains the "astra"
+    label, so the page showed a labelled empty bubble and said nothing.
+    """
+    text = INDEX_HTML.read_text(encoding="utf-8")
+
+    assert "state.note = note" in text, (
+        "the page appends a status line per thinking event instead of replacing one")
+    assert "clearSystemNote()" in text, (
+        "a status line is never removed, so every turn leaves its thinking behind")
+    assert "hasAnswer(bubble)" in text, (
+        "the empty-bubble clean-up counts the \"astra\" label as an answer again")
+    assert "finished without an answer" in text, (
+        "a turn with nothing to say removes its bubble instead of saying so")
+
+
 @needs_a_server
 def test_server_refuses_to_say_it_is_ready_without_the_engine(app) -> None:
     # Belt and braces for the not-ready path: an engine object that failed to

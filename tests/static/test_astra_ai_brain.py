@@ -47,7 +47,7 @@ sys.path.insert(0, str(REPO_ROOT / "tests" / "lib"))
 
 from astraos_testlib import SkipTest, read  # noqa: E402
 
-from astraos.ai import actions, config, journal, knowledge, planner, skills  # noqa: E402
+from astraos.ai import actions, config, journal, knowledge, planner, prompt, skills  # noqa: E402
 from astraos.ai import setup as ai_setup, tiers, worker  # noqa: E402
 
 DESCRIPTION = "the ladder, the retrieval and the worker keep their promises"
@@ -826,6 +826,28 @@ def test_plan_returns_nothing_for_an_empty_answer() -> None:
             "answer it should report as one")
 
 
+def test_the_planner_sees_the_conversation_before_the_request() -> None:
+    """The brain writes plans for follow-ups, so it needs the turn before them.
+
+    "Move them to the pictures folder" is only a plan if "them" has a referent;
+    without the conversation the brain guesses or refuses.
+    """
+    text = planner.user_prompt(
+        "move them to the pictures folder",
+        history=[
+            {"role": "user", "content": "where did the screenshots go"},
+            {"role": "assistant", "content": "They are in ~/Pictures/Screenshots."},
+        ],
+    )
+
+    assert "Earlier in this conversation" in text
+    assert "where did the screenshots go" in text
+    assert text.index("where did the screenshots go") < text.index(
+        "The user asks: move them to the pictures folder"), (
+        "the conversation was put after the request, where a model reads it as "
+        "a description rather than as context")
+
+
 def test_the_user_prompt_offers_the_installed_skills() -> None:
     with _library_paths():
         text = planner.user_prompt("sort out my photos")
@@ -854,6 +876,53 @@ def test_the_worker_grammars_are_closed() -> None:
         "the worker's reply kinds changed, and one of them is the branch that "
         "escalates instead of guessing")
     assert worker.TASK_SCHEMA["required"] == ["action", "args"]
+
+
+def test_the_executor_is_shown_the_conversation_so_a_follow_up_makes_sense() -> None:
+    """The page sends history, and /api/work used to drop it on the floor.
+
+    "Open VLC" followed by "do that" is one conversation; the executor was given
+    only the second sentence, so "that" had no referent and a correct follow-up
+    was refused as ambiguous. The turns are part of its prompt now.
+    """
+    engine = _StubEngine(
+        '{"kind": "action", "action": "open_app", "args": {"name": "vlc"}}')
+    history = [
+        {"role": "user", "content": "how do I install vlc"},
+        {"role": "assistant", "content": "Open Discover and search for VLC."},
+        {"role": "system", "content": "a system turn from the page is not conversation"},
+    ]
+    runner = worker.Worker(_StubPool(), journal=object())
+
+    decision = runner._decide("do that", "", engine, history)
+
+    assert decision["action"] == "open_app"
+    prompt_text = engine.calls[0]["messages"][-1]["content"]
+    assert "Earlier in this conversation" in prompt_text, (
+        "the executor was given the request with no conversation before it")
+    assert "how do I install vlc" in prompt_text
+    assert "Open Discover and search for VLC." in prompt_text
+    assert "a system turn from the page" not in prompt_text, (
+        "a system turn from the browser was treated as part of the conversation")
+    assert prompt_text.rstrip().endswith("The user asks: do that")
+
+
+def test_the_executor_history_is_bounded_by_size_and_count() -> None:
+    """The transcript sits in the smallest window in the ladder, so it is capped."""
+    history = [
+        {"role": "user", "content": f"turn {index} " + "x" * 900}
+        for index in range(10)
+    ]
+
+    text = prompt.worker_user("now", history=history)
+    kept = prompt.conversation(history)
+
+    assert len(kept) == prompt.WORKER_HISTORY_MESSAGES, (
+        f"the whole conversation reached the executor's prompt: {len(kept)} turns")
+    assert all(len(item["content"]) <= prompt.WORKER_HISTORY_CHARS for item in kept), (
+        "a single past turn was not cut to the executor's budget")
+    assert "turn 0 " not in text, "the oldest turn was kept instead of the newest"
+    assert "turn 9 " in text, "the most recent turn was dropped"
 
 
 def test_question_for_names_the_action_and_its_arguments() -> None:
