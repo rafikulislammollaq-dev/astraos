@@ -55,6 +55,18 @@ START_TIMEOUT_SECONDS = 120
 CHAT_PATH = "/v1/chat/completions"
 HEALTH_PATH = "/health"
 
+# The request body may not exceed the window the server was started with:
+# llama.cpp answers 400 ("the request exceeds the available context size")
+# rather than truncating. The prompt is fitted to the window in _fit(), and
+# these two numbers are what make the fit safe.
+#
+# CONTEXT_MARGIN_TOKENS is headroom for the difference between our deliberately
+# pessimistic estimate and the model's own tokenizer, plus the template's own
+# markers. MIN_REPLY_TOKENS is the point below which asking for an answer is not
+# worth doing: a 20-token reply cannot hold one JSON decision.
+CONTEXT_MARGIN_TOKENS = 96
+MIN_REPLY_TOKENS = 64
+
 
 class EngineUnavailable(RuntimeError):
     """The engine cannot answer, with a one-line reason a user can act on."""
@@ -167,6 +179,15 @@ class Engine:
             # Kept explicit even though it is the default: on this hardware it
             # is the difference between "CPU only" and a failed start.
             "-ngl", str(int(self.settings.get("gpu_layers") or 0)),
+            # Jinja is what makes the model's own chat template the one the
+            # server applies. Both request shapes below depend on it: an
+            # answer constrained by `response_format`, and a template that
+            # knows what `enable_thinking` means. Without this flag llama.cpp
+            # picks a template from the model's name and ignores the extra
+            # template arguments, so an unfamiliar model is prompted in a
+            # format it was never trained on - and some builds refuse the
+            # request outright with a 400 rather than answer badly.
+            "--jinja",
         ]
         return argv
 
@@ -413,6 +434,120 @@ class Engine:
         body = self._body(messages, stream)
         return self._stream(body) if stream else self._complete(body)
 
+    def _context(self) -> int:
+        """The context window the server was started with, in tokens."""
+        try:
+            value = int(self.settings.get("context") or _config.DEFAULTS["context"])
+        except (TypeError, ValueError):
+            value = int(_config.DEFAULTS["context"])
+        return max(1, value)
+
+    def _fit(self, messages: list[dict], max_tokens: int) -> tuple[list[dict], int]:
+        """Trim the prompt and the reply ceiling until the two fit the window.
+
+        WHY THIS EXISTS
+
+        llama.cpp does not shorten a prompt that is too long; it refuses the
+        request with 400 and the words "the request exceeds the available
+        context size". Every caller of this file put the whole thing in: a
+        4096-token window, a ~1000-token system prompt, up to three knowledge
+        documents of 2-6 KB each, twelve history messages, and a 512-token
+        reply. The sum is over 4096 for an ordinary question about a well
+        documented subject, and over it by a mile once a conversation has a
+        few turns - which is exactly the shape of "it worked once and then
+        kept failing".
+
+        WHAT IS KEPT
+
+        The system message stays, because it is the instructions: a trimmed
+        prompt without them is a model with no idea what it is doing. The
+        oldest history goes first, one message at a time. If a single message
+        is still too long, its end is kept and its beginning is replaced with
+        an ellipsis - the question is at the end of a worker request (the
+        documentation is prepended) and at the end of the last user message.
+
+        What is left must still be a conversation a chat template accepts, so
+        the turns are normalized after trimming (_alternating): a template that
+        is applied with jinja raises when the roles do not alternate, and the
+        server turns that exception into a 500.
+
+        The reply ceiling is then clamped to what actually remains, so the
+        request that goes out is always prompt + reply + margin <= context,
+        whatever the caller set `max_tokens` to.
+
+        Raises EngineUnavailable when even the system message does not fit:
+        that is a `context` setting too small for this assistant, and no
+        amount of trimming makes it a request that can be answered.
+        """
+        context = self._context()
+        try:
+            wanted = int(max_tokens)
+        except (TypeError, ValueError):
+            wanted = int(_config.DEFAULTS["max_tokens"])
+        wanted = max(MIN_REPLY_TOKENS, wanted)
+        # Trimming is budgeted with a reply of at most half the window: a
+        # request that spends the whole window on the answer leaves nothing for
+        # the question. The ceiling is recomputed from what remains below.
+        reply = min(wanted, max(MIN_REPLY_TOKENS, context // 2))
+
+        prepared: list[dict] = []
+        for item in messages or []:
+            if not isinstance(item, dict):
+                continue
+            prepared.append({
+                "role": str(item.get("role") or "user"),
+                "content": str(item.get("content") or ""),
+            })
+        if not prepared:
+            return [], reply
+
+        system = prepared[0] if prepared[0]["role"] == "system" else None
+        body = _alternating(prepared[1:] if system is not None else prepared)
+
+        def cost(items: list[dict]) -> int:
+            # Four tokens per message for the role markers and the separators
+            # a chat template adds around the text.
+            return sum(_estimate_tokens(item["content"]) + 4 for item in items)
+
+        fixed = cost([system]) if system is not None else 0
+        if fixed + reply + CONTEXT_MARGIN_TOKENS > context:
+            raise EngineUnavailable(
+                "the model's context window is too small for the assistant's "
+                f"own instructions ({context} tokens); raise \"context\" in "
+                "ai.json"
+            )
+
+        budget = context - reply - CONTEXT_MARGIN_TOKENS
+        while body and fixed + cost(body) > budget:
+            if len(body) > 1:
+                body.pop(0)
+                continue
+
+            last = body[0]
+            text = last["content"]
+            room = budget - fixed
+            low, high = 0, len(text)
+            while low < high:
+                middle = (low + high + 1) // 2
+                if _estimate_tokens("…" + text[-middle:]) + 4 <= room:
+                    low = middle
+                else:
+                    high = middle - 1
+            if low <= 0:
+                raise EngineUnavailable(
+                    "the model's context window is too small to hold this "
+                    f"request ({context} tokens); raise \"context\" in ai.json"
+                )
+            last["content"] = "…" + text[-low:]
+            break
+
+        prompt = fixed + cost(body)
+        reply = max(
+            MIN_REPLY_TOKENS,
+            min(wanted, context - prompt - CONTEXT_MARGIN_TOKENS),
+        )
+        return ([system] if system is not None else []) + body, reply
+
     def _body(self, messages: list[dict], stream: bool, **extra) -> dict:
         """The chat completion body. Every ask goes through here.
 
@@ -421,16 +556,26 @@ class Engine:
         a keyword rather than a positional list because there will be more of
         them, and because a call that needs both must be able to say so in one
         line that reads as one intention.
+
+        The messages and the reply ceiling are fitted to the context window
+        here, in the one place every request passes through, rather than in
+        each caller: a caller that forgot would reintroduce the 400 this
+        package spent a release chasing.
         """
+        try:
+            wanted = int(
+                self.settings.get("max_tokens") or _config.DEFAULTS["max_tokens"]
+            )
+        except (TypeError, ValueError):
+            wanted = int(_config.DEFAULTS["max_tokens"])
+        fitted, reply = self._fit(messages, wanted)
         body = {
-            "messages": messages,
+            "messages": fitted,
             "stream": bool(stream),
             "temperature": float(
                 self.settings.get("temperature") or _config.DEFAULTS["temperature"]
             ),
-            "max_tokens": int(
-                self.settings.get("max_tokens") or _config.DEFAULTS["max_tokens"]
-            ),
+            "max_tokens": reply,
         }
         body.update(extra)
         return body
@@ -466,6 +611,20 @@ class Engine:
         A constrained answer is short (a tool call is a few dozen tokens) and it
         is parsed as a whole anyway, so streaming would only add a code path
         that cannot be used. stream=True is accepted for symmetry and ignored.
+
+        WHY THERE IS A SECOND ATTEMPT
+
+        `response_format` is only as reliable as the engine build and the
+        model's parser. llama.cpp has shipped parsers that accept the field and
+        then generate unconstrained text (Ling 3.0, fixed in #29813), and some
+        templates make the server refuse the request outright. A refusal caused
+        by the constraint is not a reason to lose the answer: the same question
+        is asked once more with the schema written into the prompt, which is
+        weaker - the model can break it - but the caller's parser was written
+        for exactly that, and an answer that is usually right beats a 400 that
+        is never right. Every other refusal is raised unchanged, because a
+        request that is too long or a server that is not running is not fixed
+        by sending it again.
         """
         self.start()
 
@@ -475,13 +634,36 @@ class Engine:
             response_format={"type": "json_object", "schema": schema},
             chat_template_kwargs={"enable_thinking": False},
         )
-        return self._complete(body)
+        try:
+            text = "".join(self._complete(body))
+        except EngineUnavailable as exc:
+            if not _constraint_refused(str(exc)):
+                raise
+            _log("the model server refused the JSON constraint; asking for JSON in words")
+            try:
+                text = "".join(
+                    self._complete(self._body(_soft_json(messages, schema), False))
+                )
+            except EngineUnavailable as again:
+                raise EngineUnavailable(
+                    f"{exc}; asking for the same answer without the constraint "
+                    f"also failed: {again}"
+                ) from again
+        return iter([text])
 
     def _complete(self, body: dict) -> Iterator[str]:
         """One non-streaming answer."""
         try:
             with urllib.request.urlopen(self._request(body, False), timeout=300) as response:
                 data = json.loads(response.read().decode("utf-8", "replace"))
+        except urllib.error.HTTPError as exc:
+            # A refusal, not a silence: the server said why, and its words are
+            # the only thing that distinguishes a chat template the model
+            # cannot apply from a request that grew past the context window.
+            raise EngineUnavailable(
+                f"the model server refused the request ({exc.code} {exc.reason}): "
+                f"{_server_reason(exc)}"
+            ) from exc
         except (urllib.error.URLError, OSError, ValueError) as exc:
             raise EngineUnavailable(f"the model server did not answer: {exc}") from exc
 
@@ -513,8 +695,153 @@ class Engine:
                     delta = _first_delta(event)
                     if delta:
                         yield delta
+        except urllib.error.HTTPError as exc:
+            raise EngineUnavailable(
+                f"the model server refused the request ({exc.code} {exc.reason}): "
+                f"{_server_reason(exc)}"
+            ) from exc
         except (urllib.error.URLError, OSError) as exc:
             raise EngineUnavailable(f"the model server did not answer: {exc}") from exc
+
+
+def _server_reason(exc: urllib.error.HTTPError, limit: int = 400) -> str:
+    """The server's own words for a refused request, or a sentence saying it sent none.
+
+    WHY THIS EXISTS AT ALL
+
+    llama.cpp answers a 400 or a 500 with a JSON body that names the exact
+    reason - "Failed to parse grammar", "the request exceeds the available
+    context size", "this model does not seem to support chat completion" -
+    and this file used to keep only urllib's status line. The user was told
+    "HTTP Error 400: Bad Request", which is the one thing they already knew,
+    while the answer sat in a response nobody read. Three separate defects
+    look identical through that loss: a body the engine will not accept, a
+    prompt longer than the context, and a chat template the model cannot
+    apply. Each has a different fix, and none of them can be guessed from
+    "Bad Request".
+
+    The body is read exactly once, defensively: an error response whose body
+    is missing, empty or not JSON still has to produce a sentence, because
+    the alternative is an exception raised while reporting an exception.
+    """
+    try:
+        raw = exc.read()
+    except (OSError, ValueError):
+        raw = b""
+
+    text = raw.decode("utf-8", "replace").strip()
+    if text:
+        try:
+            data = json.loads(text)
+        except ValueError:
+            data = None
+        if isinstance(data, dict):
+            error = data.get("error")
+            if isinstance(error, dict) and isinstance(error.get("message"), str):
+                text = error["message"].strip()
+            elif isinstance(error, str) and error.strip():
+                text = error.strip()
+
+    # Whitespace is collapsed and the length capped, because this string is
+    # printed on one terminal line and rendered as one bubble in the page: a
+    # body that is a stack of JSON or a paragraph of jinja's own traceback
+    # would otherwise be the whole message.
+    return " ".join(text.split())[:limit] or "the server sent no reason"
+
+
+def _estimate_tokens(text: str) -> int:
+    """A deliberately pessimistic token count for one message's text.
+
+    The number that matters is never *under* the truth: an estimate that is low
+    lets a request past _fit() and straight into the 400 that check exists to
+    prevent. English prose runs about four characters to the token in these
+    vocabularies, so ASCII is counted at three; every other character counts as
+    two tokens, which is roughly how a byte-fallback tokenizer reads Bengali,
+    Chinese or an emoji. CONTEXT_MARGIN_TOKENS covers what is left.
+    """
+    wide = sum(1 for char in text if ord(char) > 127)
+    narrow = len(text) - wide
+    return (narrow + 2) // 3 + wide * 2
+
+
+# What a refusal about the *constraint* looks like, as opposed to a refusal
+# about the request. Kept as words rather than status codes because llama.cpp
+# uses 400 for almost everything it dislikes; the body is the only signal that
+# separates "I cannot apply your grammar" from "your prompt is too long".
+_CONSTRAINT_WORDS = (
+    "grammar",
+    "schema",
+    "response_format",
+    "chat template",
+    "template",
+    "chat completion",
+    "jinja",
+)
+
+
+def _alternating(messages: list[dict]) -> list[dict]:
+    """A conversation a jinja chat template will accept: user first, one voice at a time.
+
+    The Qwen family's template raises `Conversation roles must alternate
+    user/assistant/user/assistant/...` and llama.cpp turns that exception into a
+    500 for the request. History arrives as whatever the caller stored, which
+    after a failed turn (the user message was kept, the answer was not) or after
+    the oldest turns were trimmed can begin with an assistant turn or contain
+    two user turns in a row. Dropping a leading assistant turn and merging two
+    adjacent turns from the same speaker is lossless for the model and makes
+    the template legal.
+    """
+    normalized: list[dict] = []
+    for item in messages:
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        role = item.get("role")
+        if not normalized and role != "user":
+            continue
+        if normalized and normalized[-1]["role"] == role:
+            normalized[-1]["content"] = (
+                normalized[-1]["content"].rstrip() + "\n\n" + content
+            )
+            continue
+        normalized.append({"role": role, "content": content})
+    return normalized
+
+
+def _constraint_refused(reason: str) -> bool:
+    """True when a refused request failed because of `response_format`.
+
+    A model whose template the server cannot apply is included: the schema is
+    what the template was asked to carry, and asking again without it is the
+    one variation that can succeed.
+    """
+    lowered = (reason or "").lower()
+    return any(word in lowered for word in _CONSTRAINT_WORDS)
+
+
+def _soft_json(messages: list[dict], schema: dict) -> list[dict]:
+    """The same conversation, with the schema written into the prompt instead.
+
+    The fallback for an engine that refuses grammar-constrained generation.
+    The instruction is appended to the last user message rather than added as
+    a new system message: llama.cpp templates place system messages at the
+    start of the conversation, so a system message arriving after the question
+    is one more thing a small model has to reconcile, not an instruction it
+    follows.
+    """
+    prepared = [dict(item) for item in messages or [] if isinstance(item, dict)]
+    instruction = (
+        "Reply with one JSON object and nothing else - no markdown, no code "
+        "fence, no words before or after it. It must match this schema:\n"
+        + json.dumps(schema, ensure_ascii=False, sort_keys=True)
+    )
+    if prepared and prepared[-1].get("role") == "user":
+        prepared[-1]["content"] = (
+            str(prepared[-1].get("content") or "").rstrip() + "\n\n" + instruction
+        )
+    else:
+        prepared.append({"role": "user", "content": instruction})
+    return prepared
 
 
 def _first_choice(data: dict) -> dict:

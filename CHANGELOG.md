@@ -691,6 +691,21 @@ The pinned base is recorded in `VERSION` and `config/distribution.env`.
 
 ### Fixed
 
+- **The assistant's "HTTP Error 400: Bad Request" had three different causes, and the
+  message named none of them.** The executor and the chat page send llama.cpp three
+  things it can refuse: a prompt longer than the 4096-token window (a ~1000-token system
+  prompt, three knowledge documents, twelve history messages and a 512-token reply do
+  not fit), a `response_format` grammar the build's parser will not apply, and a
+  conversation whose roles a jinja template rejects. A refusal also discarded the
+  server's own explanation, so all three read as the same status line. `llm.py` now fits
+  every request to the window before sending it (the system prompt is kept, the oldest
+  history and then the front of the longest message go, and the reply ceiling is clamped
+  to what remains), starts `llama-server` with `--jinja` so the model's own chat template
+  is the one applied, normalizes the turns to user/assistant alternation, and retries a
+  refused constraint once with the schema written into the prompt. A refusal about
+  anything else is raised unchanged and carries the server's words, so the next failure
+  says what is actually wrong.
+
 - **The install exercise's phase-2 check grepped a file it had no permission to open, and
   reported a correct patch as missing.** Run 39238238246 completed an installation for the
   first time — the wizard walked every page, `unpackfs` filled the filesystems, the `mount`

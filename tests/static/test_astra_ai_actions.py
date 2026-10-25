@@ -44,6 +44,7 @@ import subprocess
 import sys
 import tempfile
 import types
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -554,6 +555,321 @@ def test_the_engine_starts_nothing_and_says_what_is_missing() -> None:
         assert str(exc), "EngineUnavailable carried no message"
     else:
         raise AssertionError("ask() proceeded with no llama-server and no model")
+
+
+def test_a_refused_request_reports_why_not_only_that_it_was_refused() -> None:
+    """The model server's reason must survive the trip back to the user.
+
+    llama.cpp answers a 400 with a body that names the exact reason - "Failed
+    to parse grammar", "the request exceeds the available context size",
+    "this model does not seem to support chat completion" - and llm.py used
+    to keep only urllib's status line. Three unrelated defects were then
+    reported identically as "HTTP Error 400: Bad Request", which is the one
+    thing the status code had already said, and none of them could be fixed
+    from the message that reached the terminal or the page.
+    """
+    reason = json.dumps({
+        "error": {"code": 400, "message": "Failed to parse grammar",
+                  "type": "invalid_request_error"},
+    }).encode("utf-8")
+    calls: list[str] = []
+
+    def refuse(request, timeout=None):  # noqa: ANN001, ANN003
+        calls.append(request.full_url)
+        raise urllib.error.HTTPError(
+            request.full_url, 400, "Bad Request",
+            {"Content-Type": "application/json"}, io.BytesIO(reason),
+        )
+
+    original = urllib.request.urlopen
+    urllib.request.urlopen = refuse
+    try:
+        engine = llm.Engine({})
+        messages = [{"role": "user", "content": "hello"}]
+        paths = (
+            ("whole", lambda: list(engine._complete(engine._body(messages, False)))),
+            ("streaming", lambda: list(engine._stream(engine._body(messages, True)))),
+        )
+        for label, produce in paths:
+            try:
+                produce()
+            except llm.EngineUnavailable as exc:
+                message = str(exc)
+                assert "400" in message, f"the {label} path hid the status: {message!r}"
+                assert "Failed to parse grammar" in message, (
+                    f"the {label} path threw away the server's own words: {message!r}"
+                )
+            else:
+                raise AssertionError(f"the {label} path did not refuse at all")
+        assert calls, "nothing reached the model server, so nothing was proved"
+    finally:
+        urllib.request.urlopen = original
+
+
+def test_a_refused_request_with_no_body_still_produces_one_line() -> None:
+    """An empty refusal must not become a second failure while reporting the first."""
+    def refuse(request, timeout=None):  # noqa: ANN001, ANN003
+        raise urllib.error.HTTPError(
+            request.full_url, 500, "Internal Server Error",
+            {"Content-Type": "application/json"}, io.BytesIO(b""),
+        )
+
+    original = urllib.request.urlopen
+    urllib.request.urlopen = refuse
+    try:
+        engine = llm.Engine({})
+        body = engine._body([{"role": "user", "content": "hello"}], False)
+        try:
+            list(engine._complete(body))
+        except llm.EngineUnavailable as exc:
+            message = str(exc)
+            assert "500" in message and "no reason" in message, message
+        else:
+            raise AssertionError("the engine accepted a refused request")
+    finally:
+        urllib.request.urlopen = original
+
+
+class _Reply:
+    """One successful chat completion, in the shape urllib returns."""
+
+    def __init__(self, payload: dict) -> None:
+        self.status = 200
+        self._body = json.dumps(payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __iter__(self):
+        return iter(self._body.splitlines(keepends=True))
+
+
+def _completion(text: str) -> dict:
+    return {"choices": [{"message": {"role": "assistant", "content": text}}]}
+
+
+def _request_tokens(messages: list[dict]) -> int:
+    """The prompt's cost as llm.py estimates it, including per-message overhead."""
+    return sum(llm._estimate_tokens(item["content"]) + 4 for item in messages)
+
+
+def test_the_server_is_started_with_the_model_s_own_chat_template() -> None:
+    """Without --jinja llama.cpp ignores both of the request shapes this file sends.
+
+    The worker asks for a schema-constrained answer and turns thinking off with
+    `chat_template_kwargs`. llama.cpp applies neither unless the server was
+    started with jinja; it uses a template guessed from the model's name
+    instead, which for a model it does not recognise is a prompt the model was
+    never trained on - and some builds answer that with a 400 rather than a bad
+    answer.
+    """
+    engine = llm.Engine({"context": 4096})
+    engine.binary = lambda: "/usr/bin/llama-server"  # type: ignore[method-assign]
+    engine.model = lambda: Path("/models/m.gguf")  # type: ignore[method-assign]
+
+    argv = engine._argv()
+
+    assert "--jinja" in argv, (
+        f"the model server is started without its own chat template: {argv}"
+    )
+    # Path, not str: the same file path is spelled with backslashes on the
+    # Windows machine the suite also runs on.
+    assert Path(argv[argv.index("-m") + 1]) == Path("/models/m.gguf")
+
+
+def test_a_prompt_too_long_for_the_window_is_trimmed_not_refused() -> None:
+    """The failure this package chased was a 400 the request could have avoided.
+
+    llama.cpp does not shorten an oversized prompt; it refuses it with "the
+    request exceeds the available context size". A 4096-token window, a
+    thousand-token system prompt, three knowledge documents and a dozen turns
+    of history exceed it for an ordinary question, so the assistant has to
+    decide what to leave out before it asks.
+    """
+    engine = llm.Engine({"context": 512, "max_tokens": 128})
+    history = [
+        {"role": "user" if index % 2 == 0 else "assistant",
+         "content": f"turn {index} " * 40}
+        for index in range(12)
+    ]
+    messages = [
+        {"role": "system", "content": "instructions " * 40},
+        *history,
+        {"role": "user", "content": "how do I change the keyboard layout"},
+    ]
+
+    fitted, reply = engine._fit(messages, 128)
+
+    assert fitted[0]["role"] == "system", (
+        "trimming dropped the instructions, which are the prompt"
+    )
+    assert fitted[-1]["content"].endswith("how do I change the keyboard layout"), (
+        "trimming dropped the end of the last message, which is where the "
+        f"question is: {fitted[-1]['content']!r}"
+    )
+    assert len(fitted) < len(messages), "nothing was trimmed, so nothing was proved"
+    assert reply <= 128
+    assert _request_tokens(fitted) + reply + llm.CONTEXT_MARGIN_TOKENS <= 512, (
+        "the request that would be sent still does not fit the window: "
+        f"{_request_tokens(fitted)} + {reply} + {llm.CONTEXT_MARGIN_TOKENS} > 512"
+    )
+
+
+def test_the_conversation_sent_to_a_jinja_template_alternates_speakers() -> None:
+    """Jinja templates raise when the roles do not alternate, and that is a 500.
+
+    The Qwen family's template says `Conversation roles must alternate
+    user/assistant/user/assistant/...` and llama.cpp turns the exception into a
+    failed request. History can begin with an assistant turn after a failed
+    turn, and two user turns in a row happen whenever a turn was stored before
+    its answer arrived - both have to be repaired before the request goes out.
+    """
+    engine = llm.Engine({"context": 2048, "max_tokens": 256})
+    messages = [
+        {"role": "system", "content": "instructions"},
+        {"role": "assistant", "content": "an answer with no question before it " * 10},
+        {"role": "user", "content": "first question"},
+        {"role": "user", "content": "second question, stored before an answer"},
+        {"role": "assistant", "content": "an answer"},
+        {"role": "user", "content": "the question I actually asked"},
+    ]
+
+    fitted, _reply = engine._fit(messages, 256)
+    body = fitted[1:]
+
+    assert body[0]["role"] == "user", (
+        f"the conversation begins with an {body[0]['role']} turn")
+    for before, after in zip(body, body[1:]):
+        assert before["role"] != after["role"], (
+            f"two {before['role']} turns in a row: {[m['role'] for m in body]}")
+    assert body[-1]["content"] == "the question I actually asked"
+
+
+def test_the_request_that_goes_out_always_fits_the_window() -> None:
+    """Check the body, not only the helper: this is what the server rejects.
+
+    The invariant is the one llama.cpp enforces - prompt plus n_predict no
+    larger than the context - computed on the JSON that was actually posted.
+    """
+    sent: list[dict] = []
+
+    def accept(request, timeout=None):  # noqa: ANN001, ANN003
+        sent.append(json.loads(request.data.decode("utf-8")))
+        return _Reply(_completion("ok"))
+
+    original = urllib.request.urlopen
+    urllib.request.urlopen = accept
+    try:
+        engine = llm.Engine({"context": 1024, "max_tokens": 512})
+        messages = [
+            {"role": "system", "content": "instructions " * 80},
+            {"role": "user", "content": "a question " * 120},
+        ]
+        body = engine._body(messages, False)
+        text = "".join(engine._complete(body))
+    finally:
+        urllib.request.urlopen = original
+
+    assert text == "ok"
+    posted = sent[0]
+    assert _request_tokens(posted["messages"]) + posted["max_tokens"] <= 1024, (
+        "the posted prompt plus its reply ceiling is larger than the window: "
+        f"{_request_tokens(posted['messages'])} + {posted['max_tokens']} > 1024"
+    )
+
+
+def test_a_refused_json_constraint_is_asked_again_without_it() -> None:
+    """A refused grammar must cost the answer, not the question.
+
+    llama.cpp has shipped parsers that accept response_format and ignore it,
+    and templates it cannot apply make some builds refuse the request. The
+    caller's parser already copes with a small model's JSON, so the second
+    attempt writes the schema into the prompt and asks for one object.
+    """
+    reason = json.dumps({
+        "error": {"code": 400, "message": "Failed to parse grammar",
+                  "type": "invalid_request_error"},
+    }).encode("utf-8")
+    bodies: list[dict] = []
+
+    def refuse_once(request, timeout=None):  # noqa: ANN001, ANN003
+        bodies.append(json.loads(request.data.decode("utf-8")))
+        if len(bodies) == 1:
+            raise urllib.error.HTTPError(
+                request.full_url, 400, "Bad Request",
+                {"Content-Type": "application/json"}, io.BytesIO(reason),
+            )
+        return _Reply(_completion('{"kind": "answer", "text": "xkb"}'))
+
+    original = urllib.request.urlopen
+    urllib.request.urlopen = refuse_once
+    try:
+        engine = llm.Engine({"context": 2048})
+        engine.start = lambda: None  # type: ignore[method-assign]
+        text = "".join(
+            engine.ask_json(
+                [{"role": "user", "content": "how do I change the keyboard layout"}],
+                {"type": "object", "properties": {"kind": {"type": "string"}}},
+            )
+        )
+    finally:
+        urllib.request.urlopen = original
+
+    assert json.loads(text) == {"kind": "answer", "text": "xkb"}
+    assert len(bodies) == 2, "the refused request was not asked again"
+    assert "response_format" not in bodies[1], (
+        "the retry sent the constraint that was just refused"
+    )
+    assert "chat_template_kwargs" not in bodies[1]
+    assert "schema" in bodies[1]["messages"][-1]["content"].lower(), (
+        "the retry did not put the schema anywhere the model can read it"
+    )
+
+
+def test_a_context_refusal_is_not_retried_without_the_constraint() -> None:
+    """A request that is too long is not fixed by asking it again.
+
+    Retrying every 400 would double the wait before an error the user could
+    have seen at once; only the refusals that name the constraint are retried.
+    """
+    reason = json.dumps({
+        "error": {"code": 400,
+                  "message": "the request exceeds the available context size "
+                             "(5001 tokens), try increasing it"},
+    }).encode("utf-8")
+    calls: list[dict] = []
+
+    def refuse(request, timeout=None):  # noqa: ANN001, ANN003
+        calls.append(json.loads(request.data.decode("utf-8")))
+        raise urllib.error.HTTPError(
+            request.full_url, 400, "Bad Request",
+            {"Content-Type": "application/json"}, io.BytesIO(reason),
+        )
+
+    original = urllib.request.urlopen
+    urllib.request.urlopen = refuse
+    try:
+        engine = llm.Engine({"context": 4096})
+        engine.start = lambda: None  # type: ignore[method-assign]
+        try:
+            list(engine.ask_json([{"role": "user", "content": "hello"}], {}))
+        except llm.EngineUnavailable as exc:
+            assert "context size" in str(exc), str(exc)
+        else:
+            raise AssertionError("the engine accepted a request that cannot fit")
+    finally:
+        urllib.request.urlopen = original
+
+    assert len(calls) == 1, (
+        f"a context overflow was retried without the constraint ({len(calls)} "
+        "requests), which cannot help and doubles the wait"
+    )
 
 
 def test_importing_the_package_starts_nothing() -> None:
